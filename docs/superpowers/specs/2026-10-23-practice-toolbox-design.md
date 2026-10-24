@@ -35,6 +35,18 @@ UI 层（3 个 tab + 工具箱子页面）
 - 节拍器调度：基于音频时钟而非系统定时器，杜绝漂移
 - 平台相关代码（麦克风权限等）隔离在平台适配层，iOS 权限配置文档化
 
+### 3.1 iPad 交付路径（Windows 开发完成后如何上 iPad）
+
+同一份 Dart 代码可直接编译 iOS，但 **iOS 打包必须依赖 macOS + Xcode**（Flutter 官方限制，Windows 上无法构建 ipa）。三条路线：
+
+| 路线 | 前提 | 说明 |
+|---|---|---|
+| 本地 Mac | 借用 / 购入任意 Mac（含二手 Mac mini） | iPad USB 直连，`flutter run` 安装调试，体验最顺 |
+| 云 Mac + TestFlight | Apple Developer 账号（¥688/年） | Codemagic 等 CI 云端出包 → iPad 装 TestFlight 即可安装与更新，无需持有 Mac |
+| 云 Mac + 自签侧载 | 免费 Apple ID | AltStore / Sideloadly 侧载，7 天过期需续签，仅适合临时验证 |
+
+Windows 打样阶段不受影响：窗口按 iPad 比例验证布局，麦克风调音在 Windows 上可直接调试；到 iPad 移植阶段再选上述路线。
+
 ## 4. 页面结构与导航
 
 底部导航 3 个 tab；iPad 横屏 / 宽窗口时同一套 3 项切换为左侧边栏（NavigationRail）。
@@ -42,7 +54,7 @@ UI 层（3 个 tab + 工具箱子页面）
 ```
 ├── 🎸 调音器（一级入口，高频核心）
 │   ├── 模式切换：吉他模式 | 半音调音器
-│   └── 调弦预设选择 / 管理（页内完成）
+│   └── 调弦预设选择 / 管理（页内完成，按分组展示）
 ├── 🧰 工具箱（功能容器，入口卡片式）
 │   ├── 和弦库
 │   ├── 指板音阶
@@ -62,32 +74,32 @@ UI 层（3 个 tab + 工具箱子页面）
   - 吉他模式：按当前调弦预设工作，弹任意弦自动识别是哪根弦、偏差多少
   - 半音调音器（Chromatic）：不预设弦，识别任意音高显示音名
 - 调音界面：大字音名 + 指针摆动（±50 音分），调到位变绿；支持手动锁定单弦
-- **内置预设 20 种**（音高为科学记谱，6 弦从低到高）：
+- **内置预设 20 种，选择器按「标准/降调 → Open → 特殊 → 自定义」分组折叠展示**（音高为科学记谱，6 弦从低到高）：
 
-| 预设 | 音高 |
-|---|---|
-| Standard | E2 A2 D3 G3 B3 E4 |
-| Half Step Down | Eb2 Ab2 Db3 Gb3 Bb3 Eb4 |
-| Full Step Down | D2 G2 C3 F3 A3 D4 |
-| 1.5 Steps Down | C#2 F#2 B2 E3 G#3 C#4 |
-| Two Steps Down | C2 F2 Bb2 Eb3 G3 C4 |
-| Drop D | D2 A2 D3 G3 B3 E4 |
-| Drop C | C2 G2 C3 F3 A3 D4 |
-| Drop B | B1 F#2 B2 E3 G#3 C#4 |
-| Drop A | A1 E2 A2 D3 F#3 B3 |
-| Open D | D2 A2 D3 F#3 A3 D4 |
-| Open E | E2 B2 E3 G#3 B3 E4 |
-| Open G | D2 G2 D3 G3 B3 D4 |
-| Open A | E2 A2 E3 A3 C#4 E4 |
-| Open C | C2 G2 C3 G3 C4 E4 |
-| Open F | F2 A2 C3 F3 A3 F4 |
-| Open D Minor | D2 A2 D3 F3 A3 D4 |
-| DADGAD | D2 A2 D3 G3 A3 D4 |
-| Modal D | D2 A2 D3 E3 A3 D4 |
-| Nashville (High Strung) | E3 A3 D4 G4 B4 E5 |
-| All Fourths | E2 A2 D3 G3 C4 F4 |
+| 预设 | 音高 | 分组 |
+|---|---|---|
+| Standard | E2 A2 D3 G3 B3 E4 | 标准/降调 |
+| Half Step Down | Eb2 Ab2 Db3 Gb3 Bb3 Eb4 | 标准/降调 |
+| Full Step Down | D2 G2 C3 F3 A3 D4 | 标准/降调 |
+| 1.5 Steps Down | C#2 F#2 B2 E3 G#3 C#4 | 标准/降调 |
+| Two Steps Down | C2 F2 Bb2 Eb3 G3 C4 | 标准/降调 |
+| Drop D | D2 A2 D3 G3 B3 E4 | 标准/降调 |
+| Drop C | C2 G2 C3 F3 A3 D4 | 标准/降调 |
+| Drop B | B1 F#2 B2 E3 G#3 C#4 | 标准/降调 |
+| Drop A | A1 E2 A2 D3 F#3 B3 | 标准/降调 |
+| Open D | D2 A2 D3 F#3 A3 D4 | Open |
+| Open E | E2 B2 E3 G#3 B3 E4 | Open |
+| Open G | D2 G2 D3 G3 B3 D4 | Open |
+| Open A | E2 A2 E3 A3 C#4 E4 | Open |
+| Open C | C2 G2 C3 G3 C4 E4 | Open |
+| Open F | F2 A2 C3 F3 A3 F4 | Open |
+| Open D Minor | D2 A2 D3 F3 A3 D4 | Open |
+| DADGAD | D2 A2 D3 G3 A3 D4 | 特殊 |
+| Modal D | D2 A2 D3 E3 A3 D4 | 特殊 |
+| Nashville (High Strung) | E3 A3 D4 G4 B4 E5 | 特殊 |
+| All Fourths | E2 A2 D3 G3 C4 F4 | 特殊 |
 
-- **自定义预设**：数量不限；编辑器 = 命名 + 六弦逐个选音高；
+- **自定义预设**：数量不限，统一归入「自定义」组；编辑器 = 命名 + 六弦逐个选音高；
   内置预设可复制后修改（原件不可删），自定义可增删改
 
 ### 5.2 和弦库
@@ -140,14 +152,15 @@ UI 层（3 个 tab + 工具箱子页面）
 ## 9. 范围外（YAGNI）
 
 云同步、账号体系、谱识别与自动演奏（二期）、3D 演示（三期）、
-Bass/尤克里里等其他乐器预设（未来需要时预设结构加字段即可）。
+Bass/尤克里里等其他乐器预设（未来需要时预设结构加字段即可），
+自定义调弦预设的二级分组（当前统一归入「自定义」组）。
 
 ## 10. 验收标准
 
 1. Windows 运行，默认窗口为 iPad 比例，宽窗口自动切换侧边栏导航
 2. 对麦克风弹弦，调音器正确显示弦名与音分偏差，到位变绿
 3. 半音模式可识别任意单音音名
-4. 内置 20 种预设齐全；自定义预设增删改查不限数量，重启后保留
+4. 内置 20 种预设齐全并按「标准/降调 / Open / 特殊 / 自定义」分组展示；自定义预设增删改查不限数量，重启后保留
 5. 查询 Am7、F#m7b5 等和弦返回指法图并可试听
 6. 切换 Drop D 等预设后，指板音阶、和弦指法随之联动
 7. 节拍器长跑 5 分钟无可感知漂移
