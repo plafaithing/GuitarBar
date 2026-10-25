@@ -4,15 +4,15 @@
 
 **Goal:** 一期练琴工具箱：调音器（20 组预设+自定义不限量+A4 校准）、和弦库（算法指法+琶音/扫弦试听）、指板音阶（随调弦联动）、节拍器（细分拍+Tap Tempo+音频时钟调度）、练琴打卡（全局计时+热力图），Windows 打样（iPad 4:3 比例窗口）。
 
-**Architecture:** 四层——UI（3 tab）/ 业务逻辑（纯 Dart 乐理与算法，全部单测）/ 音频引擎（mic_stream 输入 + flutter_pcm_sound 输出，YIN 检测）/ 数据层（drift 三表 + JSON 导出导入）。
+**Architecture:** 四层——UI（3 tab）/ 业务逻辑（纯 Dart 乐理与算法，全部单测）/ 音频引擎（record 麦克风输入 + flutter_soloud 播放，YIN 检测）/ 数据层（drift 三表 + JSON 导出导入）。
 
-**Tech Stack:** Flutter (Windows) · provider/ChangeNotifier · drift + sqlite3_flutter_libs · mic_stream · flutter_pcm_sound · wakelock_plus · window_manager · file_selector
+**Tech Stack:** Flutter (Windows) · provider/ChangeNotifier · drift + sqlite3_flutter_libs · record（麦克风 PCM 流，全平台）· flutter_soloud（低延迟音频引擎，全平台）· wakelock_plus · window_manager · file_selector
 
 **Spec:** `docs/superpowers/specs/2026-10-23-practice-toolbox-design.md`（验收标准 13 条）
 
 **平台备注:** 本计划只在 Windows 执行。iOS 侧 `flutter create --platforms ios .` 留到有 Mac/云 Mac 时（设计文档 3.1 节）；lib/ 不写任何平台专属 API，差异全走插件。
 
-**依赖风险提示:** `mic_stream` 与 `flutter_pcm_sound` 的 API 以所装版本的 README 为准，若与计划中调用签名有出入，按 README 微调调用处（仅允许调整这两处接线，算法与纯逻辑代码不许改）。
+**依赖变更记录（2026-10-25，用户确认）**：原计划用 mic_stream/flutter_pcm_sound，核实后两者均不支持 Windows 桌面端（会 MissingPluginException），已替换为 **record 7.1.2**（麦克风 PCM 流）与 **flutter_soloud 5.2.1**（音频引擎）。API 已按 pub cache 源码核实：`AudioRecorder().startStream(const RecordConfig(encoder: AudioEncoder.pcm16bits, sampleRate: 44100, numChannels: 1))` 返回 `Stream<Uint8List>`（16-bit LE）；`SoLoud.instance.init(channels: Channels.mono)`、`loadMem(path, 完整WAV字节)`、`play(source, looping:)`、`getPosition(handle)`、`stop(handle)`、`disposeSound(source)`。内部接口层（MicPitchStream / SoundEngine）保持稳定封装，将来可整体换回旧栈。
 
 ---
 
@@ -28,10 +28,10 @@ lib/
 ├── core/music/chord_parser.dart     # 和弦名 → 根音+音程
 ├── core/music/fingering.dart        # 指法搜索 + 评分
 ├── audio/pitch_detector.dart        # YIN
-├── audio/mic_pitch_stream.dart      # 字节流 → 滑窗 → 音高流
-├── audio/synth.dart                 # click / pluck / 和弦 PCM 混合
-├── audio/pcm_player.dart            # flutter_pcm_sound 封装
-├── audio/metronome_engine.dart      # 纯调度 + 引擎 + tap tempo
+├── audio/mic_pitch_stream.dart      # record PCM 流 → 滑窗 → 音高流
+├── audio/synth.dart                 # click / pluck / 和弦 PCM 混合 + WAV 封装
+├── audio/sound_engine.dart          # flutter_soloud 门面（加载/播放/位置）
+├── audio/metronome_engine.dart      # 纯调度 + 整轨循环引擎 + tap tempo
 ├── data/database.dart               # drift 三表 + AppDatabase（+database.g.dart 生成）
 ├── data/backup.dart                 # JSON 导出/导入
 ├── state/tuning_state.dart          # 当前调弦 + A4 + 自定义预设管理
@@ -1129,7 +1129,7 @@ void main() {
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:mic_stream/mic_stream.dart';
+import 'package:record/record.dart';
 
 import 'pitch_detector.dart';
 
@@ -1160,42 +1160,39 @@ class PitchWindower {
   }
 }
 
-/// 订阅麦克风，产出最新音高（Hz 或 null）
+/// 订阅麦克风（record 包，16-bit 单声道 PCM），产出最新音高（Hz 或 null）
 class MicPitchStream {
-  Stream<double?>? _sub;
+  final AudioRecorder _rec = AudioRecorder();
+  final PitchWindower _windower =
+      PitchWindower(windowSamples: 4096, hopSamples: 2048);
+  StreamSubscription<Uint8List>? _rawSub;
+  StreamController<double?>? _out;
 
-  Stream<double?> start({int sampleRate = 44100}) {
-    _sub ??= MicStream.microphone(sampleRate: sampleRate)
-        .map((chunk) {
-          final i16 = Int16List.view(chunk.buffer, 0, chunk.length ~/ 2);
-          return [for (final v in i16) v / 32768.0];
-        })
-        .transform(_WindowTransform(sampleRate));
-    return _sub!;
+  Future<Stream<double?>> start({int sampleRate = 44100}) async {
+    if (!await _rec.hasPermission()) {
+      throw StateError('麦克风权限被拒绝');
+    }
+    final raw = await _rec.startStream(const RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: sampleRate,
+        numChannels: 1));
+    _out = StreamController<double?>();
+    _rawSub = raw.listen((chunk) {
+      final i16 = Int16List.view(chunk.buffer, 0, chunk.lengthInBytes ~/ 2);
+      final doubles = [for (final v in i16) v / 32768.0];
+      for (final w in _windower.add(doubles)) {
+        _out!.add(detectPitch(w, sampleRate));
+      }
+    }, onError: _out!.addError, onDone: _out!.close);
+    return _out!.stream;
   }
 
-  void stop() => _sub = null;
-}
-
-class _WindowTransform
-    extends StreamTransformerBase<List<double>, double?> {
-  final int _sr;
-  _WindowTransform(this._sr);
-
-  @override
-  Stream<double?> bind(Stream<List<double>> stream) {
-    final acc = PitchWindower(windowSamples: 4096, hopSamples: 2048);
-    late StreamController<double?> ctrl;
-    ctrl = StreamController<double?>(
-      onListen: () {
-        stream.listen((chunk) {
-          for (final w in acc.add(chunk)) {
-            ctrl.add(detectPitch(w, _sr));
-          }
-        }, onDone: ctrl.close, onError: ctrl.addError);
-      },
-    );
-    return ctrl.stream;
+  Future<void> stop() async {
+    await _rawSub?.cancel();
+    _rawSub = null;
+    await _rec.stop();
+    await _out?.close();
+    _out = null;
   }
 }
 ```
@@ -1218,15 +1215,17 @@ git commit -m "feat: 麦克风采样滑窗与音高流管线"
 
 ---
 
-### Task 10: 声音合成（click / pluck / 和弦 PCM）+ PCM 播放器
+### Task 10: 声音合成（click / pluck / 和弦 PCM + WAV 封装）+ 声音引擎门面
 
 **Files:**
-- Create: `lib/audio/synth.dart`、`lib/audio/pcm_player.dart`
+- Create: `lib/audio/synth.dart`、`lib/audio/sound_engine.dart`
 - Test: `test/synth_test.dart`
 
 - [ ] **Step 1: 写失败测试 `test/synth_test.dart`**
 
 ```dart
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:guitarbar/audio/synth.dart';
 import 'package:guitarbar/core/music/builtin_tunings.dart';
@@ -1234,6 +1233,13 @@ import 'package:guitarbar/core/music/fingering.dart';
 import 'package:guitarbar/core/music/chord_parser.dart';
 
 void main() {
+  test('wrapWav 头部正确', () {
+    final wav = wrapWav(Int16List.fromList([0, 100, -100]));
+    expect(wav.length, 50); // 44 头 + 3 样本 * 2 字节
+    expect(String.fromCharCodes(wav.sublist(0, 4)), 'RIFF');
+    expect(String.fromCharCodes(wav.sublist(8, 12)), 'WAVE');
+  });
+
   test('click 长度与衰减', () {
     final c = click(0);
     expect(c.length, 2646); // 0.06s * 44100
@@ -1343,42 +1349,76 @@ Int16List voicingPcm(List<Note> tuning, List<int?> frets, PlayMode mode,
   return Int16List.fromList(
       [for (final v in mix) (v.clamp(-1.0, 1.0) * 32767).round()]);
 }
+
+/// 原始 16-bit 单声道 PCM → 完整 WAV 文件字节（flutter_soloud loadMem 需要）
+Uint8List wrapWav(Int16List pcm, {int sampleRate = 44100, int channels = 1}) {
+  final dataLen = pcm.length * 2;
+  final out = Uint8List(44 + dataLen);
+  final bd = out.buffer.asByteData();
+  void ascii(int off, String s) {
+    for (var i = 0; i < s.length; i++) {
+      out[off + i] = s.codeUnitAt(i);
+    }
+  }
+
+  ascii(0, 'RIFF');
+  bd.setUint32(4, 36 + dataLen, Endian.little);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  bd.setUint32(16, 16, Endian.little); // PCM
+  bd.setUint16(20, 1, Endian.little);
+  bd.setUint16(22, channels, Endian.little);
+  bd.setUint32(24, sampleRate, Endian.little);
+  bd.setUint32(28, sampleRate * channels * 2, Endian.little); // byte rate
+  bd.setUint16(32, channels * 2, Endian.little); // block align
+  bd.setUint16(34, 16, Endian.little); // bits per sample
+  ascii(36, 'data');
+  bd.setUint32(40, dataLen, Endian.little);
+  out.setRange(44, out.length, pcm.buffer.asUint8List(0, dataLen));
+  return out;
+}
 ```
 
-- [ ] **Step 3: 实现 `lib/audio/pcm_player.dart`**
+- [ ] **Step 3: 实现 `lib/audio/sound_engine.dart`**
 
 ```dart
 import 'dart:typed_data';
 
-import 'package:flutter_pcm_sound/flutter_pcm_sound.dart';
+import 'package:flutter_soloud/flutter_soloud.dart';
 
-/// flutter_pcm_sound 封装：维护已喂入样本计数，暴露帧渲染回调
-class PcmPlayer {
-  int _fed = 0;
-  int sampleRate = 44100;
-  void Function(int playedSamples)? onFrame;
+import 'synth.dart';
 
-  Future<void> setup({int sampleRate = 44100}) async {
-    this.sampleRate = sampleRate;
-    _fed = 0;
-    await FlutterPcmSound.setup(sampleRate: sampleRate, channelCount: 1);
-    await FlutterPcmSound.setFeedThreshold(4096);
-    FlutterPcmSound.setFrameRenderedCallback((event) => onFrame?.call(event.frame));
+/// flutter_soloud 门面：全应用唯一音频入口。接口保持稳定，
+/// 将来若要换回其他音频栈，只需重写本类。
+class SoundEngine {
+  SoundEngine._();
+  static final SoundEngine I = SoundEngine._();
+
+  bool _initialized = false;
+  int _counter = 0;
+
+  Future<void> init() async {
+    if (_initialized) return;
+    await SoLoud.instance.init(sampleRate: 44100, channels: Channels.mono);
+    _initialized = true;
   }
 
-  Future<void> feed(Int16List pcm) async {
-    _fed += pcm.length;
-    await FlutterPcmSound.feed(pcm);
+  /// 原始 16-bit 单声道 PCM → 加载为可播放音源
+  Future<AudioSource> loadPcm(Int16List samples) async {
+    await init();
+    return SoLoud.instance.loadMem(
+        'gen-${_counter++}', wrapWav(samples),
+        mode: LoadMode.memory);
   }
 
-  int get fedSamples => _fed;
+  SoundHandle play(AudioSource src, {bool loop = false}) =>
+      SoLoud.instance.play(src, looping: loop);
 
-  Future<void> start() => FlutterPcmSound.start();
+  Duration position(SoundHandle h) => SoLoud.instance.getPosition(h);
 
-  Future<void> stop() async {
-    await FlutterPcmSound.release();
-    _fed = 0;
-  }
+  Future<void> stop(SoundHandle h) => SoLoud.instance.stop(h);
+
+  void disposeSource(AudioSource src) => SoLoud.instance.disposeSound(src);
 }
 ```
 
@@ -1390,8 +1430,8 @@ Expected: 全部 PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add lib/audio/synth.dart lib/audio/pcm_player.dart test/synth_test.dart
-git commit -m "feat: click/pluck/和弦 PCM 合成与播放器封装"
+git add lib/audio/synth.dart lib/audio/sound_engine.dart test/synth_test.dart
+git commit -m "feat: 声音合成（WAV 封装）与 flutter_soloud 门面"
 ```
 
 ---
@@ -1450,11 +1490,12 @@ void main() {
 - [ ] **Step 2: 实现纯逻辑 + 引擎 `lib/audio/metronome_engine.dart`**
 
 ```dart
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
-import 'pcm_player.dart';
+import 'sound_engine.dart';
 import 'synth.dart';
 
 class MetronomeConfig {
@@ -1505,61 +1546,62 @@ double bpmFromTaps(List<DateTime> taps) {
   return 60.0 / gaps[gaps.length ~/ 2];
 }
 
-/// 引擎：向 PcmPlayer 前瞻填充静音 + click，靠帧回调驱动进度
+/// 引擎：把整段节拍音轨按采样精确铺好后循环播放（音轨本身无漂移），
+/// UI 拍点用 getPosition 轮询（仅供指示灯显示，不影响音频精度）。
 class MetronomeEngine {
-  MetronomeEngine(this._player);
-  final PcmPlayer _player;
+  MetronomeEngine(this._sound);
+  final SoundEngine _sound;
 
   MetronomeConfig cfg =
       const MetronomeConfig(bpm: 100, beatsPerBar: 4, subdivision: 1);
   bool running = false;
   final ValueNotifier<int> currentTick = ValueNotifier(-1);
 
-  int _startSample = 0;
-  int _nextSampleAbs = 0;
+  AudioSource? _track;
+  SoundHandle? _handle;
+  Timer? _uiTimer;
 
   Future<void> start() async {
-    _player.onFrame = _onFrame;
-    _startSample = _player.fedSamples;
-    _nextSampleAbs = _startSample;
+    const sr = 44100;
+    final barSamples = (cfg.beatSeconds * cfg.beatsPerBar * sr).round();
+    final bars = (sr * 60) ~/ barSamples; // 约 60 秒，取整小节数保证无缝循环
+    final totalSamples = bars * barSamples;
+    final tickSamples = cfg.tickSeconds * sr;
+    final ticks = scheduleTicks(
+        cfg: cfg,
+        startSample: 0,
+        tickCount: bars * cfg.beatsPerBar * cfg.subdivision,
+        sampleRate: sr);
+    final pcm = Int16List(totalSamples);
+    for (final t in ticks) {
+      final c = click(t.kind, sampleRate: sr);
+      for (var i = 0; i < c.length; i++) {
+        final idx = t.sample + i;
+        if (idx >= totalSamples) break;
+        pcm[idx] = (pcm[idx] + c[i]).clamp(-32768, 32767).toInt();
+      }
+    }
+    _track = await _sound.loadPcm(pcm);
+    _handle = _sound.play(_track!, loop: true);
     currentTick.value = -1;
     running = true;
-    await _fill();
-    await _player.start();
+    _uiTimer = Timer.periodic(const Duration(milliseconds: 30), (_) {
+      if (!running || _handle == null) return;
+      final pos = _sound.position(_handle!);
+      currentTick.value =
+          (pos.inMicroseconds / 1e6 * sr / tickSamples).floor();
+    });
   }
 
   Future<void> stop() async {
+    _uiTimer?.cancel();
+    _uiTimer = null;
     running = false;
     currentTick.value = -1;
-    await _player.stop();
-  }
-
-  void _onFrame(int played) {
-    if (!running) return;
-    final rel = played - _startSample;
-    if (rel >= 0) {
-      currentTick.value = (rel / (cfg.tickSeconds * _player.sampleRate)).floor();
-    }
-    _fill();
-  }
-
-  Future<void> _fill() async {
-    const lookahead = 16384;
-    final horizon = _player.fedSamples + lookahead;
-    while (_nextSampleAbs < horizon) {
-      final rel = _nextSampleAbs - _startSample;
-      final tickSamples = cfg.tickSeconds * _player.sampleRate;
-      final idx = (rel / tickSamples).round();
-      final tickAbs = _startSample + (idx * tickSamples).round();
-      if (tickAbs > _nextSampleAbs) {
-        await _player.feed(Int16List(tickAbs - _nextSampleAbs)); // 静音填充
-        _nextSampleAbs = tickAbs;
-      }
-      final kind = tickKind(idx, cfg);
-      final c = click(kind, sampleRate: _player.sampleRate);
-      await _player.feed(c);
-      _nextSampleAbs += c.length;
-    }
+    if (_handle != null) await _sound.stop(_handle!);
+    _handle = null;
+    if (_track != null) _sound.disposeSource(_track!);
+    _track = null;
   }
 }
 ```
@@ -1573,7 +1615,7 @@ Expected: 全部 PASS
 
 ```bash
 git add lib/audio/metronome_engine.dart test/metronome_test.dart
-git commit -m "feat: 节拍器音频时钟调度与 Tap Tempo"
+git commit -m "feat: 节拍器采样精确整轨循环与 Tap Tempo"
 ```
 
 ---
@@ -1737,17 +1779,26 @@ class _TunerPageState extends State<TunerPage> {
     super.dispose();
   }
 
-  void _toggleMic() {
+  final _mic = MicPitchStream();
+
+  Future<void> _toggleMic() async {
     if (_micOn) {
-      _sub?.cancel();
+      await _sub?.cancel();
       _sub = null;
+      await _mic.stop();
       _micOn = false;
       _freq = null;
     } else {
-      _sub = MicPitchStream()
-          .start()
-          .listen((f) => mounted ? setState(() => _freq = f) : null);
-      _micOn = true;
+      try {
+        final stream = await _mic.start();
+        _sub = stream.listen((f) => mounted ? setState(() => _freq = f) : null);
+        _micOn = true;
+      } on StateError catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(e.message)));
+        }
+      }
     }
     setState(() {});
   }
@@ -2048,7 +2099,7 @@ git commit -m "feat: 调音器页（双模式/分组预设/A4校准/指针）"
 import 'package:flutter/material.dart';
 
 import '../../audio/metronome_engine.dart';
-import '../../audio/pcm_player.dart';
+import '../../audio/sound_engine.dart';
 
 class MetronomePage extends StatefulWidget {
   const MetronomePage({super.key});
@@ -2057,21 +2108,11 @@ class MetronomePage extends StatefulWidget {
 }
 
 class _MetronomePageState extends State<MetronomePage> {
-  final _player = PcmPlayer();
-  late final MetronomeEngine _engine = MetronomeEngine(_player);
-  bool _ready = false;
+  late final MetronomeEngine _engine = MetronomeEngine(SoundEngine.I);
   final _taps = <DateTime>[];
 
   static const _timeSigs = [(2, '2/4'), (3, '3/4'), (4, '4/4'), (6, '6/8')];
   static const _subs = [(1, '四分'), (2, '八分'), (3, '三连音'), (4, '十六分')];
-
-  @override
-  void initState() {
-    super.initState();
-    _player.setup().then((_) {
-      if (mounted) setState(() => _ready = true);
-    });
-  }
 
   @override
   void dispose() {
@@ -2141,7 +2182,7 @@ class _MetronomePageState extends State<MetronomePage> {
           FilledButton.tonal(onPressed: _tap, child: const Text('Tap 点速')),
           const SizedBox(width: 12),
           FilledButton(
-              onPressed: _ready ? _toggle : null,
+              onPressed: _toggle,
               child: Text(_engine.running ? '停止' : '开始')),
         ]),
         const SizedBox(height: 16),
@@ -2198,7 +2239,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../audio/pcm_player.dart';
+import '../../audio/sound_engine.dart';
 import '../../audio/synth.dart';
 import '../../core/music/chord_parser.dart';
 import '../../core/music/fingering.dart';
@@ -2214,15 +2255,11 @@ class _ChordPageState extends State<ChordPage> {
   final _input = TextEditingController(text: 'Am7');
   List<ChordVoicing> _voicings = [];
   String? _error;
-  final _player = PcmPlayer();
-  bool _ready = false;
 
   @override
   void initState() {
     super.initState();
-    _player.setup().then((_) {
-      if (mounted) setState(() => _ready = true);
-    });
+    SoundEngine.I.init();
   }
 
   @override
@@ -2247,9 +2284,9 @@ class _ChordPageState extends State<ChordPage> {
 
   Future<void> _play(ChordVoicing v, PlayMode mode) async {
     final state = context.read<TuningState>();
-    await _player.feed(
+    final src = await SoundEngine.I.loadPcm(
         voicingPcm(state.current.strings, v.frets, mode, a4: state.a4));
-    await _player.start();
+    SoundEngine.I.play(src);
   }
 
   @override
@@ -2292,22 +2329,22 @@ class _ChordPageState extends State<ChordPage> {
                     Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                       FilledButton.tonal(
                           onPressed:
-                              _ready ? () => _play(v, PlayMode.pluckAll) : null,
+                              () => _play(v, PlayMode.pluckAll),
                           child: const Text('同时')),
                       const SizedBox(width: 8),
                       FilledButton.tonal(
                           onPressed:
-                              _ready ? () => _play(v, PlayMode.arpeggio) : null,
+                              () => _play(v, PlayMode.arpeggio),
                           child: const Text('琶音')),
                       const SizedBox(width: 8),
                       FilledButton.tonal(
                           onPressed:
-                              _ready ? () => _play(v, PlayMode.strumDown) : null,
+                              () => _play(v, PlayMode.strumDown),
                           child: const Text('下扫')),
                       const SizedBox(width: 8),
                       FilledButton.tonal(
                           onPressed:
-                              _ready ? () => _play(v, PlayMode.strumUp) : null,
+                              () => _play(v, PlayMode.strumUp),
                           child: const Text('上扫')),
                     ]),
                   ]),
@@ -2412,7 +2449,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../../audio/pcm_player.dart';
+import '../../audio/sound_engine.dart';
 import '../../audio/synth.dart';
 import '../../core/music/note.dart';
 import '../../core/music/scale.dart';
@@ -2428,31 +2465,20 @@ class _FretboardPageState extends State<FretboardPage> {
   int _rootPc = 9; // A
   ScaleType _scale = ScaleType.minorPentatonic;
   bool _showSolfege = false;
-  final _player = PcmPlayer();
-  bool _ready = false;
 
   static const _frets = 12;
   static const _pcNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-
-  @override
-  void initState() {
-    super.initState();
-    _player.setup().then((_) {
-      if (mounted) setState(() => _ready = true);
-    });
-  }
 
   @override
   void dispose() {
     super.dispose();
   }
 
-  void _tapCell(TuningState state, int stringIdx, int fret) {
+  Future<void> _tapCell(TuningState state, int stringIdx, int fret) async {
     final midi = state.current.strings[stringIdx].midi + fret;
-    if (_ready) {
-      _player.feed(pluck(Note(midi).frequency(state.a4)));
-      _player.start();
-    }
+    final src =
+        await SoundEngine.I.loadPcm(pluck(Note(midi).frequency(state.a4)));
+    SoundEngine.I.play(src);
   }
 
   @override
