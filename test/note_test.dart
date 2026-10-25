@@ -8,6 +8,8 @@ void main() {
     expect(Note.parse('C#4').midi, 61);
     expect(Note.parse('B1').midi, 35);
     expect(Note.parse('A1').midi, 33);
+    expect(Note.parse('c4').midi, 60);
+    expect(Note.parse('C-1').midi, 0);
     expect(() => Note.parse('H2'), throwsArgumentError);
   });
 
@@ -15,6 +17,7 @@ void main() {
     expect(Note.parse('E2').name, 'E2');
     expect(Note.parse('Eb2').name, 'D#2');
     expect(Note.parse('Eb2').label(flats: true), 'Eb2');
+    expect(Note.parse('E2').toString(), 'E2');
   });
 
   test('频率（A4=440）', () {
@@ -30,5 +33,6 @@ void main() {
   test('centsOff', () {
     expect(centsOff(440.0, 440.0), 0);
     expect(centsOff(466.16, 440.0), closeTo(100, 0.5));
+    expect(centsOff(415.3, 440.0), closeTo(-100, 2));
   });
 }

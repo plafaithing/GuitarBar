@@ -25,6 +25,15 @@ class Note {
 
   double frequency([double a4 = 440.0]) =>
       a4 * math.pow(2, (midi - 69) / 12).toDouble();
+
+  @override
+  bool operator ==(Object other) => other is Note && other.midi == midi;
+
+  @override
+  int get hashCode => midi;
+
+  @override
+  String toString() => name;
 }
 
 int centsOff(double measured, double target) =>
