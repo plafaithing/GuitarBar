@@ -14,7 +14,7 @@
 
 - [ ] 用户审阅设计文档，确认无误
 - [x] 用 writing-plans 技能编写第一期实现计划（2026-10-25，`docs/superpowers/plans/2026-10-25-practice-toolbox.md`，18 个任务）
-- [ ] 实现第一期：脚手架 → 音频引擎 → 调音器 → 工具箱三功能 → 个人中心打卡
+- [ ] 实现第一期（进行中，分支 `feature/phase1-toolbox`）：✅Task1 脚手架（87a5c4c，双审通过）✅Task1.5 音频栈替换（e3b7d4a）✅Task2 Note（1b360ae，双审通过）→ 进行中 Task3 调弦预设 → 待 Task4-18
 
 ## Review（2026-10-25 本次会话）
 
@@ -27,3 +27,4 @@
 7. **2026-10-25 设计变更（A 档全收）**：一期新增四项——A4 参考音高校准、节拍器细分拍+Tap Tempo、练琴屏幕常亮、和弦琶音/扫弦试听（已同步 5.1/5.2/5.4/第 4 节与验收标准 10–13）。B 档确认一项：练习录音回放写入二期。升降调/移调已解释（自研引擎下成本极低，推荐写入二期），待用户确认。
 8. **2026-10-25 设计变更**：升降调/移调写入二期（用户确认；自用指弹为主、弹唱少，优先级低但保留）。设计文档收敛，进入实现计划编写（writing-plans 技能）。
 9. **2026-10-25 实现计划已编写**：`docs/superpowers/plans/2026-10-25-practice-toolbox.md`（18 个任务：脚手架 → 乐理核心 → 音频引擎 → 数据层 → 四个页面 → 接线 → 打卡 → 验收走查，全程 TDD 小步提交）。**下次会话**：先对计划做快速自查（占位符/类型一致性/规格覆盖），再与用户确认执行方式（子代理驱动 / 会话内执行）后开工。
+10. **2026-10-26 实现环境要点（记录给未来会话/CI）**：① `flutter_soloud` 5.2.1 首次原生构建需从 GitHub 拉 Xiph 预编译库，本机直连超时——已用 gh-proxy.com 镜像手动补到 pub cache 的 `flutter_soloud-5.2.1/.dart_tool/flutter_soloud/xiph/prebuild/{include,windows/x64}`（机器级修复，换机/清缓存会复现）；② Windows 开发者模式未开启 → 构建符号链接失败（等用户在 `ms-settings:developers` 开启，Task 9 起必需）；③ 质量审查遗留：Note 值语义（==/hashCode/toString）与 3 个测试断言并入 Task 3 提交；`centsOff` 对 measured<=0 抛异常（上游 detectPitch 保证 null 或正数，实际不可达，作为契约记录）；④ 音频栈已换 record 7.1.2 + flutter_soloud 5.2.1（原 mic_stream/flutter_pcm_sound 不支持 Windows），计划 Task 9-15 已按真实 API 重写（ae884af）。
