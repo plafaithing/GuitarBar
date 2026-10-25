@@ -33,7 +33,6 @@ lib/
 ├── audio/pcm_player.dart            # flutter_pcm_sound 封装
 ├── audio/metronome_engine.dart      # 纯调度 + 引擎 + tap tempo
 ├── data/database.dart               # drift 三表 + AppDatabase（+database.g.dart 生成）
-├── data/connection/open.dart        # 文件连接
 ├── data/backup.dart                 # JSON 导出/导入
 ├── state/tuning_state.dart          # 当前调弦 + A4 + 自定义预设管理
 ├── state/practice_timer.dart        # 全局练习计时 + wakelock
@@ -465,7 +464,7 @@ void main() {
   });
 
   test('五声与布鲁斯', () {
-    expect(scalePitchClasses(9, ScaleType.minorPentatonic), [9, 0, 2, 5, 7]); // Am 五声
+    expect(scalePitchClasses(9, ScaleType.minorPentatonic), [9, 0, 2, 4, 7]); // Am 五声 A C D E G
     expect(scalePitchClasses(4, ScaleType.blues).length, 6);
   });
 
@@ -474,7 +473,7 @@ void main() {
     final grid = fretboardGrid(std.strings, 0, ScaleType.major, frets: 12);
     expect(grid[0][8], 48); // 6 弦 8 品 = C3
     expect(grid[1][3], 48); // 5 弦 3 品 = C3
-    expect(grid[0][0], null); // E 空弦不是 C
+    expect(grid[0][2], null); // 6 弦 2 品 = F# 不在 C 大调（E 空弦在调内）
   });
 
   test('Drop D 下 6 弦空弦是 D', () {
@@ -1127,6 +1126,7 @@ void main() {
 - [ ] **Step 2: 实现 `lib/audio/mic_pitch_stream.dart`**
 
 ```dart
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:mic_stream/mic_stream.dart';
@@ -1237,7 +1237,7 @@ void main() {
   test('click 长度与衰减', () {
     final c = click(0);
     expect(c.length, 2646); // 0.06s * 44100
-    expect(c.first, greaterThan(8000));
+    expect(c[10], greaterThan(8000)); // 首个正弦峰值附近（t=0 处 sin=0）
     expect(c.last.abs(), lessThan(1000)); // 已衰减
   });
 
@@ -1708,6 +1708,7 @@ class TuningState extends ChangeNotifier {
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/music/builtin_tunings.dart';
 import '../../core/music/note.dart';
 import '../../core/music/tuning.dart';
 import '../../audio/mic_pitch_stream.dart';
@@ -2685,7 +2686,6 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'data/database.dart';
-import 'state/practice_timer.dart';
 import 'state/tuning_state.dart';
 import 'ui/root.dart';
 import 'ui/tuner/tuner_page.dart';
@@ -2707,7 +2707,6 @@ Future<void> main() async {
   runApp(MultiProvider(providers: [
     Provider<AppDatabase>.value(value: db),
     ChangeNotifierProvider(create: (_) => TuningState(db)..load()),
-    ChangeNotifierProvider(create: (_) => PracticeTimer(db)),
   ], child: const GuitarBarApp()));
 }
 
@@ -3095,9 +3094,11 @@ class _Heatmap extends StatelessWidget {
 }
 ```
 
-- [ ] **Step 6: 修改 `lib/ui/root.dart`（个人中心 + 顶栏常驻计时）**
+- [ ] **Step 6: 修改 `lib/main.dart` 与 `lib/ui/root.dart`（个人中心 + 顶栏常驻计时）**
 
-整文件替换：
+先给 `lib/main.dart` 加回 PracticeTimer（Task 16 时移除了）：imports 加 `import 'state/practice_timer.dart';`，providers 列表加 `ChangeNotifierProvider(create: (_) => PracticeTimer(db)),`。
+
+`lib/ui/root.dart` 整文件替换：
 
 ```dart
 import 'package:flutter/material.dart';
