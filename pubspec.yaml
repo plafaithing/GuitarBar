@@ -39,12 +39,12 @@ dependencies:
   sqlite3_flutter_libs: ^0.6.0+eol
   path_provider: ^2.1.6
   path: ^1.9.1
-  mic_stream: ^0.7.2
-  flutter_pcm_sound: ^3.3.3
   wakelock_plus: ^1.8.2
   window_manager: ^0.5.2
   file_selector: ^1.1.0
   intl: ^0.20.3
+  record: ^7.1.2
+  flutter_soloud: ^5.2.1
 
 dev_dependencies:
   flutter_test:
