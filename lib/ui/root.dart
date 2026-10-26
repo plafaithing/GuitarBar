@@ -11,6 +11,8 @@ class RootPage extends StatefulWidget {
 
 class _RootPageState extends State<RootPage> {
   int _tab = 0;
+  // 侧栏收起为内存态；持久化到 settings 存储在 Task 12 接入时顺路做。
+  bool _collapsed = false;
   static const _titles = ['调音器', '工具箱', '个人中心'];
   static const _icons = [
     Icons.tune_outlined,
@@ -42,7 +44,9 @@ class _RootPageState extends State<RootPage> {
                   titles: _titles,
                   icons: _icons,
                   activeIndex: _tab,
+                  collapsed: _collapsed,
                   onSelect: (i) => setState(() => _tab = i),
+                  onToggleCollapse: () => setState(() => _collapsed = !_collapsed),
                 ),
                 Expanded(child: body),
               ])
@@ -63,42 +67,36 @@ class _RootPageState extends State<RootPage> {
   }
 }
 
-/// 宽屏左侧导航（Open 平面）：置于画布底色之上，右缘 1px 发丝线；
+/// 宽屏左侧导航（Open 平面）：展开 256px / 收起 56px 图标栏，右缘 1px 发丝线；
 /// 导航块在剩余空间垂直居中，底部预留练习计时器位。
 class _SideNav extends StatelessWidget {
   const _SideNav({
     required this.titles,
     required this.icons,
     required this.activeIndex,
+    required this.collapsed,
     required this.onSelect,
+    required this.onToggleCollapse,
   });
 
   final List<String> titles;
   final List<IconData> icons;
   final int activeIndex;
+  final bool collapsed;
   final ValueChanged<int> onSelect;
+  final VoidCallback onToggleCollapse;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 256,
+      width: collapsed ? 56 : 256,
       decoration: const BoxDecoration(
         border: Border(right: BorderSide(color: GuitarBarColors.border)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.only(left: 20, top: 24, bottom: 12),
-            child: Row(children: [
-              _PickMark(),
-              SizedBox(width: 8),
-              Text(
-                'GuitarBar',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: GuitarBarColors.ink),
-              ),
-            ]),
-          ),
+          collapsed ? _collapsedHeader() : _expandedHeader(),
           Expanded(
             child: Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -107,6 +105,7 @@ class _SideNav extends StatelessWidget {
                     title: titles[i],
                     icon: icons[i],
                     selected: i == activeIndex,
+                    collapsed: collapsed,
                     onTap: () => onSelect(i),
                   ),
               ]),
@@ -117,52 +116,100 @@ class _SideNav extends StatelessWidget {
       ),
     );
   }
+
+  Widget _expandedHeader() {
+    return Padding(
+      padding: const EdgeInsets.only(left: 20, top: 24, right: 8, bottom: 12),
+      child: Row(children: [
+        const _PickMark(),
+        const SizedBox(width: 8),
+        const Text(
+          'GuitarBar',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: GuitarBarColors.ink),
+        ),
+        const Spacer(),
+        IconButton(
+          tooltip: '收起侧栏',
+          onPressed: onToggleCollapse,
+          icon: const Icon(Icons.keyboard_double_arrow_left),
+          color: GuitarBarColors.muted,
+        ),
+      ]),
+    );
+  }
+
+  Widget _collapsedHeader() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 24, bottom: 12),
+      child: Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const _PickMark(),
+          IconButton(
+            tooltip: '展开侧栏',
+            onPressed: onToggleCollapse,
+            icon: const Icon(Icons.keyboard_double_arrow_right),
+            color: GuitarBarColors.muted,
+          ),
+        ]),
+      ),
+    );
+  }
 }
 
-/// 导航行：32px 高、34px 节距；选中以灰药丸 + 标签提亮标记，图标恒为 muted
-/// （药丸独自承担选中信号）。
+/// 导航行：32px 高、34px 节距；展开态图标 18 + 标签 16/400，收起态仅 18px 图标
+/// （Tooltip 供悬停提示、Semantics 保留名称）；选中以灰药丸 + 标签提亮标记，
+/// 图标恒为 muted（药丸独自承担选中信号）。
 class _NavItem extends StatelessWidget {
   const _NavItem({
     required this.title,
     required this.icon,
     required this.selected,
+    required this.collapsed,
     required this.onTap,
   });
 
   final String title;
   final IconData icon;
   final bool selected;
+  final bool collapsed;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final labelColor = selected ? GuitarBarColors.ink : GuitarBarColors.muted;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
-      child: Material(
-        color: selected ? GuitarBarColors.activePill : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        child: Semantics(
-          selected: selected,
-          button: true,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: onTap,
-            child: SizedBox(
-              height: 32,
-              child: Row(children: [
-                const SizedBox(width: 8),
-                Icon(icon, size: 16, color: GuitarBarColors.muted),
-                const SizedBox(width: 10),
-                Text(
-                  title,
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: labelColor),
-                ),
-              ]),
-            ),
+    Widget child = Material(
+      color: selected ? GuitarBarColors.activePill : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: Semantics(
+        label: collapsed ? title : null,
+        selected: selected,
+        button: true,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          child: SizedBox(
+            height: 32,
+            child: collapsed
+                ? Center(child: Icon(icon, size: 18, color: GuitarBarColors.muted))
+                : Row(children: [
+                    const SizedBox(width: 8),
+                    Icon(icon, size: 18, color: GuitarBarColors.muted),
+                    const SizedBox(width: 10),
+                    Text(
+                      title,
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: labelColor),
+                    ),
+                  ]),
           ),
         ),
       ),
+    );
+    if (collapsed) {
+      child = Tooltip(message: title, child: child);
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+      child: child,
     );
   }
 }
