@@ -194,10 +194,10 @@ class _SideNav extends StatelessWidget {
   }
 }
 
-/// 导航行：展开态 44px 高、46px 节距，未选中项为白块底（surface，radius 8，
-/// 靠色阶与地色分隔）、选中项灰药丸（activePill 深一档）；收起态 36×36 药丸、
-/// 38px 节距、不套白块。图标 20 + 标签 18/400；选中另加填充字形与标签提亮，
-/// 图标色恒为 muted（形状变化不加色彩信号）。
+/// 导航行：36px 高、38px 节距；选中项灰药丸（activePill），未选中项无底色坐在
+/// 地色上。展开态图标 20 + 标签 18/400，收起态 36×36 药丸仅 20px 图标（Tooltip
+/// 供悬停提示、Semantics 保留名称）；选中另加填充字形与标签提亮，图标色恒为
+/// muted（形状变化不加色彩信号）。
 class _NavItem extends StatelessWidget {
   const _NavItem({
     required this.title,
@@ -220,10 +220,7 @@ class _NavItem extends StatelessWidget {
     final labelColor = selected ? GuitarBarColors.ink : GuitarBarColors.muted;
     final glyph = selected ? activeIcon : icon;
     Widget child = Material(
-      // 展开态：白块（未选）/ 灰药丸（选中）；收起态：透明（未选）/ 灰药丸（选中）。
-      color: collapsed
-          ? (selected ? GuitarBarColors.activePill : Colors.transparent)
-          : (selected ? GuitarBarColors.activePill : GuitarBarColors.surface),
+      color: selected ? GuitarBarColors.activePill : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
       child: Semantics(
         label: collapsed ? title : null,
@@ -233,7 +230,7 @@ class _NavItem extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           onTap: onTap,
           child: SizedBox(
-            height: collapsed ? 36 : 44,
+            height: 36,
             child: collapsed
                 ? Center(child: Icon(glyph, size: 20, color: GuitarBarColors.muted))
                 : Row(children: [
