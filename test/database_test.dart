@@ -16,6 +16,11 @@ void main() {
     final rows = await db.select(db.practiceSessions).get();
     expect(rows.single.id, id);
     expect(rows.single.durationSeconds, 1800);
+    await (db.update(db.practiceSessions)..where((t) => t.id.equals(id)))
+        .write(const PracticeSessionsCompanion(durationSeconds: Value(2400)));
+    expect((await db.select(db.practiceSessions).get()).single.durationSeconds, 2400);
+    await (db.delete(db.practiceSessions)..where((t) => t.id.equals(id))).go();
+    expect(await db.select(db.practiceSessions).get(), isEmpty);
   });
 
   test('自定义调弦预设', () async {

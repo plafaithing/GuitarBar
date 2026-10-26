@@ -874,6 +874,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     tuningPresets,
     settings,
   ];
+  @override
+  DriftDatabaseOptions get options =>
+      const DriftDatabaseOptions(storeDateTimeAsText: true);
 }
 
 typedef $$PracticeSessionsTableCreateCompanionBuilder =
