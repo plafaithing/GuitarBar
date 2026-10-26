@@ -26,7 +26,11 @@ void main() {
     await db.delete(db.settings).go();
     await importFromJson(db, json);
 
-    expect((await db.select(db.practiceSessions).get()).single.note, '爬格子');
+    final row = (await db.select(db.practiceSessions).get()).single;
+    expect(row.note, '爬格子');
+    expect(row.durationSeconds, 1800);
+    expect(row.startedAt, DateTime(2026, 10, 25, 9));
+    expect(row.endedAt, DateTime(2026, 10, 25, 9, 30));
     expect((await db.select(db.tuningPresets).get()).single.notes, 'D2,A2,D3,G3,B3,E4');
     expect((await db.select(db.settings).get()).single.value, '435');
   });

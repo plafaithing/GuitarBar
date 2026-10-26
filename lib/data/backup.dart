@@ -20,13 +20,17 @@ Future<Map<String, dynamic>> exportToJson(AppDatabase db) async {
         }
     ],
     'presets': [
-      for (final p in presets) {'name': p.name, 'notes': p.notes}
+      for (final p in presets)
+        {'name': p.name, 'notes': p.notes, 'createdAt': p.createdAt.millisecondsSinceEpoch}
     ],
     'settings': {for (final s in settings) s.key: s.value},
   };
 }
 
 Future<void> importFromJson(AppDatabase db, Map<String, dynamic> json) async {
+  if (json['version'] != 1) {
+    throw ArgumentError('不支持的备份版本: ${json['version']}');
+  }
   await db.transaction(() async {
     await db.delete(db.practiceSessions).go();
     await db.delete(db.tuningPresets).go();
@@ -39,8 +43,13 @@ Future<void> importFromJson(AppDatabase db, Map<String, dynamic> json) async {
           note: Value(s['note'] as String?)));
     }
     for (final p in (json['presets'] as List).cast<Map>()) {
-      await db.into(db.tuningPresets).insert(
-          TuningPresetsCompanion.insert(name: p['name'] as String, notes: p['notes'] as String));
+      final Value<DateTime> createdAt = p.containsKey('createdAt')
+          ? Value(DateTime.fromMillisecondsSinceEpoch(p['createdAt'] as int))
+          : const Value.absent();
+      await db.into(db.tuningPresets).insert(TuningPresetsCompanion.insert(
+          name: p['name'] as String,
+          notes: p['notes'] as String,
+          createdAt: createdAt));
     }
     for (final e in (json['settings'] as Map).entries) {
       await db.into(db.settings)
@@ -61,6 +70,10 @@ Future<void> exportToFile(AppDatabase db) async {
 }
 
 /// UI 用：从用户选择的文件导入
+///
+/// 会抛异常（JSON 解析/字段类型不匹配/备份版本不支持等）；
+/// 失败时导入事务整体回滚，数据库保持原状。
+/// 调用方（Task 17）需 try/catch 并向用户提示失败原因。
 Future<void> importFromFile(AppDatabase db) async {
   final f = await openFile(acceptedTypeGroups: const [
     XTypeGroup(label: 'JSON', extensions: ['json'])
