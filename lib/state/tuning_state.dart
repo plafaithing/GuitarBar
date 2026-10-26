@@ -21,14 +21,21 @@ class TuningState extends ChangeNotifier {
         .getSingleOrNull();
     a4 = double.tryParse(a4Row?.value ?? '') ?? 440;
     final rows = await _db.select(_db.tuningPresets).get();
-    custom = [
-      for (final r in rows)
-        TuningPreset(
+    // 逐行容错：单个脏行（非法音名）只跳过该行，不打断整个 load
+    // （a4 有 tryParse 兜底，预设行同样不能让启动后预设区永久不可用）。
+    final presets = <TuningPreset>[];
+    for (final r in rows) {
+      try {
+        presets.add(TuningPreset(
             id: 'custom-${r.id}',
             name: r.name,
             strings: r.notes.split(',').map(Note.parse).toList(),
-            group: TuningGroup.custom)
-    ];
+            group: TuningGroup.custom));
+      } on ArgumentError {
+        // 非法音名行：跳过。
+      }
+    }
+    custom = presets;
     final cur = await (_db.select(_db.settings)
             ..where((t) => t.key.equals('currentTuning')))
         .getSingleOrNull();

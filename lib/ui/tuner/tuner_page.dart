@@ -204,7 +204,8 @@ class _NeedlePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height);
-    final radius = size.width / 2 - 8;
+    // 半径取宽高较小者：center 在底边中点，取宽会导致静止指针伸出框顶。
+    final radius = math.min(size.width / 2, size.height) - 8;
     final arcPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6
@@ -225,7 +226,12 @@ class _NeedlePainter extends CustomPainter {
           center.dy - (radius - 10) * math.cos(a));
       final p2 = Offset(center.dx + radius * math.sin(a),
           center.dy - radius * math.cos(a));
-      canvas.drawLine(p1, p2, Paint()..color = GuitarBarColors.controlBorder);
+      canvas.drawLine(
+          p1,
+          p2,
+          Paint()
+            ..strokeWidth = 2
+            ..color = GuitarBarColors.controlBorder);
     }
   }
 
@@ -244,7 +250,10 @@ class _PresetSheet extends StatelessWidget {
     return SafeArea(
       child: SizedBox(
         height: 480,
-        child: ListView(
+        // 面板直接持有 state 未 watch，不包监听则增删预设后面板不刷新。
+        child: ListenableBuilder(
+          listenable: state,
+          builder: (context, _) => ListView(
           children: [
             for (final g in groups)
               if (g != TuningGroup.custom || state.custom.isNotEmpty)
@@ -267,10 +276,8 @@ class _PresetSheet extends StatelessWidget {
                         trailing: g == TuningGroup.custom
                             ? IconButton(
                                 icon: const Icon(Icons.delete_outline),
-                                onPressed: () {
-                                  state.deleteCustom(t);
-                                  Navigator.pop(context);
-                                })
+                                onPressed: () =>
+                                    _confirmDelete(context, state, t))
                             : IconButton(
                                 icon: const Icon(Icons.copy),
                                 tooltip: '复制为新预设',
@@ -287,8 +294,31 @@ class _PresetSheet extends StatelessWidget {
                 ),
           ],
         ),
+        ),
       ),
     );
+  }
+
+  /// 删除前确认；删除后预设面板保持打开（ListenableBuilder 自动刷新列表）。
+  void _confirmDelete(
+      BuildContext context, TuningState state, TuningPreset t) {
+    showDialog(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+              title: const Text('删除预设'),
+              content: Text('确定删除「${t.name}」？此操作不可撤销。'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('取消')),
+                FilledButton(
+                    onPressed: () {
+                      state.deleteCustom(t);
+                      Navigator.pop(dialogContext); // 只关确认框
+                    },
+                    child: const Text('删除')),
+              ],
+            ));
   }
 
   void _showEditor(BuildContext context, TuningState state,
@@ -300,7 +330,7 @@ class _PresetSheet extends StatelessWidget {
     final allNotes = [for (var m = 28; m <= 88; m++) Note(m)];
     showDialog(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (dialogContext) => AlertDialog(
               title: TextFormField(
                   initialValue: name,
                   onChanged: (v) => name = v,
@@ -326,12 +356,19 @@ class _PresetSheet extends StatelessWidget {
               ),
               actions: [
                 TextButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => Navigator.pop(dialogContext),
                     child: const Text('取消')),
                 FilledButton(
                     onPressed: () {
-                      state.addCustom(name, picked.map((n) => n.name).toList());
-                      Navigator.pop(context);
+                      final trimmed = name.trim();
+                      if (trimmed.isEmpty) {
+                        ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            const SnackBar(content: Text('预设名称不能为空')));
+                        return;
+                      }
+                      state.addCustom(
+                          trimmed, picked.map((n) => n.name).toList());
+                      Navigator.pop(dialogContext);
                     },
                     child: const Text('保存')),
               ],

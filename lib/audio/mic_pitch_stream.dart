@@ -58,27 +58,41 @@ class MicPitchStream {
       PitchWindower(windowSamples: 4096, hopSamples: 2048);
   StreamSubscription<Uint8List>? _rawSub;
   StreamController<double?>? _out;
+  // 同步忙标志：守卫住 hasPermission/startStream 两次 await 间的重入
+  // （Task 11 节拍器同款先例）。
+  bool _busy = false;
 
   Future<Stream<double?>> start({int sampleRate = 44100}) async {
-    if (_rawSub != null) throw StateError('已在监听中');
-    if (!await _rec.hasPermission()) {
-      throw StateError('麦克风权限被拒绝');
-    }
-    final raw = await _rec.startStream(RecordConfig(
-        encoder: AudioEncoder.pcm16bits,
-        sampleRate: sampleRate,
-        numChannels: 1));
-    _windower = PitchWindower(windowSamples: 4096, hopSamples: 2048);
-    _out = StreamController<double?>();
-    _rawSub = raw.listen((chunk) {
-      final i16 = Int16List.view(
-          chunk.buffer, chunk.offsetInBytes, chunk.lengthInBytes ~/ 2);
-      final doubles = [for (final v in i16) v / 32768.0];
-      for (final w in _windower.add(doubles)) {
-        _out!.add(windowRms(w) < rmsGate ? null : detectPitch(w, sampleRate));
+    if (_busy || _rawSub != null) throw StateError('已在监听中');
+    _busy = true;
+    try {
+      if (!await _rec.hasPermission()) {
+        throw StateError('麦克风权限被拒绝');
       }
-    }, onError: _out!.addError, onDone: _out!.close);
-    return _out!.stream;
+      final raw = await _rec.startStream(RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: sampleRate,
+          numChannels: 1));
+      _windower = PitchWindower(windowSamples: 4096, hopSamples: 2048);
+      _out = StreamController<double?>();
+      _rawSub = raw.listen((chunk) {
+        final i16 = Int16List.view(
+            chunk.buffer, chunk.offsetInBytes, chunk.lengthInBytes ~/ 2);
+        final doubles = [for (final v in i16) v / 32768.0];
+        for (final w in _windower.add(doubles)) {
+          _out!.add(windowRms(w) < rmsGate ? null : detectPitch(w, sampleRate));
+        }
+      }, onError: _out!.addError, onDone: () {
+        // 设备端自行结束（拔麦/权限收回）：清状态允许重启，否则永久变砖。
+        _rawSub = null;
+        _busy = false;
+        _out!.close();
+      });
+      return _out!.stream;
+    } catch (_) {
+      _busy = false;
+      rethrow;
+    }
   }
 
   Future<void> stop() async {
@@ -87,6 +101,7 @@ class MicPitchStream {
     await _rec.stop();
     await _out?.close();
     _out = null;
+    _busy = false;
   }
 
   /// 页面销毁时必须调用以停麦并释放录音资源
