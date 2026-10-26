@@ -137,31 +137,31 @@ class _TunerPageState extends State<TunerPage> {
               tooltip: '调弦预设',
               icon: const Icon(Icons.list)),
         ]),
-        const SizedBox(height: 12),
-        // 当前调弦横幅：「当前是什么调」的常驻显眼位，同时是预设面板的显性入口。
-        InkWell(
-          onTap: () => _showPresetSheet(context, state),
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-                border: Border.all(color: GuitarBarColors.border),
-                borderRadius: BorderRadius.circular(8)),
-            child: Row(children: [
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const SizedBox(height: 4),
+        // 当前调弦小型入口（左上，无边框坐在地色上）：预设面板的常驻入口。
+        Align(
+          alignment: Alignment.centerLeft,
+          child: InkWell(
+            onTap: () => _showPresetSheet(context, state),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              // 热区 ≥44px 高。
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 14),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Text(state.current.group.label,
                     style: const TextStyle(
                         fontSize: 12, color: GuitarBarColors.muted)),
+                const SizedBox(width: 6),
                 Text(state.current.name,
                     style: const TextStyle(
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.w600,
                         color: GuitarBarColors.ink)),
+                const SizedBox(width: 6),
+                const Icon(Icons.expand_more,
+                    size: 16, color: GuitarBarColors.muted),
               ]),
-              const Spacer(),
-              const Icon(Icons.chevron_right, color: GuitarBarColors.muted),
-            ]),
+            ),
           ),
         ),
         const Spacer(),
@@ -224,12 +224,13 @@ class _TunerPageState extends State<TunerPage> {
               if (i < 5) const SizedBox(width: 8),
             ],
             const SizedBox(width: 12),
-            // 一键回自动认弦（解锁唯一的显性出口）。
+            // 行尾模式按钮：锁定时显「手动」（点击回自动）；自动态显「自动」
+            // （muted 禁用，表示当前即是自动）。
             TextButton(
                 onPressed: _lockedString == null
                     ? null
                     : () => setState(() => _lockedString = null),
-                child: Text('自动',
+                child: Text(_lockedString == null ? '自动' : '手动',
                     style: TextStyle(
                         fontSize: 12,
                         color: _lockedString == null
@@ -429,7 +430,9 @@ class _PresetSheet extends StatelessWidget {
             for (final g in groups)
               if (g != TuningGroup.custom || state.custom.isNotEmpty)
                 ExpansionTile(
-                  initiallyExpanded: state.current.group == g,
+                  // 自定义组始终展开：面板一开就能看到「新建自定义调弦」。
+                  initiallyExpanded:
+                      g == TuningGroup.custom || state.current.group == g,
                   title: Text(g.label),
                   children: [
                     for (final t in [
@@ -457,8 +460,15 @@ class _PresetSheet extends StatelessWidget {
                       ),
                     if (g == TuningGroup.custom)
                       ListTile(
-                        leading: const Icon(Icons.add),
-                        title: const Text('新建自定义调弦'),
+                        leading: const Icon(Icons.add_circle_outline,
+                            color: GuitarBarColors.ink),
+                        title: Text('新建自定义调弦',
+                            style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                                color: GuitarBarColors.ink)),
+                        trailing: const Icon(Icons.chevron_right,
+                            color: GuitarBarColors.muted),
                         onTap: () => _showEditor(context, state),
                       ),
                   ],
