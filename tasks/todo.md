@@ -14,8 +14,7 @@
 
 - [ ] 用户审阅设计文档，确认无误
 - [x] 用 writing-plans 技能编写第一期实现计划（2026-10-25，`docs/superpowers/plans/2026-10-25-practice-toolbox.md`，18 个任务）
-- [ ] 实现第一期（进行中，分支 `feature/phase1-toolbox`）：✅Task1 脚手架（87a5c4c，双审通过）✅Task1.5 音频栈替换（e3b7d4a）✅Task2 Note（1b360ae，双审通过）✅Task3 调弦预设（271887d，双审通过）✅Task4 音阶引擎（78c09f3，双审通过）→ 🔄Task5 和弦指法（**中断待重跑**）→ 待 Task6-18
-- [ ] **下次会话第一步**：恢复 Task 5——上次实现者被会话终止，工作区留有半成品（scale/scale_test 已改未提交，chord_parser/fingering/chord_test/tool 未跟踪）。先执行 `git checkout -- lib/core/music/scale.dart test/scale_test.dart && git clean -fd` 回到 78c09f3，再按计划重派 Task 5（和弦解析与指法生成 + Task 4 遗留的 solfegeIndex 契约修正与布鲁斯精确音集断言）。
+- [ ] 实现第一期（进行中，分支 `feature/phase1-toolbox`）：✅Task1 脚手架（87a5c4c）✅Task1.5 音频栈替换（e3b7d4a）✅Task2 Note（1b360ae）✅Task3 调弦预设（271887d）✅Task4 音阶引擎（78c09f3）✅Task5 和弦指法（a3a1509+8522085 修复轮）✅Task5.5 界面品味升级（2d4a0aa+b6ebf1e 修复轮，achromatic-ledger 设计语言冻结，经 design-taste-frontend 技能）→ 🔄Task6 数据层 → 待 Task7-18。遗留小项：Task 12 顺路补 `onSurfaceVariant: muted`；开发者模式已开启。
 
 ## Review（2026-10-25 本次会话）
 
