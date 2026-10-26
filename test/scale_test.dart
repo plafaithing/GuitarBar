@@ -11,7 +11,14 @@ void main() {
 
   test('五声与布鲁斯', () {
     expect(scalePitchClasses(9, ScaleType.minorPentatonic), [9, 0, 2, 4, 7]); // Am 五声 A C D E G
-    expect(scalePitchClasses(4, ScaleType.blues).length, 6);
+    expect(scalePitchClasses(4, ScaleType.blues), [4, 7, 9, 10, 11, 2]); // E 布鲁斯 E G A Bb B D，含降五音 Bb
+  });
+
+  test('solfegeIndex 平行大调契约', () {
+    expect(solfegeIndex(0, 0), 0); // C → Do
+    expect(solfegeIndex(0, 11), 6); // B → Si
+    expect(solfegeIndex(0, 1), -1); // C# 不在 C 大调
+    expect(solfegeIndex(9, 0), -1); // A 小调语境下 C 不在平行大调 A 大调内
   });
 
   test('指板网格：Standard C 大调', () {

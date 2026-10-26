@@ -31,7 +31,10 @@ List<List<int?>> fretboardGrid(
 
 const solfege = ['Do', 'Re', 'Mi', 'Fa', 'Sol', 'La', 'Si'];
 
-/// 唱名下标（大调体系内按根音起算），不在音阶内返回 -1
+/// 唱名下标：按**平行大调音阶级数**取下标（C 大调内 Do..Si）。
+/// 注意：小调/五声/布鲁斯的特征音（不在对应平行大调内的音，如布鲁斯降五音）
+/// 返回 -1，调用方需自行降级显示；属已知设计取舍，Task 15 接线时决定是否升级为
+/// 关系大调（La 基）唱名。
 int solfegeIndex(int rootPc, int pitchClass) {
   final idx = scalePitchClasses(rootPc, ScaleType.major)
       .toList()
