@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'data/database.dart';
+import 'state/tuning_state.dart';
 import 'ui/root.dart';
 import 'ui/theme.dart';
 
@@ -16,7 +19,11 @@ Future<void> main() async {
     await windowManager.show();
     await windowManager.focus();
   });
-  runApp(const GuitarBarApp());
+  final db = AppDatabase(openConnection());
+  runApp(MultiProvider(providers: [
+    Provider<AppDatabase>.value(value: db),
+    ChangeNotifierProvider(create: (_) => TuningState(db)..load()),
+  ], child: const GuitarBarApp()));
 }
 
 class GuitarBarApp extends StatelessWidget {

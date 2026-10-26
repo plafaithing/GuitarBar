@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../data/database.dart';
 import 'theme.dart';
+import 'tuner/tuner_page.dart';
 
 class RootPage extends StatefulWidget {
   const RootPage({super.key});
@@ -11,7 +14,7 @@ class RootPage extends StatefulWidget {
 
 class _RootPageState extends State<RootPage> {
   int _tab = 0;
-  // 侧栏收起为内存态；持久化到 settings 存储在 Task 12 接入时顺路做。
+  // 侧栏收起状态持久化到 settings 表（key: sidebarCollapsed，'1'/'0'）。
   bool _collapsed = false;
   static const _titles = ['调音器', '工具箱', '个人中心'];
   // 导航字形对：未选轮廓 / 选中填充。
@@ -34,6 +37,27 @@ class _RootPageState extends State<RootPage> {
   static const Duration _fadeDuration = Duration(milliseconds: 150);
 
   @override
+  void initState() {
+    super.initState();
+    _loadCollapsed();
+  }
+
+  Future<void> _loadCollapsed() async {
+    final db = context.read<AppDatabase>();
+    final row = await (db.select(db.settings)
+            ..where((t) => t.key.equals('sidebarCollapsed')))
+        .getSingleOrNull();
+    if (mounted && row != null) setState(() => _collapsed = row.value == '1');
+  }
+
+  Future<void> _toggleCollapsed() async {
+    setState(() => _collapsed = !_collapsed);
+    final db = context.read<AppDatabase>();
+    await db.into(db.settings).insertOnConflictUpdate(SettingsCompanion.insert(
+        key: 'sidebarCollapsed', value: _collapsed ? '1' : '0'));
+  }
+
+  @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, c) {
       final wide = c.maxWidth >= 900;
@@ -47,7 +71,10 @@ class _RootPageState extends State<RootPage> {
               child: AnimatedOpacity(
                 opacity: i == _tab ? 1.0 : 0.0,
                 duration: _fadeDuration,
-                child: _Placeholder(_titles[i], _hints[i], pad: wide ? 24.0 : 16.0),
+                child: i == 0
+                    ? const TunerPage()
+                    : _Placeholder(_titles[i], _hints[i],
+                        pad: wide ? 24.0 : 16.0),
               ),
             ),
           ),
@@ -63,7 +90,7 @@ class _RootPageState extends State<RootPage> {
                   activeIndex: _tab,
                   collapsed: _collapsed,
                   onSelect: (i) => setState(() => _tab = i),
-                  onToggleCollapse: () => setState(() => _collapsed = !_collapsed),
+                  onToggleCollapse: _toggleCollapsed,
                 ),
                 Expanded(child: body),
               ])
