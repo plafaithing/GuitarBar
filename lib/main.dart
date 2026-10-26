@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'ui/root.dart';
+import 'ui/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,7 +25,7 @@ class GuitarBarApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'GuitarBar',
-        theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true),
+        theme: GuitarBarTheme.light(),
         home: const RootPage(),
       );
 }
