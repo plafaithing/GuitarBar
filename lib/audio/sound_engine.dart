@@ -10,13 +10,19 @@ class SoundEngine {
   SoundEngine._();
   static final SoundEngine I = SoundEngine._();
 
-  bool _initialized = false;
+  Future<void>? _initFuture;
   int _counter = 0;
 
-  Future<void> init() async {
-    if (_initialized) return;
-    await SoLoud.instance.init(sampleRate: 44100, channels: Channels.mono);
-    _initialized = true;
+  /// Future 备忘录：并发调用共享同一次初始化，失败后允许重试
+  Future<void> init() => _initFuture ??= _doInit();
+
+  Future<void> _doInit() async {
+    try {
+      await SoLoud.instance.init(sampleRate: 44100, channels: Channels.mono);
+    } catch (_) {
+      _initFuture = null; // 允许重试
+      rethrow;
+    }
   }
 
   /// 原始 16-bit 单声道 PCM → 加载为可播放音源
@@ -34,5 +40,6 @@ class SoundEngine {
 
   Future<void> stop(SoundHandle h) => SoLoud.instance.stop(h);
 
-  void disposeSource(AudioSource src) => SoLoud.instance.disposeSource(src);
+  Future<void> disposeSource(AudioSource src) =>
+      SoLoud.instance.disposeSource(src);
 }

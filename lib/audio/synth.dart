@@ -20,6 +20,8 @@ Int16List click(int kind, {int sampleRate = 44100}) {
 Int16List pluck(double freq, {int sampleRate = 44100, double seconds = 1.2}) {
   final n = (sampleRate * seconds).round();
   final delayLen = math.max(2, (sampleRate / freq).round());
+  // 频率归一化阻尼：任意音高恰在缓冲末端衰至 ~-60dB，消除低音尾切
+  final damp = math.pow(0.0005, 1 / (freq * seconds)).toDouble();
   final ring = Float64List(delayLen);
   final rand = math.Random(42); // 固定种子，结果可复现
   for (var i = 0; i < delayLen; i++) {
@@ -29,7 +31,7 @@ Int16List pluck(double freq, {int sampleRate = 44100, double seconds = 1.2}) {
   var idx = 0;
   for (var i = 0; i < n; i++) {
     final cur = ring[idx];
-    ring[idx] = (cur + ring[(idx + 1) % delayLen]) * 0.5 * 0.996;
+    ring[idx] = (cur + ring[(idx + 1) % delayLen]) * 0.5 * damp;
     out[i] = (cur * 32767 * 0.8).round().clamp(-32768, 32767).toInt();
     idx = (idx + 1) % delayLen;
   }
