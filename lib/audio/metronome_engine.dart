@@ -69,37 +69,44 @@ class MetronomeEngine {
   AudioSource? _track;
   SoundHandle? _handle;
   Timer? _uiTimer;
+  bool _busy = false;
 
   Future<void> start() async {
-    const sr = 44100;
-    final barSamples = (cfg.beatSeconds * cfg.beatsPerBar * sr).round();
-    final bars = (sr * 60) ~/ barSamples; // 约 60 秒，取整小节数保证无缝循环
-    final totalSamples = bars * barSamples;
-    final tickSamples = cfg.tickSeconds * sr;
-    final ticks = scheduleTicks(
-        cfg: cfg,
-        startSample: 0,
-        tickCount: bars * cfg.beatsPerBar * cfg.subdivision,
-        sampleRate: sr);
-    final pcm = Int16List(totalSamples);
-    for (final t in ticks) {
-      final c = click(t.kind, sampleRate: sr);
-      for (var i = 0; i < c.length; i++) {
-        final idx = t.sample + i;
-        if (idx >= totalSamples) break;
-        pcm[idx] = (pcm[idx] + c[i]).clamp(-32768, 32767).toInt();
+    if (_busy) return;
+    _busy = true;
+    try {
+      const sr = 44100;
+      final barSamples = (cfg.beatSeconds * cfg.beatsPerBar * sr).round();
+      final bars = (sr * 60) ~/ barSamples; // 约 60 秒，取整小节数保证无缝循环
+      final totalSamples = bars * barSamples;
+      final tickSamples = cfg.tickSeconds * sr;
+      final ticks = scheduleTicks(
+          cfg: cfg,
+          startSample: 0,
+          tickCount: bars * cfg.beatsPerBar * cfg.subdivision,
+          sampleRate: sr);
+      final pcm = Int16List(totalSamples);
+      for (final t in ticks) {
+        final c = click(t.kind, sampleRate: sr);
+        for (var i = 0; i < c.length; i++) {
+          final idx = t.sample + i;
+          if (idx >= totalSamples) break;
+          pcm[idx] = (pcm[idx] + c[i]).clamp(-32768, 32767).toInt();
+        }
       }
+      _track = await _sound.loadPcm(pcm);
+      _handle = _sound.play(_track!, loop: true);
+      currentTick.value = -1;
+      running = true;
+      _uiTimer = Timer.periodic(const Duration(milliseconds: 30), (_) {
+        if (!running || _handle == null) return;
+        final pos = _sound.position(_handle!);
+        currentTick.value =
+            (pos.inMicroseconds / 1e6 * sr / tickSamples).floor();
+      });
+    } finally {
+      _busy = false;
     }
-    _track = await _sound.loadPcm(pcm);
-    _handle = _sound.play(_track!, loop: true);
-    currentTick.value = -1;
-    running = true;
-    _uiTimer = Timer.periodic(const Duration(milliseconds: 30), (_) {
-      if (!running || _handle == null) return;
-      final pos = _sound.position(_handle!);
-      currentTick.value =
-          (pos.inMicroseconds / 1e6 * sr / tickSamples).floor();
-    });
   }
 
   Future<void> stop() async {
