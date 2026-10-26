@@ -133,9 +133,11 @@ class _TunerPageState extends State<TunerPage> {
                       color: GuitarBarColors.muted,
                       fontFeatures: const [FontFeature.tabularFigures()]))),
           IconButton(
-              onPressed: () => _showPresetSheet(context, state),
-              tooltip: '调弦预设',
-              icon: const Icon(Icons.list)),
+              // 右上 = 一键新建自定义（编辑器）；左上入口 = 选/管预设。
+              onPressed: () => _showEditor(context, state),
+              tooltip: '新建自定义调弦',
+              icon: const Icon(Icons.add_circle_outline,
+                  color: GuitarBarColors.ink)),
         ]),
         const SizedBox(height: 4),
         // 当前调弦小型入口（左上，无边框坐在地色上）：预设面板的常驻入口。
@@ -348,12 +350,17 @@ class _TunerPageState extends State<TunerPage> {
   void _showPresetSheet(BuildContext context, TuningState state) {
     showDialog(
         context: context,
-        builder: (_) => AlertDialog(
+        builder: (dialogContext) => AlertDialog(
               title: const Text('调弦预设'),
               content: ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 480),
                 child: SizedBox(width: 360, child: _PresetSheet(state: state)),
               ),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('关闭')),
+              ],
             ));
   }
 }
@@ -441,9 +448,10 @@ class _PresetSheet extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 五组恒显示（含空的自定义组）：「新建自定义调弦」入口就住在
+            // 自定义组里，组整体隐藏会让没建过预设的用户永远找不到它。
             for (final g in groups)
-              if (g != TuningGroup.custom || state.custom.isNotEmpty)
-                ExpansionTile(
+              ExpansionTile(
                   // 自定义组始终展开：面板一开就能看到「新建自定义调弦」。
                   initiallyExpanded:
                       g == TuningGroup.custom || state.current.group == g,
@@ -530,58 +538,60 @@ class _PresetSheet extends StatelessWidget {
               ],
             ));
   }
+}
 
-  void _showEditor(BuildContext context, TuningState state,
-      {TuningPreset? base}) {
-    var name = base != null ? '${base.name} 副本' : '新调弦';
-    var picked = List<Note>.from(base?.strings ??
-        [Note.parse('E2'), Note.parse('A2'), Note.parse('D3'),
-         Note.parse('G3'), Note.parse('B3'), Note.parse('E4')]);
-    final allNotes = [for (var m = 28; m <= 88; m++) Note(m)];
-    showDialog(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-              title: TextFormField(
-                  initialValue: name,
-                  onChanged: (v) => name = v,
-                  decoration: const InputDecoration(labelText: '预设名称')),
-              content: SizedBox(
-                width: 320,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (var i = 0; i < 6; i++)
-                      DropdownButtonFormField<Note>(
-                        // Flutter 3.47：value 已弃用，改用 initialValue。
-                        initialValue: picked[i],
-                        decoration: InputDecoration(labelText: '${6 - i} 弦'),
-                        items: [
-                          for (final n in allNotes)
-                            DropdownMenuItem(value: n, child: Text(n.name))
-                        ],
-                        onChanged: (n) => picked[i] = n!,
-                      ),
-                  ],
-                ),
+/// 自定义调弦编辑器（顶层函数：预设对话框与顶部「新建自定义」入口共用）。
+/// 命名 + 六根弦逐弦下拉选音 + 保存。
+void _showEditor(BuildContext context, TuningState state,
+    {TuningPreset? base}) {
+  var name = base != null ? '${base.name} 副本' : '新调弦';
+  var picked = List<Note>.from(base?.strings ??
+      [Note.parse('E2'), Note.parse('A2'), Note.parse('D3'),
+       Note.parse('G3'), Note.parse('B3'), Note.parse('E4')]);
+  final allNotes = [for (var m = 28; m <= 88; m++) Note(m)];
+  showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+            title: TextFormField(
+                initialValue: name,
+                onChanged: (v) => name = v,
+                decoration: const InputDecoration(labelText: '预设名称')),
+            content: SizedBox(
+              width: 320,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < 6; i++)
+                    DropdownButtonFormField<Note>(
+                      // Flutter 3.47：value 已弃用，改用 initialValue。
+                      initialValue: picked[i],
+                      decoration: InputDecoration(labelText: '${6 - i} 弦'),
+                      items: [
+                        for (final n in allNotes)
+                          DropdownMenuItem(value: n, child: Text(n.name))
+                      ],
+                      onChanged: (n) => picked[i] = n!,
+                    ),
+                ],
               ),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    child: const Text('取消')),
-                FilledButton(
-                    onPressed: () {
-                      final trimmed = name.trim();
-                      if (trimmed.isEmpty) {
-                        ScaffoldMessenger.of(dialogContext).showSnackBar(
-                            const SnackBar(content: Text('预设名称不能为空')));
-                        return;
-                      }
-                      state.addCustom(
-                          trimmed, picked.map((n) => n.name).toList());
-                      Navigator.pop(dialogContext);
-                    },
-                    child: const Text('保存')),
-              ],
-            ));
-  }
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('取消')),
+              FilledButton(
+                  onPressed: () {
+                    final trimmed = name.trim();
+                    if (trimmed.isEmpty) {
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                          const SnackBar(content: Text('预设名称不能为空')));
+                      return;
+                    }
+                    state.addCustom(
+                        trimmed, picked.map((n) => n.name).toList());
+                    Navigator.pop(dialogContext);
+                  },
+                  child: const Text('保存')),
+            ],
+          ));
 }
