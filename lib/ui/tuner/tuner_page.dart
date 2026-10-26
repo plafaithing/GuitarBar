@@ -355,7 +355,7 @@ class _TunerPageState extends State<TunerPage> {
           // chunks=0 且 on:true → 设备/权限在系统层被挡；rms 长期 <0.005 →
           // 默认设备是虚拟声卡；rms 正常但音高 null → 检测 bug。
           Text(
-              'chunks:${_mic.chunkCount}  rms:${_mic.lastRms.toStringAsFixed(4)}  dev:${_mic.currentDeviceName ?? '-'}  on:$_micOn',
+              'chunks:${_mic.chunkCount}  rms:${_mic.lastRms.toStringAsFixed(6)}  dev:${_mic.currentDeviceName ?? '-'}  on:$_micOn',
               style: const TextStyle(
                   fontSize: 12,
                   color: GuitarBarColors.muted,

@@ -35,7 +35,7 @@ class PitchWindower {
   }
 }
 
-/// 窗口 RMS（有效值），供静音门限使用；[rmsGate] 默认 0.005 ≈ -46 dBFS
+/// 窗口 RMS（有效值），供静音门限使用；[rmsGate] 默认 0.0005 ≈ -66 dBFS
 double windowRms(List<double> w) {
   if (w.isEmpty) return 0;
   var sum = 0.0;
@@ -45,8 +45,14 @@ double windowRms(List<double> w) {
   return math.sqrt(sum / w.length);
 }
 
-/// 低于此 RMS 的窗口视为静音，产出 null（挡住 50Hz 工频嗡声等 idle 噪底）
-const rmsGate = 0.005;
+/// 低于此 RMS 的窗口视为静音，产出 null（挡住 50Hz 工频嗡声等 idle 噪底）。
+/// 0.0005 ≈ -66 dBFS：只挡真正的数字静音/设备底噪。SST 阵列关闭音频增强后
+/// 实际电平低（-30~-46 dBFS 信号、窗口 RMS 可低至 0.000x），会低于旧门限
+/// 0.005（-46 dBFS）而被整体吞掉，故下调（用户实测反馈权威值 -30dBFS 峰值）。
+///
+/// 注意：轮换的「静音窗」计数用的是 rms == 0（严格数字静音），与本门限解耦——
+/// 若跟随门限，安静环境的非零底噪会误触发格式轮换。
+const rmsGate = 0.0005;
 
 /// 订阅麦克风（record 包，16-bit 单声道 PCM），产出最新音高（Hz 或 null）
 ///
