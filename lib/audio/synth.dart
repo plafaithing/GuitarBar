@@ -16,22 +16,38 @@ Int16List click(int kind, {int sampleRate = 44100}) {
   return out;
 }
 
-/// Karplus-Strong 拨弦合成
+/// 改进版 Karplus-Strong 拨弦合成：软激励 + 拾音位置梳状滤波
 Int16List pluck(double freq, {int sampleRate = 44100, double seconds = 1.2}) {
   final n = (sampleRate * seconds).round();
   final delayLen = math.max(2, (sampleRate / freq).round());
-  // 频率归一化阻尼：任意音高恰在缓冲末端衰至 ~-60dB，消除低音尾切
-  final damp = math.pow(0.0005, 1 / (freq * seconds)).toDouble();
-  final ring = Float64List(delayLen);
+  final burst = Float64List(delayLen);
   final rand = math.Random(42); // 固定种子，结果可复现
   for (var i = 0; i < delayLen; i++) {
-    ring[i] = rand.nextDouble() * 2 - 1;
+    burst[i] = rand.nextDouble() * 2 - 1;
+  }
+  // 1. 低通激励：去砂砾攻击，模拟琴拨软接触
+  for (var pass = 0; pass < 3; pass++) {
+    for (var i = 1; i < delayLen; i++) {
+      burst[i] = (burst[i] + burst[i - 1]) * 0.5;
+    }
+  }
+  // 2. 拨弦位置梳状滤波：≈1/8 弦长拨弦点的频谱凹陷
+  final pickOffset = math.max(1, (delayLen / 8).round());
+  for (var i = delayLen - 1; i >= pickOffset; i--) {
+    burst[i] -= burst[i - pickOffset];
+  }
+  // 3. 3ms 淡入：消起始 tick
+  final fadeLen = math.min(delayLen, (sampleRate * 0.003).round());
+  for (var i = 0; i < fadeLen; i++) {
+    burst[i] *= i / fadeLen;
   }
   final out = Int16List(n);
   var idx = 0;
+  // 频率归一化阻尼：任意音高恰在缓冲末端衰至 ~-60dB，消除低音尾切
+  final damp = math.pow(0.0005, 1 / (freq * seconds)).toDouble();
   for (var i = 0; i < n; i++) {
-    final cur = ring[idx];
-    ring[idx] = (cur + ring[(idx + 1) % delayLen]) * 0.5 * damp;
+    final cur = burst[idx];
+    burst[idx] = (cur + burst[(idx + 1) % delayLen]) * 0.5 * damp;
     out[i] = (cur * 32767 * 0.8).round().clamp(-32768, 32767).toInt();
     idx = (idx + 1) % delayLen;
   }
