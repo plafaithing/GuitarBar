@@ -102,7 +102,7 @@ class _RootPageState extends State<RootPage> {
   }
 }
 
-/// 宽屏左侧导航（Open 平面）：展开 256px / 收起 56px 图标栏，右缘 1px 发丝线；
+/// 宽屏左侧导航（Open 平面）：展开 333px / 收起 56px 图标栏，右缘 1px 发丝线；
 /// 导航块在剩余空间垂直居中，底部预留练习计时器位。
 class _SideNav extends StatelessWidget {
   const _SideNav({
@@ -126,7 +126,7 @@ class _SideNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: collapsed ? 56 : 256,
+      width: collapsed ? 56 : 333,
       decoration: const BoxDecoration(
         border: Border(right: BorderSide(color: GuitarBarColors.border)),
       ),
@@ -194,9 +194,9 @@ class _SideNav extends StatelessWidget {
   }
 }
 
-/// 导航行：32px 高、34px 节距；展开态图标 18 + 标签 16/400，收起态仅 18px 图标
-/// （Tooltip 供悬停提示、Semantics 保留名称）；选中以灰药丸 + 标签提亮 + 填充
-/// 字形标记，图标色恒为 muted（形状变化不加色彩信号）。
+/// 导航行：36px 高、38px 节距；展开态图标 20 + 标签 18/400，收起态仅 20px 图标
+/// （36×36 药丸、Tooltip 供悬停提示、Semantics 保留名称）；选中以灰药丸 + 标签
+/// 提亮 + 填充字形标记，图标色恒为 muted（形状变化不加色彩信号）。
 class _NavItem extends StatelessWidget {
   const _NavItem({
     required this.title,
@@ -229,16 +229,16 @@ class _NavItem extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           onTap: onTap,
           child: SizedBox(
-            height: 32,
+            height: 36,
             child: collapsed
-                ? Center(child: Icon(glyph, size: 18, color: GuitarBarColors.muted))
+                ? Center(child: Icon(glyph, size: 20, color: GuitarBarColors.muted))
                 : Row(children: [
                     const SizedBox(width: 8),
-                    Icon(glyph, size: 18, color: GuitarBarColors.muted),
+                    Icon(glyph, size: 20, color: GuitarBarColors.muted),
                     const SizedBox(width: 10),
                     Text(
                       title,
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: labelColor),
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: labelColor),
                     ),
                   ]),
           ),
@@ -249,7 +249,8 @@ class _NavItem extends StatelessWidget {
       child = Tooltip(message: title, child: child);
     }
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+      // 收起态内缩 10 → 36×36 药丸；展开态内缩 12。
+      padding: EdgeInsets.symmetric(horizontal: collapsed ? 10.0 : 12.0, vertical: 1),
       child: child,
     );
   }
