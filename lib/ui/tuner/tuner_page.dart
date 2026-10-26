@@ -32,6 +32,8 @@ class _TunerPageState extends State<TunerPage> {
   double? _freq;
   StreamSubscription<double?>? _sub;
   final _mic = MicPitchStream();
+  // 最近一次麦克风打开错误（诊断行常驻显示，避免 SnackBar 一闪而过）。
+  String? _lastError;
   // 输入设备（D2）：'' = 系统默认设备；选择持久化到 settings(key: micDeviceId)。
   List<InputDevice> _devices = [];
   String _selectedDeviceId = '';
@@ -77,10 +79,23 @@ class _TunerPageState extends State<TunerPage> {
           },
         );
         _micOn = true;
+        _lastError = null; // 重开成功，清掉上次的错误
       } on StateError catch (e) {
+        _lastError = e.message;
         if (mounted) {
+          setState(() {});
           ScaffoldMessenger.of(context)
               .showSnackBar(SnackBar(content: Text(e.message)));
+        }
+      } on Exception catch (e) {
+        // 打开设备失败（权限/设备被占用/虚拟声卡异常等，多为 PlatformException）：
+        // 错误存入诊断行常驻显示，不让异常静默飞走。
+        _lastError = e.toString();
+        if (mounted) {
+          setState(() {});
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('麦克风打开失败: $e'),
+              duration: const Duration(seconds: 5)));
         }
       }
     }
@@ -336,14 +351,21 @@ class _TunerPageState extends State<TunerPage> {
         ]),
         if (kDebugMode) ...[
           const SizedBox(height: 4),
-          // 诊断行（D1，临时）：chunks=0 → 设备/权限在系统层被挡；
-          // rms 长期 <0.005 → 默认设备是虚拟声卡；rms 正常但音高 null → 检测 bug。
+          // 诊断行（D1，临时）：chunks=0 且 on:false → 打开设备就失败（看 err 行）；
+          // chunks=0 且 on:true → 设备/权限在系统层被挡；rms 长期 <0.005 →
+          // 默认设备是虚拟声卡；rms 正常但音高 null → 检测 bug。
           Text(
-              'chunks:${_mic.chunkCount}  rms:${_mic.lastRms.toStringAsFixed(4)}  dev:${_mic.currentDeviceName ?? '-'}',
+              'chunks:${_mic.chunkCount}  rms:${_mic.lastRms.toStringAsFixed(4)}  dev:${_mic.currentDeviceName ?? '-'}  on:$_micOn',
               style: const TextStyle(
                   fontSize: 12,
                   color: GuitarBarColors.muted,
                   fontFeatures: [FontFeature.tabularFigures()])),
+          if (_lastError != null)
+            Text('err: $_lastError',
+                style: const TextStyle(
+                    fontSize: 12,
+                    color: GuitarBarColors.negative,
+                    fontFeatures: [FontFeature.tabularFigures()])),
         ],
       ]),
     );
