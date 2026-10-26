@@ -32,6 +32,8 @@ class GuitarBarApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'GuitarBar',
+        // debug 构建演示截图不带右上角 DEBUG 丝带（release 本就没有）。
+        debugShowCheckedModeBanner: false,
         theme: GuitarBarTheme.light(),
         home: const RootPage(),
       );

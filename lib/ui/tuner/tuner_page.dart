@@ -139,6 +139,7 @@ class _TunerPageState extends State<TunerPage> {
         ]),
         const SizedBox(height: 4),
         // 当前调弦小型入口（左上，无边框坐在地色上）：预设面板的常驻入口。
+        // 竖排两行避免组名与调弦名横向连读（如 "Drop" + "Drop D"）。
         Align(
           alignment: Alignment.centerLeft,
           child: InkWell(
@@ -146,21 +147,26 @@ class _TunerPageState extends State<TunerPage> {
             borderRadius: BorderRadius.circular(8),
             child: Padding(
               // 热区 ≥44px 高。
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 14),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Text(state.current.group.label,
-                    style: const TextStyle(
-                        fontSize: 12, color: GuitarBarColors.muted)),
-                const SizedBox(width: 6),
-                Text(state.current.name,
-                    style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: GuitarBarColors.ink)),
-                const SizedBox(width: 6),
-                const Icon(Icons.expand_more,
-                    size: 16, color: GuitarBarColors.muted),
-              ]),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(state.current.group.label,
+                        style: const TextStyle(
+                            fontSize: 12, color: GuitarBarColors.muted)),
+                    const SizedBox(height: 2),
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(state.current.name,
+                          style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: GuitarBarColors.ink)),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.expand_more,
+                          size: 16, color: GuitarBarColors.muted),
+                    ]),
+                  ]),
             ),
           ),
         ),
@@ -338,8 +344,17 @@ class _TunerPageState extends State<TunerPage> {
     ));
   }
 
+  /// 预设选择对话框：宽 360、高度随内容（超 480 才内部滚动，不再有底部空白）。
   void _showPresetSheet(BuildContext context, TuningState state) {
-    showModalBottomSheet(context: context, builder: (_) => _PresetSheet(state: state));
+    showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+              title: const Text('调弦预设'),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 480),
+                child: SizedBox(width: 360, child: _PresetSheet(state: state)),
+              ),
+            ));
   }
 }
 
@@ -419,13 +434,12 @@ class _PresetSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final groups = TuningGroup.values;
-    return SafeArea(
-      child: SizedBox(
-        height: 480,
-        // 面板直接持有 state 未 watch，不包监听则增删预设后面板不刷新。
-        child: ListenableBuilder(
-          listenable: state,
-          builder: (context, _) => ListView(
+    // 面板直接持有 state 未 watch，不包监听则增删预设后面板不刷新。
+    return ListenableBuilder(
+      listenable: state,
+      builder: (context, _) => SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             for (final g in groups)
               if (g != TuningGroup.custom || state.custom.isNotEmpty)
@@ -440,23 +454,39 @@ class _PresetSheet extends StatelessWidget {
                       if (g == TuningGroup.custom) ...state.custom
                     ])
                       ListTile(
-                        title: Text(t.name),
-                        subtitle: Text(t.strings.map((n) => n.name).join(' ')),
+                        // 当前调弦：行尾 check + 标题加粗（比 selected 底色更可感知）。
+                        title: Text(t.name,
+                            style: state.current.id == t.id
+                                ? const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: GuitarBarColors.ink)
+                                : null),
+                        subtitle:
+                            Text(t.strings.map((n) => n.name).join(' ')),
                         selected: state.current.id == t.id,
                         onTap: () {
                           state.select(t);
                           Navigator.pop(context);
                         },
-                        trailing: g == TuningGroup.custom
-                            ? IconButton(
+                        trailing:
+                            Row(mainAxisSize: MainAxisSize.min, children: [
+                          if (state.current.id == t.id)
+                            const Padding(
+                                padding: EdgeInsets.only(right: 4),
+                                child: Icon(Icons.check,
+                                    color: GuitarBarColors.ink)),
+                          if (g == TuningGroup.custom)
+                            IconButton(
                                 icon: const Icon(Icons.delete_outline),
                                 onPressed: () =>
                                     _confirmDelete(context, state, t))
-                            : IconButton(
+                          else
+                            IconButton(
                                 icon: const Icon(Icons.copy),
                                 tooltip: '复制为新预设',
                                 onPressed: () => _showEditor(context, state,
                                     base: t)),
+                        ]),
                       ),
                     if (g == TuningGroup.custom)
                       ListTile(
@@ -474,7 +504,6 @@ class _PresetSheet extends StatelessWidget {
                   ],
                 ),
           ],
-        ),
         ),
       ),
     );
