@@ -63,7 +63,8 @@ class _RootPageState extends State<RootPage> {
   }
 }
 
-/// 宽屏左侧导航（Open 平面）：置于画布底色之上，右缘 1px 发丝线。
+/// 宽屏左侧导航（Open 平面）：置于画布底色之上，右缘 1px 发丝线；
+/// 导航块在剩余空间垂直居中，底部预留练习计时器位。
 class _SideNav extends StatelessWidget {
   const _SideNav({
     required this.titles,
@@ -98,14 +99,19 @@ class _SideNav extends StatelessWidget {
               ),
             ]),
           ),
-          for (var i = 0; i < titles.length; i++)
-            _NavItem(
-              title: titles[i],
-              icon: icons[i],
-              selected: i == activeIndex,
-              onTap: () => onSelect(i),
+          Expanded(
+            child: Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                for (var i = 0; i < titles.length; i++)
+                  _NavItem(
+                    title: titles[i],
+                    icon: icons[i],
+                    selected: i == activeIndex,
+                    onTap: () => onSelect(i),
+                  ),
+              ]),
             ),
-          const Spacer(),
+          ),
           // 底部为练习计时器预留位（Task 17 填充）。
         ],
       ),
@@ -113,7 +119,8 @@ class _SideNav extends StatelessWidget {
   }
 }
 
-/// 导航行：32px 高、34px 节距；选中仅以灰药丸标记（无彩色图标、无左侧色条）。
+/// 导航行：32px 高、34px 节距；选中以灰药丸 + 标签提亮标记，图标恒为 muted
+/// （药丸独自承担选中信号）。
 class _NavItem extends StatelessWidget {
   const _NavItem({
     required this.title,
@@ -129,26 +136,30 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? GuitarBarColors.ink : GuitarBarColors.muted;
+    final labelColor = selected ? GuitarBarColors.ink : GuitarBarColors.muted;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
       child: Material(
         color: selected ? GuitarBarColors.activePill : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: onTap,
-          child: SizedBox(
-            height: 32,
-            child: Row(children: [
-              const SizedBox(width: 8),
-              Icon(icon, size: 16, color: color),
-              const SizedBox(width: 10),
-              Text(
-                title,
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: color),
-              ),
-            ]),
+        child: Semantics(
+          selected: selected,
+          button: true,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onTap,
+            child: SizedBox(
+              height: 32,
+              child: Row(children: [
+                const SizedBox(width: 8),
+                Icon(icon, size: 16, color: GuitarBarColors.muted),
+                const SizedBox(width: 10),
+                Text(
+                  title,
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: labelColor),
+                ),
+              ]),
+            ),
           ),
         ),
       ),
@@ -178,7 +189,7 @@ class _PickPainter extends CustomPainter {
       ..cubicTo(w * 0.80, 0, w, h * 0.08, w, h * 0.28) // 右上圆角
       ..cubicTo(w, h * 0.46, w * 0.82, h * 0.66, w * 0.50, h * 0.96) // 右侧收腰
       ..close();
-    canvas.drawPath(path, Paint()..color = const Color(0xFF141414));
+    canvas.drawPath(path, Paint()..color = GuitarBarColors.ink);
   }
 
   @override

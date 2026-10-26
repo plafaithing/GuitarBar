@@ -54,6 +54,12 @@ class GuitarBarColors {
 
   /// 正向药丸墨色
   static const Color pillPositiveInk = Color(0xFF04250E);
+
+  /// 负向药丸底色（偏差大）
+  static const Color pillNegativeBg = Color(0xFFFFEDEA);
+
+  /// 负向药丸墨色
+  static const Color pillNegativeInk = Color(0xFF831C1E);
 }
 
 class GuitarBarTheme {
@@ -62,6 +68,10 @@ class GuitarBarTheme {
   /// 角色字号（系统字体，Windows 上即 Segoe UI）：
   /// 页面标题 24/600 = titleLarge · 区块标题 16/500 = titleMedium ·
   /// KPI 数值 30/400 = displaySmall · 正文 14/400 = bodyMedium · 小字 12/400 = bodySmall。
+  ///
+  /// 页面任务只允许使用此处已定义的角色（titleLarge/titleMedium/displaySmall/
+  /// bodyMedium/bodySmall）；需要新角色先在 _textTheme 落角色再使用，否则回退
+  /// M3 默认（57px 巨字）且无 tabular figures。
   static const TextTheme _textTheme = TextTheme(
     displaySmall: TextStyle(
       fontSize: 30,
@@ -95,6 +105,18 @@ class GuitarBarTheme {
       surface: GuitarBarColors.surface,
       onSurface: GuitarBarColors.ink,
       error: GuitarBarColors.negative,
+      // 中性容器角色补全：未覆写的容器角色会走 M3 种子基线紫色，这里全部指向
+      // surface/border 中性色，堵住 SegmentedButton/FilledButton.tonal/ChoiceChip/
+      // Card/AlertDialog/bottomSheet/TextField 描边成片漏紫。
+      secondaryContainer: GuitarBarColors.activePill,
+      onSecondaryContainer: GuitarBarColors.ink,
+      surfaceContainerLowest: GuitarBarColors.surface,
+      surfaceContainerLow: GuitarBarColors.surface,
+      surfaceContainer: GuitarBarColors.surface,
+      surfaceContainerHigh: GuitarBarColors.surface,
+      surfaceContainerHighest: GuitarBarColors.border,
+      outline: GuitarBarColors.controlBorder,
+      outlineVariant: GuitarBarColors.border,
     );
     return ThemeData(
       useMaterial3: true,
@@ -115,10 +137,8 @@ class GuitarBarTheme {
         indicatorColor: GuitarBarColors.activePill,
         elevation: 0,
         indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        iconTheme: WidgetStateProperty.resolveWith(
-          (states) => IconThemeData(
-            color: states.contains(WidgetState.selected) ? GuitarBarColors.ink : GuitarBarColors.muted,
-          ),
+        iconTheme: const WidgetStatePropertyAll(
+          IconThemeData(color: GuitarBarColors.muted),
         ),
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => TextStyle(
