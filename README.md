@@ -1,17 +1,53 @@
-# guitarbar
+# GuitarBar 🎸
 
-A new Flutter project.
+个人自用练琴工具箱。以 **iPad 支架练琴场景**为第一设计目标，Windows 打样，将来一套代码编译到 iPad。
 
-## Getting Started
+> 核心痛点：GuitarTuna 等现有软件自定义调弦只能存 3 个——GuitarBar 的调弦预设**不限量**。
 
-This project is a starting point for a Flutter application.
+## 功能
 
-A few resources to get you started if this is your first Flutter project:
+### 第一期 · 练琴工具箱（开发中）
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+| 功能 | 状态 | 说明 |
+|---|---|---|
+| 🎸 调音器 | ✅ 可用 | 吉他模式（按调弦预设自动认弦）+ 半音调音器（识别任意音高）；圆形表盘、音分指针、到位变绿 |
+| 调弦预设 | ✅ 可用 | 内置 20 种分五组（标准/降调、Drop、Open、特殊、自定义）；自定义**不限量**：逐弦选音、命名保存、复制内置预设 |
+| A4 校准 | ✅ 可用 | 430–450 Hz 可调，持久化 |
+| 参考音 | ✅ 可用 | 点击弦块播放该弦参考音（Karplus-Strong 拨弦合成：软激励 + 拾音位置梳状滤波） |
+| 🧰 和弦库 | 开发中 | 和弦名解析 → 按当前调弦实时生成指法（算法生成，非静态库），指法图 + 琶音/扫弦试听 |
+| 🎹 指板音阶 | 开发中 | 根音 + 音阶 → 指板高亮，随调弦联动，点按发声，音名/唱名切换 |
+| 🥁 节拍器 | 引擎就绪 | 30–300 BPM、拍号、细分拍（八分/十六分/三连音）、Tap Tempo；整轨循环零漂移调度 |
+| 👤 练琴打卡 | 待开发 | 全局练习计时（切页不断）、日历热力图、连续天数、手动补卡 |
+| 数据 | ✅ 可用 | 本地 SQLite；JSON 导出/导入（Windows 数据一键迁移 iPad） |
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+### 第二期（规划）：曲谱库 + 识谱 + 自动演奏
+六线谱识别（多模态大模型 + 人工校对界面）、自动演奏复用一期音频引擎、**跟练三件套**（多音轨播放 / 变速 / AB 循环）、练习录音回放、升降调。
+
+### 第三期（规划）：3D 指法演示
+视频时间段定位 + 3D 多角度慢放指法。
+
+## 技术栈
+
+- **Flutter**（Windows 打样 → iPad）— 单代码库，lib/ 零平台 API
+- **音频**：`record`（麦克风 PCM 流）→ **YIN 音高检测**（纯 Dart，谐波鲁棒、无八度错误）→ 表盘；`flutter_soloud`（低延迟引擎）+ Karplus-Strong 拨弦合成 + 采样精确整轨循环的节拍器
+- **乐理**：纯 Dart 实现——科学记谱解析、20 组内置调弦、算法化和弦指法生成（任意生僻和弦可查、随调弦联动）、音阶引擎
+- **数据**：drift + SQLite 三表，日期文本存储显式化，JSON 备份通道
+- **UI**：achromatic-ledger 设计语言（无彩框架 + 单一数据色琥珀棕 #8a5a2b 取自木吉他材料色）——框架后退，音准数据才是主角
+
+## 开发
+
+```bash
+flutter pub get
+flutter test          # 47 项单元测试（乐理/音频算法/数据层全绿）
+flutter run -d windows
+```
+
+要求：Flutter 3.47+、Windows 开发者模式（构建符号链接）、Visual Studio C++ 桌面工具链。
+
+## 工程方法
+
+TDD（合成波形验证 YIN、教科书指法锚定搜索算法、往返断言锚定备份）；每个任务独立提交，实现 → 规格审查 → 质量审查三段流水线；设计变更全部记录在 git 历史与 `docs/`。
+
+## 许可
+
+个人自用项目。
