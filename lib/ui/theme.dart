@@ -137,8 +137,10 @@ class GuitarBarTheme {
         indicatorColor: GuitarBarColors.activePill,
         elevation: 0,
         indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        iconTheme: const WidgetStatePropertyAll(
-          IconThemeData(color: GuitarBarColors.muted),
+        iconTheme: WidgetStateProperty.resolveWith(
+          (states) => IconThemeData(
+            color: states.contains(WidgetState.selected) ? GuitarBarColors.ink : GuitarBarColors.muted,
+          ),
         ),
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => TextStyle(

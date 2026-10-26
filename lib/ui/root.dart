@@ -14,28 +14,44 @@ class _RootPageState extends State<RootPage> {
   // 侧栏收起为内存态；持久化到 settings 存储在 Task 12 接入时顺路做。
   bool _collapsed = false;
   static const _titles = ['调音器', '工具箱', '个人中心'];
+  // 导航字形对：未选轮廓 / 选中填充。
   static const _icons = [
-    Icons.tune_outlined,
+    Icons.music_note_outlined,
     Icons.home_repair_service_outlined,
     Icons.person_outline,
+  ];
+  static const _activeIcons = [
+    Icons.music_note,
+    Icons.home_repair_service,
+    Icons.person,
   ];
   static const _hints = [
     '拨响一根弦，这里会显示音高与偏差。',
     '音阶、和弦与指法工具会在这里出现。',
     '练习记录与偏好设置将在这里出现。',
   ];
+  // 切页淡入：动效只做反馈（app 屏规则 150-200ms）。
+  static const Duration _fadeDuration = Duration(milliseconds: 150);
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(builder: (context, c) {
       final wide = c.maxWidth >= 900;
-      final body = IndexedStack(
-        index: _tab,
-        children: [
-          for (var i = 0; i < _titles.length; i++)
-            _Placeholder(_titles[i], _hints[i], pad: wide ? 24.0 : 16.0),
-        ],
-      );
+      // 三页常驻保活（等价 IndexedStack）：非当前页 IgnorePointer + 透明，
+      // 切页时新页 150ms 淡入；宽窄两种模式共用这一份 body。
+      final body = Stack(children: [
+        for (var i = 0; i < _titles.length; i++)
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: i != _tab,
+              child: AnimatedOpacity(
+                opacity: i == _tab ? 1.0 : 0.0,
+                duration: _fadeDuration,
+                child: _Placeholder(_titles[i], _hints[i], pad: wide ? 24.0 : 16.0),
+              ),
+            ),
+          ),
+      ]);
       return Scaffold(
         appBar: wide ? null : AppBar(title: Text(_titles[_tab])),
         body: wide
@@ -43,6 +59,7 @@ class _RootPageState extends State<RootPage> {
                 _SideNav(
                   titles: _titles,
                   icons: _icons,
+                  activeIcons: _activeIcons,
                   activeIndex: _tab,
                   collapsed: _collapsed,
                   onSelect: (i) => setState(() => _tab = i),
@@ -62,9 +79,21 @@ class _RootPageState extends State<RootPage> {
                   selectedIndex: _tab,
                   onDestinationSelected: (i) => setState(() => _tab = i),
                   destinations: const [
-                    NavigationDestination(icon: Icon(Icons.tune_outlined), label: '调音器'),
-                    NavigationDestination(icon: Icon(Icons.home_repair_service_outlined), label: '工具箱'),
-                    NavigationDestination(icon: Icon(Icons.person_outline), label: '个人中心'),
+                    NavigationDestination(
+                      icon: Icon(Icons.music_note_outlined),
+                      selectedIcon: Icon(Icons.music_note),
+                      label: '调音器',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.home_repair_service_outlined),
+                      selectedIcon: Icon(Icons.home_repair_service),
+                      label: '工具箱',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.person_outline),
+                      selectedIcon: Icon(Icons.person),
+                      label: '个人中心',
+                    ),
                   ],
                 ),
               ),
@@ -79,6 +108,7 @@ class _SideNav extends StatelessWidget {
   const _SideNav({
     required this.titles,
     required this.icons,
+    required this.activeIcons,
     required this.activeIndex,
     required this.collapsed,
     required this.onSelect,
@@ -87,6 +117,7 @@ class _SideNav extends StatelessWidget {
 
   final List<String> titles;
   final List<IconData> icons;
+  final List<IconData> activeIcons;
   final int activeIndex;
   final bool collapsed;
   final ValueChanged<int> onSelect;
@@ -110,6 +141,7 @@ class _SideNav extends StatelessWidget {
                   _NavItem(
                     title: titles[i],
                     icon: icons[i],
+                    activeIcon: activeIcons[i],
                     selected: i == activeIndex,
                     collapsed: collapsed,
                     onTap: () => onSelect(i),
@@ -163,12 +195,13 @@ class _SideNav extends StatelessWidget {
 }
 
 /// 导航行：32px 高、34px 节距；展开态图标 18 + 标签 16/400，收起态仅 18px 图标
-/// （Tooltip 供悬停提示、Semantics 保留名称）；选中以灰药丸 + 标签提亮标记，
-/// 图标恒为 muted（药丸独自承担选中信号）。
+/// （Tooltip 供悬停提示、Semantics 保留名称）；选中以灰药丸 + 标签提亮 + 填充
+/// 字形标记，图标色恒为 muted（形状变化不加色彩信号）。
 class _NavItem extends StatelessWidget {
   const _NavItem({
     required this.title,
     required this.icon,
+    required this.activeIcon,
     required this.selected,
     required this.collapsed,
     required this.onTap,
@@ -176,6 +209,7 @@ class _NavItem extends StatelessWidget {
 
   final String title;
   final IconData icon;
+  final IconData activeIcon;
   final bool selected;
   final bool collapsed;
   final VoidCallback onTap;
@@ -183,6 +217,7 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final labelColor = selected ? GuitarBarColors.ink : GuitarBarColors.muted;
+    final glyph = selected ? activeIcon : icon;
     Widget child = Material(
       color: selected ? GuitarBarColors.activePill : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
@@ -196,10 +231,10 @@ class _NavItem extends StatelessWidget {
           child: SizedBox(
             height: 32,
             child: collapsed
-                ? Center(child: Icon(icon, size: 18, color: GuitarBarColors.muted))
+                ? Center(child: Icon(glyph, size: 18, color: GuitarBarColors.muted))
                 : Row(children: [
                     const SizedBox(width: 8),
-                    Icon(icon, size: 18, color: GuitarBarColors.muted),
+                    Icon(glyph, size: 18, color: GuitarBarColors.muted),
                     const SizedBox(width: 10),
                     Text(
                       title,
