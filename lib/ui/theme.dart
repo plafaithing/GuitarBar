@@ -117,6 +117,9 @@ class GuitarBarTheme {
       surfaceContainerHighest: GuitarBarColors.border,
       outline: GuitarBarColors.controlBorder,
       outlineVariant: GuitarBarColors.border,
+      // IconButton/ExpansionTile/DatePicker 等前景走 onSurfaceVariant，
+      // 不补则回退 M3 基线微紫灰。
+      onSurfaceVariant: GuitarBarColors.muted,
     );
     return ThemeData(
       useMaterial3: true,
