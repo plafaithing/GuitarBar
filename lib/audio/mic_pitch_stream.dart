@@ -62,25 +62,47 @@ class MicPitchStream {
   // （Task 11 节拍器同款先例）。
   bool _busy = false;
 
-  Future<Stream<double?>> start({int sampleRate = 44100}) async {
+  /// 诊断字段（调音页 debug 行用）：本次监听会话收到的 chunk 计数。
+  int chunkCount = 0;
+
+  /// 最近一个窗口的 RMS 实时值。
+  double lastRms = 0;
+
+  /// 当前录音设备显示名（调用方在 start 前赋值）。
+  String? currentDeviceName;
+
+  /// 系统输入设备列表（供调音页设备选择器）。
+  Future<List<InputDevice>> listDevices() => _rec.listInputDevices();
+
+  Future<Stream<double?>> start(
+      {int sampleRate = 44100, String? deviceId}) async {
     if (_busy || _rawSub != null) throw StateError('已在监听中');
     _busy = true;
     try {
       if (!await _rec.hasPermission()) {
         throw StateError('麦克风权限被拒绝');
       }
+      chunkCount = 0;
+      lastRms = 0;
       final raw = await _rec.startStream(RecordConfig(
           encoder: AudioEncoder.pcm16bits,
           sampleRate: sampleRate,
-          numChannels: 1));
+          numChannels: 1,
+          // 平台端只消费 device.id；label 为必填字段，UI 不读它，传空串占位。
+          device: deviceId == null
+              ? null
+              : InputDevice(id: deviceId, label: '')));
       _windower = PitchWindower(windowSamples: 4096, hopSamples: 2048);
       _out = StreamController<double?>();
       _rawSub = raw.listen((chunk) {
+        chunkCount++;
         final i16 = Int16List.view(
             chunk.buffer, chunk.offsetInBytes, chunk.lengthInBytes ~/ 2);
         final doubles = [for (final v in i16) v / 32768.0];
         for (final w in _windower.add(doubles)) {
-          _out!.add(windowRms(w) < rmsGate ? null : detectPitch(w, sampleRate));
+          final rms = windowRms(w);
+          lastRms = rms;
+          _out!.add(rms < rmsGate ? null : detectPitch(w, sampleRate));
         }
       }, onError: _out!.addError, onDone: () {
         // 设备端自行结束（拔麦/权限收回）：清状态允许重启，否则永久变砖。

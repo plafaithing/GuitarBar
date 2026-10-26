@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 
 import '../../audio/mic_pitch_stream.dart';
 import '../../audio/sound_engine.dart';
@@ -10,6 +12,8 @@ import '../../audio/synth.dart';
 import '../../core/music/builtin_tunings.dart';
 import '../../core/music/note.dart';
 import '../../core/music/tuning.dart';
+// drift 生成的数据类 TuningPreset 与 core/music/tuning.dart 重名，hide 之。
+import '../../data/database.dart' hide TuningPreset;
 import '../../state/tuning_state.dart';
 import '../../ui/theme.dart';
 
@@ -28,6 +32,15 @@ class _TunerPageState extends State<TunerPage> {
   double? _freq;
   StreamSubscription<double?>? _sub;
   final _mic = MicPitchStream();
+  // 输入设备（D2）：'' = 系统默认设备；选择持久化到 settings(key: micDeviceId)。
+  List<InputDevice> _devices = [];
+  String _selectedDeviceId = '';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_initDevices());
+  }
 
   @override
   void dispose() {
@@ -45,7 +58,9 @@ class _TunerPageState extends State<TunerPage> {
       _freq = null;
     } else {
       try {
-        final stream = await _mic.start();
+        _mic.currentDeviceName = _deviceDisplayName(_selectedDeviceId);
+        final stream = await _mic.start(
+            deviceId: _selectedDeviceId.isEmpty ? null : _selectedDeviceId);
         _sub = stream.listen(
           (f) {
             if (mounted) setState(() => _freq = f);
@@ -69,7 +84,49 @@ class _TunerPageState extends State<TunerPage> {
         }
       }
     }
+    if (mounted) setState(() {});
+  }
+
+  /// 读取已保存设备 + 系统输入设备列表；保存的设备已消失则回系统默认。
+  Future<void> _initDevices() async {
+    final db = context.read<AppDatabase>();
+    final row = await (db.select(db.settings)
+            ..where((t) => t.key.equals('micDeviceId')))
+        .getSingleOrNull();
+    final saved = row?.value ?? '';
+    final devices = await _mic.listDevices();
+    if (!mounted) return;
+    final exists = saved.isEmpty || devices.any((d) => d.id == saved);
+    setState(() {
+      _devices = devices;
+      _selectedDeviceId = exists ? saved : '';
+    });
+  }
+
+  /// 切换输入设备：立即持久化；若在监听则先停再用新设备重开。
+  Future<void> _onDeviceChanged(String? deviceId) async {
+    if (deviceId == null) return;
+    setState(() => _selectedDeviceId = deviceId);
+    final db = context.read<AppDatabase>();
+    await db.into(db.settings).insertOnConflictUpdate(
+        SettingsCompanion.insert(key: 'micDeviceId', value: deviceId));
+    if (!mounted || !_micOn) return;
+    await _sub?.cancel();
+    _sub = null;
+    await _mic.stop();
+    if (!mounted) return;
+    _micOn = false;
+    _freq = null;
     setState(() {});
+    await _toggleMic();
+  }
+
+  String _deviceDisplayName(String id) {
+    if (id.isEmpty) return '系统默认设备';
+    for (final d in _devices) {
+      if (d.id == id) return d.label;
+    }
+    return '未知设备';
   }
 
   (int, int)? _nearestString() {
@@ -251,6 +308,43 @@ class _TunerPageState extends State<TunerPage> {
               onPressed: _toggleMic,
               child: Text(_micOn ? '停止' : '开始调音')),
         ),
+        const SizedBox(height: 12),
+        // 输入设备选择（长期保留）：默认设备是虚拟声卡时可一键切到真麦。
+        Row(children: [
+          const Icon(Icons.mic_none, size: 16, color: GuitarBarColors.muted),
+          const SizedBox(width: 8),
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              initialValue: _selectedDeviceId,
+              isDense: true,
+              decoration: const InputDecoration(
+                labelText: '输入设备',
+                border: OutlineInputBorder(),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              ),
+              items: [
+                const DropdownMenuItem(value: '', child: Text('系统默认设备')),
+                for (final d in _devices)
+                  DropdownMenuItem(
+                      value: d.id,
+                      child: Text(d.label, overflow: TextOverflow.ellipsis)),
+              ],
+              onChanged: (id) => unawaited(_onDeviceChanged(id)),
+            ),
+          ),
+        ]),
+        if (kDebugMode) ...[
+          const SizedBox(height: 4),
+          // 诊断行（D1，临时）：chunks=0 → 设备/权限在系统层被挡；
+          // rms 长期 <0.005 → 默认设备是虚拟声卡；rms 正常但音高 null → 检测 bug。
+          Text(
+              'chunks:${_mic.chunkCount}  rms:${_mic.lastRms.toStringAsFixed(4)}  dev:${_mic.currentDeviceName ?? '-'}',
+              style: const TextStyle(
+                  fontSize: 12,
+                  color: GuitarBarColors.muted,
+                  fontFeatures: [FontFeature.tabularFigures()])),
+        ],
       ]),
     );
   }
