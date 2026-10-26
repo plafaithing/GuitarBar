@@ -53,14 +53,20 @@ class _RootPageState extends State<RootPage> {
             : body,
         bottomNavigationBar: wide
             ? null
-            : NavigationBar(
-                selectedIndex: _tab,
-                onDestinationSelected: (i) => setState(() => _tab = i),
-                destinations: const [
-                  NavigationDestination(icon: Icon(Icons.tune_outlined), label: '调音器'),
-                  NavigationDestination(icon: Icon(Icons.home_repair_service_outlined), label: '工具箱'),
-                  NavigationDestination(icon: Icon(Icons.person_outline), label: '个人中心'),
-                ],
+            : Container(
+                // 与宽屏侧栏同款分隔语言：地色底栏 + 顶部 1px 发丝线。
+                decoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: GuitarBarColors.border)),
+                ),
+                child: NavigationBar(
+                  selectedIndex: _tab,
+                  onDestinationSelected: (i) => setState(() => _tab = i),
+                  destinations: const [
+                    NavigationDestination(icon: Icon(Icons.tune_outlined), label: '调音器'),
+                    NavigationDestination(icon: Icon(Icons.home_repair_service_outlined), label: '工具箱'),
+                    NavigationDestination(icon: Icon(Icons.person_outline), label: '个人中心'),
+                  ],
+                ),
               ),
       );
     });

@@ -133,7 +133,7 @@ class GuitarBarTheme {
         titleTextStyle: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: GuitarBarColors.ink),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: GuitarBarColors.surface,
+        backgroundColor: GuitarBarColors.ground,
         indicatorColor: GuitarBarColors.activePill,
         elevation: 0,
         indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
