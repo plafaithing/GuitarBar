@@ -360,6 +360,14 @@ class _TunerPageState extends State<TunerPage> {
                   fontSize: 12,
                   color: GuitarBarColors.muted,
                   fontFeatures: [FontFeature.tabularFigures()])),
+          // 格式自适应轮换（D3）：fmt 当前格式 / 静音窗 连续 rms==0 窗数 /
+          // hex 最近 chunk 前 16 字节（全 00 = 真数字静音；非零乱值 = 格式误读）。
+          Text(
+              'fmt:${_mic.currentFormatText}  静音窗:${_mic.zeroWindows}  hex:${_mic.lastChunkHex}',
+              style: const TextStyle(
+                  fontSize: 12,
+                  color: GuitarBarColors.muted,
+                  fontFeatures: [FontFeature.tabularFigures()])),
           if (_lastError != null)
             Text('err: $_lastError',
                 style: const TextStyle(

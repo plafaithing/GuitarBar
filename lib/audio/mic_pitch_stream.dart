@@ -71,49 +71,123 @@ class MicPitchStream {
   /// 当前录音设备显示名（调用方在 start 前赋值）。
   String? currentDeviceName;
 
+  /// 采集格式候选轮换表 (sampleRate, channels)：SST 麦克风阵列等设备原生
+  /// 48kHz/多声道，某些组合 MediaFoundation 打开成功但只产数字静音
+  /// （chunks 流动而 rms 恒 0），按表轮换直到 rms>0 并锁定。
+  static const _formatCandidates = [
+    (44100, 1),
+    (48000, 1),
+    (48000, 2),
+    (16000, 1),
+    (96000, 1),
+    (44100, 2),
+  ];
+  int _formatIndex = 0;
+  bool _formatLocked = false;
+  bool _rotating = false;
+  int _zeroWindows = 0;
+  String? _deviceId;
+
+  /// 当前采集格式文本（诊断行显示）。
+  String currentFormatText = '';
+
+  /// 连续全静音（rms==0）窗口计数（诊断行显示）。
+  int get zeroWindows => _zeroWindows;
+
+  /// 最近一个 chunk 的前 16 字节 hex：全 00 = 真数字静音；非零乱值 = 格式误读。
+  String lastChunkHex = '';
+
   /// 系统输入设备列表（供调音页设备选择器）。
   Future<List<InputDevice>> listDevices() => _rec.listInputDevices();
 
-  Future<Stream<double?>> start(
-      {int sampleRate = 44100, String? deviceId}) async {
+  Future<Stream<double?>> start({String? deviceId}) async {
     if (_busy || _rawSub != null) throw StateError('已在监听中');
     _busy = true;
+    _deviceId = deviceId;
     try {
       if (!await _rec.hasPermission()) {
         throw StateError('麦克风权限被拒绝');
       }
-      chunkCount = 0;
-      lastRms = 0;
-      final raw = await _rec.startStream(RecordConfig(
-          encoder: AudioEncoder.pcm16bits,
-          sampleRate: sampleRate,
-          numChannels: 1,
-          // 平台端只消费 device.id；label 为必填字段，UI 不读它，传空串占位。
-          device: deviceId == null
-              ? null
-              : InputDevice(id: deviceId, label: '')));
-      _windower = PitchWindower(windowSamples: 4096, hopSamples: 2048);
-      _out = StreamController<double?>();
-      _rawSub = raw.listen((chunk) {
-        chunkCount++;
-        final i16 = Int16List.view(
-            chunk.buffer, chunk.offsetInBytes, chunk.lengthInBytes ~/ 2);
-        final doubles = [for (final v in i16) v / 32768.0];
-        for (final w in _windower.add(doubles)) {
-          final rms = windowRms(w);
-          lastRms = rms;
-          _out!.add(rms < rmsGate ? null : detectPitch(w, sampleRate));
-        }
-      }, onError: _out!.addError, onDone: () {
-        // 设备端自行结束（拔麦/权限收回）：清状态允许重启，否则永久变砖。
-        _rawSub = null;
-        _busy = false;
-        _out!.close();
-      });
+      _out ??= StreamController<double?>();
+      await _openRaw();
       return _out!.stream;
     } catch (_) {
       _busy = false;
       rethrow;
+    }
+  }
+
+  /// 按当前轮换表格式打开底层录音流并接到 [_out]（页面流跨轮换持续有效）。
+  Future<void> _openRaw() async {
+    final (rate, ch) = _formatCandidates[_formatIndex];
+    currentFormatText = '${rate}Hz/${ch}ch';
+    chunkCount = 0;
+    lastRms = 0;
+    _zeroWindows = 0;
+    lastChunkHex = '';
+    _windower = PitchWindower(windowSamples: 4096, hopSamples: 2048);
+    final raw = await _rec.startStream(RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: rate,
+        numChannels: ch,
+        // 平台端只消费 device.id；label 为必填字段，UI 不读它，传空串占位。
+        device: _deviceId == null
+            ? null
+            : InputDevice(id: _deviceId!, label: '')));
+    _rawSub = raw.listen((chunk) {
+      chunkCount++;
+      lastChunkHex = chunk
+          .take(16)
+          .map((b) => b.toRadixString(16).padLeft(2, '0'))
+          .join(' ');
+      final i16 = Int16List.view(
+          chunk.buffer, chunk.offsetInBytes, chunk.lengthInBytes ~/ 2);
+      // 多声道交错：按声道步长取首声道，能量与音高检测都按单声道。
+      final doubles = ch == 1
+          ? [for (final v in i16) v / 32768.0]
+          : [for (var i = 0; i < i16.length; i += ch) i16[i] / 32768.0];
+      for (final w in _windower.add(doubles)) {
+        final rms = windowRms(w);
+        lastRms = rms;
+        if (rms == 0) {
+          _zeroWindows++;
+        } else {
+          _zeroWindows = 0;
+          _formatLocked = true; // 有声：格式有效，停止轮换
+        }
+        _out!.add(rms < rmsGate ? null : detectPitch(w, rate));
+      }
+      if (!_formatLocked && !_rotating && _zeroWindows >= 15) {
+        // 约 0.7s 纯数字静音：当前格式无效，自动换下一格式（页面流不断）。
+        _rotating = true;
+        unawaited(_rotateFormat().whenComplete(() => _rotating = false));
+      }
+    }, onError: _out!.addError, onDone: () {
+      // 设备端自行结束（拔麦/权限收回）：清状态允许重启，否则永久变砖。
+      _rawSub = null;
+      _busy = false;
+      _out!.close();
+    });
+  }
+
+  /// 轮换到下一个采集格式；格式打不开（PlatformException）继续下一个；
+  /// 表用尽停在最后一个（有界，不死循环）。
+  Future<void> _rotateFormat() async {
+    while (true) {
+      if (_formatIndex >= _formatCandidates.length - 1) {
+        _formatLocked = true;
+        return;
+      }
+      _formatIndex++;
+      await _rawSub?.cancel();
+      _rawSub = null;
+      await _rec.stop();
+      try {
+        await _openRaw();
+        return;
+      } on Exception {
+        // 该格式打不开：继续试下一个。
+      }
     }
   }
 
@@ -124,6 +198,10 @@ class MicPitchStream {
     await _out?.close();
     _out = null;
     _busy = false;
+    _formatLocked = false;
+    _rotating = false;
+    _formatIndex = 0; // 重启/切设备后回到第一格式重新轮换
+    _zeroWindows = 0;
   }
 
   /// 页面销毁时必须调用以停麦并释放录音资源
