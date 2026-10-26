@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../audio/mic_pitch_stream.dart';
+import '../../audio/sound_engine.dart';
+import '../../audio/synth.dart';
 import '../../core/music/builtin_tunings.dart';
 import '../../core/music/note.dart';
 import '../../core/music/tuning.dart';
@@ -106,6 +108,8 @@ class _TunerPageState extends State<TunerPage> {
       }
     }
     final inTune = _freq != null && cents.abs() <= 3;
+    // 当前命中弦（锁定优先，-1 = 未命中），弦块高亮/到位点用它。
+    final hitIdx = _lockedString ?? autoIdx;
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -132,10 +136,34 @@ class _TunerPageState extends State<TunerPage> {
               onPressed: () => _showPresetSheet(context, state),
               tooltip: '调弦预设',
               icon: const Icon(Icons.list)),
-          FilledButton(
-              onPressed: _toggleMic,
-              child: Text(_micOn ? '停止' : '开始调音')),
         ]),
+        const SizedBox(height: 12),
+        // 当前调弦横幅：「当前是什么调」的常驻显眼位，同时是预设面板的显性入口。
+        InkWell(
+          onTap: () => _showPresetSheet(context, state),
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+                border: Border.all(color: GuitarBarColors.border),
+                borderRadius: BorderRadius.circular(8)),
+            child: Row(children: [
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(state.current.group.label,
+                    style: const TextStyle(
+                        fontSize: 12, color: GuitarBarColors.muted)),
+                Text(state.current.name,
+                    style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: GuitarBarColors.ink)),
+              ]),
+              const Spacer(),
+              const Icon(Icons.chevron_right, color: GuitarBarColors.muted),
+            ]),
+          ),
+        ),
         const Spacer(),
         // 音频流 ~20Hz 离散更新，150ms easeOut 插值消除指针跳变。
         TweenAnimationBuilder<double>(
@@ -143,8 +171,8 @@ class _TunerPageState extends State<TunerPage> {
           duration: const Duration(milliseconds: 150),
           curve: Curves.easeOut,
           builder: (context, animCents, _) => SizedBox(
-            width: 300,
-            height: 300,
+            width: 280,
+            height: 280,
             child: Stack(alignment: Alignment.center, children: [
               Positioned.fill(
                 child: CustomPaint(
@@ -184,21 +212,105 @@ class _TunerPageState extends State<TunerPage> {
         ),
         const Spacer(),
         if (_mode == _TunerMode.guitar)
-          Wrap(
-            spacing: 8,
-            children: [
-              for (var i = 0; i < 6; i++)
-                ChoiceChip(
-                  label: Text('${6 - i}弦 ${state.current.strings[i].name}'),
-                  selected: i == _lockedString ||
-                      (_lockedString == null && _freq != null && i == autoIdx),
-                  onSelected: (sel) =>
-                      setState(() => _lockedString = sel ? i : null),
-                ),
+          Row(children: [
+            for (var i = 0; i < 6; i++) ...[
+              Expanded(
+                  child: _stringBlock(state, i,
+                      bordered: _lockedString == null &&
+                          _freq != null &&
+                          i == autoIdx,
+                      inTuneDot:
+                          _freq != null && i == hitIdx && cents.abs() <= 3)),
+              if (i < 5) const SizedBox(width: 8),
             ],
-          ),
+            const SizedBox(width: 12),
+            // 一键回自动认弦（解锁唯一的显性出口）。
+            TextButton(
+                onPressed: _lockedString == null
+                    ? null
+                    : () => setState(() => _lockedString = null),
+                child: Text('自动',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: _lockedString == null
+                            ? GuitarBarColors.muted
+                            : GuitarBarColors.ink))),
+          ]),
+        const Spacer(),
+        Center(
+          child: FilledButton(
+              onPressed: _toggleMic,
+              child: Text(_micOn ? '停止' : '开始调音')),
+        ),
       ]),
     );
+  }
+
+  /// 弦块：锁定弦块底 activePill（与自动高亮互斥，锁定优先）；未锁定时自动
+  /// 认弦命中的弦加 dataHue 2px 边框（数据高亮）；命中弦到位（|cents| ≤ 3）
+  /// 右上角 positive 绿点。
+  Widget _stringBlock(TuningState state, int i,
+      {required bool bordered, required bool inTuneDot}) {
+    final locked = _lockedString == i;
+    return Material(
+      color: locked ? GuitarBarColors.activePill : Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: bordered && !locked
+            ? const BorderSide(color: GuitarBarColors.dataHue, width: 2)
+            : BorderSide.none,
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _onStringTap(state, i),
+        child: SizedBox(
+          height: 64,
+          child: Stack(children: [
+            Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text('${6 - i}弦',
+                    style: const TextStyle(
+                        fontSize: 12, color: GuitarBarColors.muted)),
+                const SizedBox(height: 2),
+                Text(state.current.strings[i].name,
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: GuitarBarColors.ink,
+                        fontFeatures: const [FontFeature.tabularFigures()])),
+              ]),
+            ),
+            if (inTuneDot)
+              const Positioned(
+                  top: 4,
+                  right: 4,
+                  child: SizedBox(
+                      width: 8,
+                      height: 8,
+                      child: DecoratedBox(
+                          decoration: BoxDecoration(
+                              color: GuitarBarColors.positive,
+                              shape: BoxShape.circle)))),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  /// 点弦块：播放参考音 + 锁定该弦；已锁定再点仅重复播音，解锁走「自动」按钮。
+  void _onStringTap(TuningState state, int i) {
+    unawaited(_playReference(state, i));
+    if (_lockedString != i) setState(() => _lockedString = i);
+  }
+
+  /// 播放第 i 弦参考音（pluck 0.8 满幅直接播）；播完 1.3s 后释放音源，
+  /// 连点各自短生命周期，不累积音源。
+  Future<void> _playReference(TuningState state, int i) async {
+    final src = await SoundEngine.I
+        .loadPcm(pluck(state.current.strings[i].frequency(state.a4)));
+    SoundEngine.I.play(src);
+    unawaited(Future<void>.delayed(const Duration(milliseconds: 1300))
+        .then((_) => SoundEngine.I.disposeSource(src)));
   }
 
   bool _preferFlats(Note n) =>
