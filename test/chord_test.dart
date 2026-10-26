@@ -15,6 +15,8 @@ void main() {
     expect(parseChord('F#m7b5').rootPc, 6);
     expect(parseChord('F#m7b5').intervals, [0, 3, 6, 10]);
     expect(parseChord('Dsus4').rootPc, 2);
+    expect(parseChord('Bb').rootPc, 10);
+    expect(parseChord('Cadd9').intervals, [0, 4, 7, 14]);
     expect(() => parseChord('X13'), throwsArgumentError);
   });
 
@@ -25,6 +27,10 @@ void main() {
     expect(
         v.map((x) => x.frets.map((f) => f?.toString() ?? '').join(',')),
         contains(',3,2,0,1,0'));
+    expect(v.length, lessThanOrEqualTo(6));
+    for (var i = 1; i < v.length; i++) {
+      expect(v[i].score, greaterThanOrEqualTo(v[i - 1].score));
+    }
   });
 
   test('Am 含 x02210，Am7 含 x02010，E 含 022100', () {
@@ -59,5 +65,16 @@ void main() {
       };
       expect(sounded.difference(tones), isEmpty, reason: vo.frets.join(','));
     }
+  });
+
+  test('Open G 全空弦零按指指法', () {
+    final openG = builtinTunings.firstWhere((t) => t.name == 'Open G');
+    final gen = FingeringGenerator(openG.strings);
+    final g = parseChord('G');
+    final v = gen.generate(rootPc: g.rootPc, toneClasses: chordToneClasses(g));
+    expect(v, isNotEmpty);
+    expect(v.first.frets.map((f) => f?.toString() ?? '').join(','),
+        '0,0,0,0,0,0');
+    expect(v.first.score, 0);
   });
 }
