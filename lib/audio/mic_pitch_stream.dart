@@ -52,6 +52,9 @@ const rmsGate = 0.005;
 ///
 /// 错误契约：录音流错误会原样转发（onError）、底层设备自行结束时会收到 done；
 /// 本流为单订阅流，只能 listen 一次。调用方 listen 需提供 onError/onDone。
+///
+/// 已知问题：Realtek SST 阵列在 44100/1 配置下可能挂起采集线程（进程无法
+/// 终止），故候选表 48k 优先以规避该配置。
 class MicPitchStream {
   final AudioRecorder _rec = AudioRecorder();
   PitchWindower _windower =
@@ -71,13 +74,15 @@ class MicPitchStream {
   /// 当前录音设备显示名（调用方在 start 前赋值）。
   String? currentDeviceName;
 
-  /// 采集格式候选轮换表 (sampleRate, channels)：SST 麦克风阵列等设备原生
-  /// 48kHz/多声道，某些组合 MediaFoundation 打开成功但只产数字静音
-  /// （chunks 流动而 rms 恒 0），按表轮换直到 rms>0 并锁定。
+  /// 采集格式候选轮换表 (sampleRate, channels)：
+  /// 48000/1 优先——Realtek SST 阵列原生格式；44100/1 配置已在用户机器上
+  /// 实测挂起音频驱动线程（进程僵尸化无法终止），从首试起规避该配置。
+  /// 某些组合 MediaFoundation 打开成功但只产数字静音（chunks 流动而 rms 恒 0），
+  /// 按表轮换直到 rms>0 并锁定。
   static const _formatCandidates = [
-    (44100, 1),
     (48000, 1),
     (48000, 2),
+    (44100, 1),
     (16000, 1),
     (96000, 1),
     (44100, 2),
