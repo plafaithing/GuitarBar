@@ -14,7 +14,7 @@
 
 - [ ] 用户审阅设计文档，确认无误
 - [x] 用 writing-plans 技能编写第一期实现计划（2026-10-25，`docs/superpowers/plans/2026-10-25-practice-toolbox.md`，18 个任务）
-- [ ] 实现第一期（进行中，分支 `feature/phase1-toolbox`）：✅Task1 脚手架（87a5c4c）✅Task1.5 音频栈替换（e3b7d4a）✅Task2 Note（1b360ae）✅Task3 调弦预设（271887d）✅Task4 音阶引擎（78c09f3）✅Task5 和弦指法（a3a1509+8522085 修复轮）✅Task5.5 界面品味升级（2d4a0aa+b6ebf1e 修复轮，achromatic-ledger 设计语言冻结，经 design-taste-frontend 技能）✅Task6 数据层（82747ca）✅Task7 JSON 导出导入+日期存储显式化（f91b471+2ca3718 修复轮）✅Task8 YIN 音高检测（9aca388+2428766 加固，谐波/低幅锚点，变异测试验证）→ 🔄Task5.5 壳层迭代（用户反馈：侧栏可收起+文字放大，进行中）→ 待 Task9-18。**Task 9 备忘**：① MicPitchStream 调 detectPitch 前加 RMS/幅度门限（50Hz 工频嗡声会被如实上报为 50Hz）；② 开窗可直接用 Float64List（装箱 List 慢约 22%，非阻塞）。遗留小项：Task 12 顺路补 `onSurfaceVariant: muted` + 侧栏收起状态持久化；Task 17 接线时手动验证备份对话框（try/catch 契约见 backup.dart）；开发者模式已开启。
+- [ ] 实现第一期（进行中，分支 `feature/phase1-toolbox`）：✅Task1 脚手架（87a5c4c）✅Task1.5 音频栈替换（e3b7d4a）✅Task2 Note（1b360ae）✅Task3 调弦预设（271887d）✅Task4 音阶引擎（78c09f3）✅Task5 和弦指法（a3a1509+8522085 修复轮）✅Task5.5 界面品味升级（2d4a0aa+b6ebf1e+0d4df0c 可收起侧栏+0e457f5 底栏统一，achromatic-ledger 设计语言冻结，经 design-taste-frontend 技能，用户三轮现场反馈全部落地）✅Task6 数据层（82747ca）✅Task7 JSON 导出导入+日期存储显式化（f91b471+2ca3718 修复轮）✅Task8 YIN 音高检测（9aca388+2428766 加固，谐波/低幅锚点，变异测试验证）→ 🔄Task9 麦克风管线 → 待 Task10-18。**Task 12 遗留**：补 `onSurfaceVariant: muted`；侧栏收起状态持久化到 settings；收起态 Tooltip/Semantics 双播报择一。**Task 17 遗留**：备份对话框手动验证（try/catch 契约见 backup.dart）。
 
 ## Review（2026-10-25 本次会话）
 
