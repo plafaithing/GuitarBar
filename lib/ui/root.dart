@@ -102,7 +102,7 @@ class _RootPageState extends State<RootPage> {
   }
 }
 
-/// 宽屏左侧导航（Open 平面）：展开 333px / 收起 56px 图标栏，右缘 1px 发丝线；
+/// 宽屏左侧导航（Open 平面）：展开 205px / 收起 56px 图标栏，右缘 1px 发丝线；
 /// 导航块在剩余空间垂直居中，底部预留练习计时器位。
 class _SideNav extends StatelessWidget {
   const _SideNav({
@@ -126,7 +126,7 @@ class _SideNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: collapsed ? 56 : 333,
+      width: collapsed ? 56 : 205,
       decoration: const BoxDecoration(
         border: Border(right: BorderSide(color: GuitarBarColors.border)),
       ),
@@ -194,9 +194,10 @@ class _SideNav extends StatelessWidget {
   }
 }
 
-/// 导航行：36px 高、38px 节距；展开态图标 20 + 标签 18/400，收起态仅 20px 图标
-/// （36×36 药丸、Tooltip 供悬停提示、Semantics 保留名称）；选中以灰药丸 + 标签
-/// 提亮 + 填充字形标记，图标色恒为 muted（形状变化不加色彩信号）。
+/// 导航行：展开态 44px 高、46px 节距，未选中项为白块底（surface，radius 8，
+/// 靠色阶与地色分隔）、选中项灰药丸（activePill 深一档）；收起态 36×36 药丸、
+/// 38px 节距、不套白块。图标 20 + 标签 18/400；选中另加填充字形与标签提亮，
+/// 图标色恒为 muted（形状变化不加色彩信号）。
 class _NavItem extends StatelessWidget {
   const _NavItem({
     required this.title,
@@ -219,7 +220,10 @@ class _NavItem extends StatelessWidget {
     final labelColor = selected ? GuitarBarColors.ink : GuitarBarColors.muted;
     final glyph = selected ? activeIcon : icon;
     Widget child = Material(
-      color: selected ? GuitarBarColors.activePill : Colors.transparent,
+      // 展开态：白块（未选）/ 灰药丸（选中）；收起态：透明（未选）/ 灰药丸（选中）。
+      color: collapsed
+          ? (selected ? GuitarBarColors.activePill : Colors.transparent)
+          : (selected ? GuitarBarColors.activePill : GuitarBarColors.surface),
       borderRadius: BorderRadius.circular(8),
       child: Semantics(
         label: collapsed ? title : null,
@@ -229,7 +233,7 @@ class _NavItem extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           onTap: onTap,
           child: SizedBox(
-            height: 36,
+            height: collapsed ? 36 : 44,
             child: collapsed
                 ? Center(child: Icon(glyph, size: 20, color: GuitarBarColors.muted))
                 : Row(children: [

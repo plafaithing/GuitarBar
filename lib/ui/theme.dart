@@ -67,7 +67,7 @@ class GuitarBarTheme {
 
   /// 角色字号（系统字体，Windows 上即 Segoe UI）：
   /// 页面标题 24/600 = titleLarge · 区块标题 16/500 = titleMedium ·
-  /// KPI 数值 30/400 = displaySmall · 正文 14/400 = bodyMedium · 小字 12/400 = bodySmall。
+  /// KPI 数值 30/400 = displaySmall · 正文 16/400 = bodyMedium · 小字 12/400 = bodySmall。
   ///
   /// 页面任务只允许使用此处已定义的角色（titleLarge/titleMedium/displaySmall/
   /// bodyMedium/bodySmall）；需要新角色先在 _textTheme 落角色再使用，否则回退
@@ -83,7 +83,7 @@ class GuitarBarTheme {
     titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: GuitarBarColors.ink),
     bodyLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: GuitarBarColors.ink),
     bodyMedium: TextStyle(
-      fontSize: 14,
+      fontSize: 16,
       fontWeight: FontWeight.w400,
       color: GuitarBarColors.ink,
       fontFeatures: [FontFeature.tabularFigures()],
