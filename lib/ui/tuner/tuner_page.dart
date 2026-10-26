@@ -89,6 +89,7 @@ class _TunerPageState extends State<TunerPage> {
   Widget build(BuildContext context) {
     final state = context.watch<TuningState>();
     int cents = 0;
+    int autoIdx = -1; // 自动认弦命中的弦（未锁定时高亮用）
     Note? targetNote;
     if (_freq != null) {
       if (_mode == _TunerMode.chromatic) {
@@ -97,6 +98,7 @@ class _TunerPageState extends State<TunerPage> {
         cents = centsOff(_freq!, targetNote.frequency(state.a4));
       } else {
         final idx = _lockedString ?? (_nearestString()?.$1 ?? -1);
+        autoIdx = idx;
         if (idx >= 0) {
           targetNote = state.current.strings[idx];
           cents = centsOff(_freq!, targetNote.frequency(state.a4));
@@ -135,20 +137,51 @@ class _TunerPageState extends State<TunerPage> {
               child: Text(_micOn ? '停止' : '开始调音')),
         ]),
         const Spacer(),
-        // displayLarge 未在主题字阶落角色（M3 默认 57px），按主题契约用 KPI 角色 displaySmall。
-        Text(targetNote?.label(flats: _preferFlats(targetNote)) ?? '--',
-            style: Theme.of(context).textTheme.displaySmall),
-        Text(_freq == null ? '未检测到声音' : '${_freq!.toStringAsFixed(1)} Hz',
-            style: Theme.of(context).textTheme.bodyMedium),
-        const SizedBox(height: 8),
-        SizedBox(
-            width: 280, height: 120,
-            child: CustomPaint(painter: _NeedlePainter(cents.toDouble(), inTune))),
-        Text('${cents.abs()} 音分 ${cents > 0 ? '偏高' : cents < 0 ? '偏低' : ''}',
-            style: TextStyle(
-                fontSize: 18,
-                color: inTune ? GuitarBarColors.positive : GuitarBarColors.ink,
-                fontFeatures: const [FontFeature.tabularFigures()])),
+        // 音频流 ~20Hz 离散更新，150ms easeOut 插值消除指针跳变。
+        TweenAnimationBuilder<double>(
+          tween: Tween(end: cents.toDouble()),
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+          builder: (context, animCents, _) => SizedBox(
+            width: 300,
+            height: 300,
+            child: Stack(alignment: Alignment.center, children: [
+              Positioned.fill(
+                child: CustomPaint(
+                    painter: _DialPainter(cents: animCents, inTune: inTune)),
+              ),
+              Column(mainAxisSize: MainAxisSize.min, children: [
+                // 签名元素（用户反馈 GuitarTuna 式表盘）：音名 52px/600 有意
+                // 超出 48px 字号房规，属设计账本预留的升级位，不走主题角色。
+                Text(
+                    targetNote?.label(flats: _preferFlats(targetNote)) ?? '--',
+                    style: TextStyle(
+                        fontSize: 52,
+                        fontWeight: FontWeight.w600,
+                        color: GuitarBarColors.ink,
+                        fontFeatures: const [FontFeature.tabularFigures()])),
+                const SizedBox(height: 4),
+                Text(
+                    '${cents.abs()} 音分 ${cents > 0 ? '偏高' : cents < 0 ? '偏低' : ''}',
+                    style: TextStyle(
+                        fontSize: 18,
+                        color: inTune
+                            ? GuitarBarColors.positive
+                            : GuitarBarColors.ink,
+                        fontFeatures: const [FontFeature.tabularFigures()])),
+                const SizedBox(height: 2),
+                Text(
+                    _freq == null
+                        ? '未检测到声音'
+                        : '${_freq!.toStringAsFixed(1)} Hz',
+                    style: TextStyle(
+                        fontSize: 14,
+                        color: GuitarBarColors.muted,
+                        fontFeatures: const [FontFeature.tabularFigures()])),
+              ]),
+            ]),
+          ),
+        ),
         const Spacer(),
         if (_mode == _TunerMode.guitar)
           Wrap(
@@ -157,7 +190,8 @@ class _TunerPageState extends State<TunerPage> {
               for (var i = 0; i < 6; i++)
                 ChoiceChip(
                   label: Text('${6 - i}弦 ${state.current.strings[i].name}'),
-                  selected: _lockedString == i,
+                  selected: i == _lockedString ||
+                      (_lockedString == null && _freq != null && i == autoIdx),
                   onSelected: (sel) =>
                       setState(() => _lockedString = sel ? i : null),
                 ),
@@ -196,47 +230,72 @@ class _TunerPageState extends State<TunerPage> {
   }
 }
 
-class _NeedlePainter extends CustomPainter {
-  _NeedlePainter(this.cents, this.inTune);
+/// GuitarTuna 式圆形表盘：±50 音分映射 270° 弧（0 音分在正上方，底部开口），
+/// 主刻度 -50/-25/0/+25/+50 带数值标签；弧线默认 border 灰、|cents| ≤ 3 整段
+/// 转 positive 绿；dataHue 标记点（设计账本：数据色首次用于数据元素）在弧上
+/// 指示当前偏差，细针（ink）从圆心指向标记。
+class _DialPainter extends CustomPainter {
+  _DialPainter({required this.cents, required this.inTune});
   final double cents;
   final bool inTune;
 
+  /// cents ∈ [-50, 50] → 相对 12 点方向的偏角 ∈ [-135°, +135°]
+  static double _angleOf(double c) =>
+      -math.pi / 2 + (c / 50) * (3 * math.pi / 4);
+
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height);
-    // 半径取宽高较小者：center 在底边中点，取宽会导致静止指针伸出框顶。
-    final radius = math.min(size.width / 2, size.height) - 8;
+    final center = Offset(size.width / 2, size.height / 2);
+    // 留 24 外缘给刻度数值标签。
+    final radius = math.min(size.width, size.height) / 2 - 24;
+
     final arcPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6
-      ..color = GuitarBarColors.border;
-    final clamped = cents.clamp(-50.0, 50.0);
-    final angle = clamped / 50 * (math.pi / 3); // ±60°
+      ..strokeCap = StrokeCap.round
+      ..color = inTune ? GuitarBarColors.positive : GuitarBarColors.border;
+    // 从左下端点（135°）顺时针画 270° 到右下端点（45°），开口朝正下方。
     canvas.drawArc(Rect.fromCircle(center: center, radius: radius),
-        math.pi + math.pi / 6, 2 * math.pi / 3, false, arcPaint);
-    final needlePaint = Paint()
-      ..strokeWidth = 3
-      ..color = inTune ? GuitarBarColors.positive : GuitarBarColors.ink;
-    final tip = Offset(center.dx + radius * math.sin(angle),
-        center.dy - radius * math.cos(angle));
-    canvas.drawLine(center, tip, needlePaint);
+        3 * math.pi / 4, 3 * math.pi / 2, false, arcPaint);
+
+    final tickPaint = Paint()
+      ..strokeWidth = 2
+      ..color = GuitarBarColors.controlBorder;
     for (final c in const [-50, -25, 0, 25, 50]) {
-      final a = c / 50 * (math.pi / 3);
-      final p1 = Offset(center.dx + (radius - 10) * math.sin(a),
-          center.dy - (radius - 10) * math.cos(a));
-      final p2 = Offset(center.dx + radius * math.sin(a),
-          center.dy - radius * math.cos(a));
-      canvas.drawLine(
-          p1,
-          p2,
-          Paint()
-            ..strokeWidth = 2
-            ..color = GuitarBarColors.controlBorder);
+      final dir = _direction(c.toDouble());
+      canvas.drawLine(center + dir * (radius - 10),
+          center + dir * radius, tickPaint);
+      final tp = TextPainter(
+          text: TextSpan(
+              text: '$c',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: GuitarBarColors.muted,
+                  fontFeatures: const [FontFeature.tabularFigures()])),
+          textDirection: TextDirection.ltr)
+        ..layout();
+      final labelCenter = center + dir * (radius + 14);
+      tp.paint(canvas, labelCenter - Offset(tp.width / 2, tp.height / 2));
     }
+
+    final dir = _direction(cents.clamp(-50.0, 50.0));
+    final marker = center + dir * radius;
+    canvas.drawLine(
+        center,
+        marker,
+        Paint()
+          ..strokeWidth = 2
+          ..color = GuitarBarColors.ink);
+    canvas.drawCircle(marker, 4, Paint()..color = GuitarBarColors.dataHue);
+  }
+
+  static Offset _direction(double c) {
+    final a = _angleOf(c);
+    return Offset(math.cos(a), math.sin(a));
   }
 
   @override
-  bool shouldRepaint(_NeedlePainter old) =>
+  bool shouldRepaint(_DialPainter old) =>
       old.cents != cents || old.inTune != inTune;
 }
 
