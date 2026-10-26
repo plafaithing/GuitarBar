@@ -14,7 +14,7 @@
 
 - [ ] 用户审阅设计文档，确认无误
 - [x] 用 writing-plans 技能编写第一期实现计划（2026-10-25，`docs/superpowers/plans/2026-10-25-practice-toolbox.md`，18 个任务）
-- [ ] 实现第一期（进行中，分支 `feature/phase1-toolbox`）：✅Task1 脚手架（87a5c4c）✅Task1.5 音频栈替换（e3b7d4a）✅Task2 Note（1b360ae）✅Task3 调弦预设（271887d）✅Task4 音阶引擎（78c09f3）✅Task5 和弦指法（a3a1509+8522085 修复轮）✅Task5.5 界面品味升级（2d4a0aa+b6ebf1e 修复轮，achromatic-ledger 设计语言冻结，经 design-taste-frontend 技能）→ 🔄Task6 数据层 → 待 Task7-18。遗留小项：Task 12 顺路补 `onSurfaceVariant: muted`；开发者模式已开启。
+- [ ] 实现第一期（进行中，分支 `feature/phase1-toolbox`）：✅Task1 脚手架（87a5c4c）✅Task1.5 音频栈替换（e3b7d4a）✅Task2 Note（1b360ae）✅Task3 调弦预设（271887d）✅Task4 音阶引擎（78c09f3）✅Task5 和弦指法（a3a1509+8522085 修复轮）✅Task5.5 界面品味升级（2d4a0aa+b6ebf1e 修复轮，achromatic-ledger 设计语言冻结，经 design-taste-frontend 技能）✅Task6 数据层（82747ca）✅Task7 JSON 导出导入+日期存储显式化（f91b471+2ca3718 修复轮）→ 🔄Task8 YIN 音高检测 → 待 Task9-18。遗留小项：Task 12 顺路补 `onSurfaceVariant: muted`；Task 17 接线时手动验证备份对话框（try/catch 契约见 backup.dart）；开发者模式已开启。
 
 ## Review（2026-10-25 本次会话）
 
