@@ -400,7 +400,7 @@ class _TunerPageState extends State<TunerPage> {
       height: 96,
       child: TweenAnimationBuilder<double>(
         tween: Tween(end: cents.clamp(-50.0, 50.0)),
-        duration: const Duration(milliseconds: 150),
+        duration: const Duration(milliseconds: 300),
         curve: Curves.easeOutCubic,
         builder: (context, anim, _) => LayoutBuilder(
             builder: (context, constraints) {
@@ -524,22 +524,22 @@ class _TunerPageState extends State<TunerPage> {
       {required int hitIdx, required int cents, required bool hasFreq}) {
     const canvasW = 340.0, canvasH = 320.0;
     Widget knobAt(double centerX, double centerY, int stringIdx) => Positioned(
-          left: centerX - 32,
-          top: centerY - 32,
+          left: centerX - 24,
+          top: centerY - 24,
           child: _stringKnob(state, stringIdx,
               hit: stringIdx == _lockedString ||
                   (hasFreq && stringIdx == hitIdx),
               inTune:
                   hasFreq && stringIdx == hitIdx && cents.abs() <= 3),
         );
-    // 左右成对：y = 板高 0.30/0.50/0.70 行，钮中心 = 板缘 ∓ 74（轴 12 +
-    // 铬钮 26 + 8 + 28 外移）。
+    // 左右成对（F2/F3）：行 y = 三排螺母行（钮径 48、行距 ≥ 56 → 隙 ≥ 8），
+    // 列心 = 板缘 ∓ (30 空隙 + 24 半钮)。
     List<Widget> knobPair(int row, int stringIdx) {
-      final y = canvasH * (0.04 + 0.78 * const [0.30, 0.50, 0.70][row]);
+      final y = canvasH * (0.06 + 0.82 * const [0.25, 0.50, 0.75][row]);
       final edge = _HeadstockPainter.edgeX(y, canvasW, canvasH);
       return [
-        knobAt(edge - 74, y, stringIdx),
-        knobAt(canvasW - edge + 74, y, stringIdx),
+        knobAt(edge - 54, y, stringIdx),
+        knobAt(canvasW - edge + 54, y, stringIdx),
       ];
     }
 
@@ -555,11 +555,12 @@ class _TunerPageState extends State<TunerPage> {
                   dataHue: context.palette.dataHue,
                   positive: context.palette.positive)),
         ),
+        // F1 行序：行 0 = 弦 4（左）+ 弦 3（右）；行 1 = 5 + 2；行 2 = 6 + 1。
         ...knobPair(0, 2),
-        ...knobPair(1, 1),
-        ...knobPair(2, 0),
         ...knobPair(0, 3),
+        ...knobPair(1, 1),
         ...knobPair(1, 4),
+        ...knobPair(2, 0),
         ...knobPair(2, 5),
       ]),
     );
@@ -597,8 +598,8 @@ class _TunerPageState extends State<TunerPage> {
         scale: inTune ? 0.92 : 1.0,
         duration: const Duration(milliseconds: 120),
         child: Container(
-          width: 64,
-          height: 64,
+          width: 48,
+          height: 48,
           decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: bg,
@@ -607,7 +608,7 @@ class _TunerPageState extends State<TunerPage> {
           alignment: Alignment.center,
           child: Text(state.current.strings[i].name,
               style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: textColor,
                   fontFeatures: const [FontFeature.tabularFigures()])),
@@ -693,11 +694,11 @@ class _HeadstockPainter extends CustomPainter {
   final Color dataHue;
   final Color positive;
 
-  /// 头板侧缘 x（顶 0.03h 半宽 0.20w → 底 0.84h 半宽 0.17w，线性内收）——
+  /// 头板侧缘 x（顶 0.06h 半宽 0.23w → 底 0.88h 半宽 0.20w，线性内收）——
   /// painter 与交互弦钮定位共用。
   static double edgeX(double y, double w, double h) {
-    final t = (((y / h) - 0.03) / 0.81).clamp(0.0, 1.0);
-    return w * (0.5 - (0.20 - 0.03 * t));
+    final t = (((y / h) - 0.06) / 0.82).clamp(0.0, 1.0);
+    return w * (0.5 - (0.23 - 0.03 * t));
   }
 
   @override
@@ -716,31 +717,31 @@ class _HeadstockPainter extends CustomPainter {
     const chromeDark = Color(0xFF808080);
     const axis = Color(0xFFA0A0A0);
 
-    // 弦钮三排行（板范围 0.03..0.84h 均布 0.25/0.50/0.75——行距 0.2025h，
-    // 满足 S2 交互钮 52 径 + 12px 隙）。
-    double knobY(int row) => h * (0.03 + 0.81 * const [0.25, 0.50, 0.75][row]);
+    // 弦钮三排行（板范围 0.06..0.88h 均布 0.25/0.50/0.75——行距 0.205h，
+    // 满足 F2 交互钮 48 径 + 8px 隙）。
+    double knobY(int row) => h * (0.06 + 0.82 * const [0.25, 0.50, 0.75][row]);
 
     // 桨形轮廓：冠形顶边（肩→凹→中央小峰→凹→肩）+ 两侧缓内收到底。
     final body = Path()
-      ..moveTo(w * 0.30, h * 0.10)
-      ..quadraticBezierTo(w * 0.425, h * 0.118, w * 0.468, h * 0.072)
-      ..quadraticBezierTo(w * 0.49, h * 0.052, w * 0.50, h * 0.032)
-      ..quadraticBezierTo(w * 0.51, h * 0.052, w * 0.532, h * 0.072)
-      ..quadraticBezierTo(w * 0.575, h * 0.118, w * 0.70, h * 0.10)
-      ..quadraticBezierTo(w * 0.705, h * 0.38, w * 0.67, h * 0.84)
-      ..lineTo(w * 0.33, h * 0.84)
-      ..quadraticBezierTo(w * 0.295, h * 0.38, w * 0.30, h * 0.10)
+      ..moveTo(w * 0.27, h * 0.115)
+      ..quadraticBezierTo(w * 0.40, h * 0.132, w * 0.468, h * 0.088)
+      ..quadraticBezierTo(w * 0.49, h * 0.070, w * 0.50, h * 0.060)
+      ..quadraticBezierTo(w * 0.51, h * 0.070, w * 0.532, h * 0.088)
+      ..quadraticBezierTo(w * 0.60, h * 0.132, w * 0.73, h * 0.115)
+      ..quadraticBezierTo(w * 0.735, h * 0.40, w * 0.70, h * 0.88)
+      ..lineTo(w * 0.30, h * 0.88)
+      ..quadraticBezierTo(w * 0.265, h * 0.40, w * 0.27, h * 0.115)
       ..close();
     canvas.drawPath(body, Paint()..color = bodyColor);
 
     // 右/下深阴影（右耳翼内侧窄条，与外轮廓同走向）。
     final shade = Path()
-      ..moveTo(w * 0.65, h * 0.14)
-      ..quadraticBezierTo(w * 0.655, h * 0.38, w * 0.625, h * 0.62)
-      ..quadraticBezierTo(w * 0.61, h * 0.75, w * 0.635, h * 0.84)
-      ..lineTo(w * 0.65, h * 0.84)
-      ..quadraticBezierTo(w * 0.625, h * 0.75, w * 0.64, h * 0.62)
-      ..quadraticBezierTo(w * 0.665, h * 0.38, w * 0.68, h * 0.10)
+      ..moveTo(w * 0.655, h * 0.16)
+      ..quadraticBezierTo(w * 0.66, h * 0.40, w * 0.628, h * 0.64)
+      ..quadraticBezierTo(w * 0.612, h * 0.78, w * 0.638, h * 0.88)
+      ..lineTo(w * 0.65, h * 0.88)
+      ..quadraticBezierTo(w * 0.625, h * 0.78, w * 0.64, h * 0.64)
+      ..quadraticBezierTo(w * 0.67, h * 0.40, w * 0.70, h * 0.115)
       ..close();
     canvas.drawPath(shade, Paint()..color = bodyDarkColor);
 
@@ -752,82 +753,87 @@ class _HeadstockPainter extends CustomPainter {
           ..strokeWidth = 3
           ..color = binding);
 
-    // 珍珠镶嵌饰（S5 加强，尺寸 +20%）：顶板中央小菱形 + 左右两撇卷纹。
+    // 珍珠镶嵌主饰（F5）：菱形核心 + 左右各两段卷曲纹 + 上下小圆点
+    // （整体宽 ~0.16w，GuitarTuna 式对称卷草纹）。
     final diamond = Path()
-      ..moveTo(w * 0.50, h * 0.06)
-      ..lineTo(w * 0.518, h * 0.10)
-      ..lineTo(w * 0.50, h * 0.14)
-      ..lineTo(w * 0.482, h * 0.10)
+      ..moveTo(w * 0.50, h * 0.055)
+      ..lineTo(w * 0.520, h * 0.10)
+      ..lineTo(w * 0.50, h * 0.145)
+      ..lineTo(w * 0.480, h * 0.10)
       ..close();
     canvas.drawPath(diamond, Paint()..color = inlay);
-    final scrollPaint = Paint()
+    final curlPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5
       ..color = inlay;
-    canvas.drawLine(
-        Offset(w * 0.474, h * 0.10), Offset(w * 0.39, h * 0.10), scrollPaint);
-    canvas.drawLine(
-        Offset(w * 0.526, h * 0.10), Offset(w * 0.61, h * 0.10), scrollPaint);
+    final curlL = Path()
+      ..moveTo(w * 0.480, h * 0.10)
+      ..quadraticBezierTo(w * 0.452, h * 0.086, w * 0.440, h * 0.102)
+      ..quadraticBezierTo(w * 0.428, h * 0.118, w * 0.420, h * 0.100);
+    canvas.drawPath(curlL, curlPaint);
+    final curlR = Path()
+      ..moveTo(w * 0.520, h * 0.10)
+      ..quadraticBezierTo(w * 0.548, h * 0.086, w * 0.560, h * 0.102)
+      ..quadraticBezierTo(w * 0.572, h * 0.118, w * 0.580, h * 0.100);
+    canvas.drawPath(curlR, curlPaint);
+    canvas.drawCircle(Offset(w * 0.50, h * 0.038), 2, Paint()..color = inlay);
+    canvas.drawCircle(Offset(w * 0.50, h * 0.162), 2, Paint()..color = inlay);
 
-    // S5：三排螺母行间隙的板面左右各一枚小菱形镶嵌点（对称、克制）。
+    // 排间隙复合小饰（F5）：菱形 + 两侧小卷纹（比主饰小 50%）。
     for (final y in [
       (knobY(0) + knobY(1)) / 2,
       (knobY(1) + knobY(2)) / 2,
     ]) {
       for (final x in const [0.42, 0.58]) {
         final dot = Path()
-          ..moveTo(w * x, y - 4)
-          ..lineTo(w * x + 4, y)
-          ..lineTo(w * x, y + 4)
-          ..lineTo(w * x - 4, y)
+          ..moveTo(w * x, y - 3.5)
+          ..lineTo(w * x + 3.5, y)
+          ..lineTo(w * x, y + 3.5)
+          ..lineTo(w * x - 3.5, y)
           ..close();
         canvas.drawPath(dot, Paint()..color = inlay);
+        final curlL = Path()
+          ..moveTo(w * x - 3.5, y)
+          ..quadraticBezierTo(w * x - 6.5, y - 2.5, w * x - 9.5, y);
+        canvas.drawPath(curlL, curlPaint);
+        final curlR = Path()
+          ..moveTo(w * x + 3.5, y)
+          ..quadraticBezierTo(w * x + 6.5, y - 2.5, w * x + 9.5, y);
+        canvas.drawPath(curlR, curlPaint);
       }
     }
 
-    // 弦枕（奶油条）+ 指板（深棕出界）。
+    // 弦枕（奶油条，宽 = 头板底 0.40w，高 8px）+ 指板（深棕出界）。
     canvas.drawRRect(
         RRect.fromRectAndRadius(
-            Rect.fromLTWH(w * 0.28, h * 0.84, w * 0.44, h * 0.035),
+            Rect.fromLTWH(w * 0.30, h * 0.88, w * 0.40, 8),
             const Radius.circular(3)),
         Paint()..color = nut);
     canvas.drawRect(
-        Rect.fromLTWH(w * 0.35, h * 0.875, w * 0.30, h * 0.125),
+        Rect.fromLTWH(w * 0.35, h * 0.88 + 8, w * 0.30, h - (h * 0.88 + 8)),
         Paint()..color = fingerboard);
 
-    // 弦线（琴颈端七分纠正）：弦枕宽等分 7 段，6 个内分点 = 6/5/4/3/2/1
-    // 弦位（低音 E2 最左）；每弦一条直线直连各自弦钮（左 3 右 3，两组温和
-    // 张开、互不汇聚），命中 dataHue / 到位 positive 2px；过弦枕沿琴颈
-    // 平行直落（延续弦枕间距）。
-    final nutTop = h * 0.84;
+    // 弦线（F1 行序翻转）：弦枕七分内分点（自左向右 6/5/4/3/2/1 = 弦 idx
+    // 0..5），每弦一条直线直连各自钮位——弦 6/5/4 → 左列行 2/1/0（左列
+    // 自下而上 6/5/4）、弦 3/2/1 → 右列行 0/1/2（右列自下而上 1/2/3），
+    // 弦线呈自然斜向无交叉；命中 dataHue / 到位 positive 2px；过弦枕沿
+    // 琴颈平行直落（延续弦枕间距）。
+    final nutTop = h * 0.88;
     final hitColor = inTune ? positive : dataHue;
-    // 左列行 0/1/2 = 弦 6/5/4（idx 0/1/2）；右列行 0/1/2 = 弦 1/2/3（idx 5/4/3）。
-    const rowStringIdx = [0, 1, 2, 5, 4, 3];
-    // 弦枕七分内分点（自左向右 = 6/5/4/3/2/1 弦位）。
-    final pts = [for (var i = 1; i <= 6; i++) w * (0.28 + 0.44 * i / 7)];
-    for (var row = 0; row < 3; row++) {
+    final pts = [for (var i = 0; i < 6; i++) w * (0.28 + 0.44 * (i + 1) / 7)];
+    for (var s = 0; s < 6; s++) {
+      final isLeft = s < 3;
+      final row = isLeft ? 2 - s : s - 3; // 左列行 2/1/0 = 弦 6/5/4；右列行 0/1/2 = 弦 3/2/1
       final y = knobY(row);
-      final leftHit = rowStringIdx[row] == hitIndex;
-      final rightHit = rowStringIdx[row + 3] == hitIndex;
-      // 左：分点 i=row+1（弦 6/5/4）直连左缘螺母行 row。
-      canvas.drawLine(Offset(pts[row], nutTop), Offset(edgeX(y, w, h), y),
-          Paint()
-            ..strokeWidth = leftHit ? 2.0 : 1.5
-            ..color = leftHit ? hitColor : stringColor);
-      // 右：分点 i=6-row（弦 3/2/1）直连右缘螺母行 row。
-      canvas.drawLine(Offset(pts[5 - row], nutTop),
-          Offset(w - edgeX(y, w, h), y), Paint()
-            ..strokeWidth = rightHit ? 2.0 : 1.5
-            ..color = rightHit ? hitColor : stringColor);
+      final hit = hitIndex == s;
+      final endX = isLeft ? edgeX(y, w, h) : w - edgeX(y, w, h);
+      canvas.drawLine(Offset(pts[s], nutTop), Offset(endX, y), Paint()
+        ..strokeWidth = hit ? 2.0 : 1.5
+        ..color = hit ? hitColor : stringColor);
       // 过弦枕沿琴颈平行直落（延续弦枕间距）。
-      canvas.drawLine(Offset(pts[row], h * 0.875), Offset(pts[row], h),
-          Paint()
-            ..strokeWidth = leftHit ? 2.0 : 1.5
-            ..color = leftHit ? hitColor : stringColor);
-      canvas.drawLine(Offset(pts[5 - row], h * 0.875), Offset(pts[5 - row], h),
-          Paint()
-            ..strokeWidth = rightHit ? 2.0 : 1.5
-            ..color = rightHit ? hitColor : stringColor);
+      canvas.drawLine(Offset(pts[s], h * 0.88 + 8), Offset(pts[s], h), Paint()
+        ..strokeWidth = hit ? 2.0 : 1.5
+        ..color = hit ? hitColor : stringColor);
     }
 
     // 弦钮：每排左右——六角螺母贴缘（r=5 + 高光点）、轴杆外伸（12×5）、
