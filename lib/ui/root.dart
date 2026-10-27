@@ -99,8 +99,9 @@ class _RootPageState extends State<RootPage> {
             ? null
             : Container(
                 // 与宽屏侧栏同款分隔语言：地色底栏 + 顶部 1px 发丝线。
-                decoration: const BoxDecoration(
-                  border: Border(top: BorderSide(color: GuitarBarColors.border)),
+                decoration: BoxDecoration(
+                  border: Border(
+                      top: BorderSide(color: context.palette.border)),
                 ),
                 child: NavigationBar(
                   selectedIndex: _tab,
@@ -154,13 +155,13 @@ class _SideNav extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: collapsed ? 56 : 205,
-      decoration: const BoxDecoration(
-        border: Border(right: BorderSide(color: GuitarBarColors.border)),
+      decoration: BoxDecoration(
+        border: Border(right: BorderSide(color: context.palette.border)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          collapsed ? _collapsedHeader() : _expandedHeader(),
+          collapsed ? _collapsedHeader(context) : _expandedHeader(context),
           Expanded(
             child: Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -182,28 +183,31 @@ class _SideNav extends StatelessWidget {
     );
   }
 
-  Widget _expandedHeader() {
+  Widget _expandedHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(left: 20, top: 24, right: 8, bottom: 12),
       child: Row(children: [
         const _PickMark(),
         const SizedBox(width: 8),
-        const Text(
+        Text(
           'GuitarBar',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: GuitarBarColors.ink),
+          style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: context.palette.ink),
         ),
         const Spacer(),
         IconButton(
           tooltip: '收起侧栏',
           onPressed: onToggleCollapse,
           icon: const Icon(Icons.keyboard_double_arrow_left),
-          color: GuitarBarColors.muted,
+          color: context.palette.muted,
         ),
       ]),
     );
   }
 
-  Widget _collapsedHeader() {
+  Widget _collapsedHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 24, bottom: 12),
       child: Center(
@@ -213,7 +217,7 @@ class _SideNav extends StatelessWidget {
             tooltip: '展开侧栏',
             onPressed: onToggleCollapse,
             icon: const Icon(Icons.keyboard_double_arrow_right),
-            color: GuitarBarColors.muted,
+            color: context.palette.muted,
           ),
         ]),
       ),
@@ -244,10 +248,10 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final labelColor = selected ? GuitarBarColors.ink : GuitarBarColors.muted;
+    final labelColor = selected ? context.palette.ink : context.palette.muted;
     final glyph = selected ? activeIcon : icon;
     Widget child = Material(
-      color: selected ? GuitarBarColors.activePill : Colors.transparent,
+      color: selected ? context.palette.activePill : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
       child: Semantics(
         label: collapsed ? title : null,
@@ -259,10 +263,10 @@ class _NavItem extends StatelessWidget {
           child: SizedBox(
             height: 36,
             child: collapsed
-                ? Center(child: Icon(glyph, size: 20, color: GuitarBarColors.muted))
+                ? Center(child: Icon(glyph, size: 20, color: context.palette.muted))
                 : Row(children: [
                     const SizedBox(width: 8),
-                    Icon(glyph, size: 20, color: GuitarBarColors.muted),
+                    Icon(glyph, size: 20, color: context.palette.muted),
                     const SizedBox(width: 10),
                     Text(
                       title,
@@ -289,11 +293,15 @@ class _PickMark extends StatelessWidget {
   const _PickMark();
 
   @override
-  Widget build(BuildContext context) => const CustomPaint(size: Size(20, 20), painter: _PickPainter());
+  Widget build(BuildContext context) => CustomPaint(
+      size: const Size(20, 20),
+      painter: _PickPainter(ink: context.palette.ink));
 }
 
 class _PickPainter extends CustomPainter {
-  const _PickPainter();
+  const _PickPainter({required this.ink});
+
+  final Color ink;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -306,7 +314,7 @@ class _PickPainter extends CustomPainter {
       ..cubicTo(w * 0.80, 0, w, h * 0.08, w, h * 0.28) // 右上圆角
       ..cubicTo(w, h * 0.46, w * 0.82, h * 0.66, w * 0.50, h * 0.96) // 右侧收腰
       ..close();
-    canvas.drawPath(path, Paint()..color = GuitarBarColors.ink);
+    canvas.drawPath(path, Paint()..color = ink);
   }
 
   @override
@@ -331,7 +339,7 @@ class _Placeholder extends StatelessWidget {
         children: [
           Text(title, style: textTheme.titleLarge),
           const SizedBox(height: 8),
-          Text(hint, style: textTheme.bodyMedium?.copyWith(color: GuitarBarColors.muted)),
+          Text(hint, style: textTheme.bodyMedium?.copyWith(color: context.palette.muted)),
         ],
       ),
     );

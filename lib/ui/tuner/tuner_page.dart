@@ -228,20 +228,20 @@ class _TunerPageState extends State<TunerPage> {
               icon: Text('A4=${state.a4.toStringAsFixed(0)}',
                   style: TextStyle(
                       fontSize: 14,
-                      color: GuitarBarColors.muted,
+                      color: context.palette.muted,
                       fontFeatures: const [FontFeature.tabularFigures()]))),
           IconButton(
               // 右上 = 一键新建自定义（编辑器）；左上入口 = 选/管预设。
               onPressed: () => _showEditor(context, state),
               tooltip: '新建自定义调弦',
-              icon: const Icon(Icons.add_circle_outline,
-                  color: GuitarBarColors.ink)),
+              icon: Icon(Icons.add_circle_outline,
+                  color: context.palette.ink)),
           const SizedBox(width: 4),
           // 自动认弦开关：开 = _lockedString 为空（自动）；关 = 手动
           // （锁定当前命中的弦，未检测则锁 6 弦，随后可点钮换弦）。
           Text('自动',
               style: TextStyle(
-                  fontSize: 14, color: GuitarBarColors.muted)),
+                  fontSize: 14, color: context.palette.muted)),
           Switch(
             value: _lockedString == null,
             onChanged: (auto) => setState(() => _lockedString = auto
@@ -265,18 +265,18 @@ class _TunerPageState extends State<TunerPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(state.current.group.label,
-                        style: const TextStyle(
-                            fontSize: 12, color: GuitarBarColors.muted)),
+                        style: TextStyle(
+                            fontSize: 12, color: context.palette.muted)),
                     const SizedBox(height: 2),
                     Row(mainAxisSize: MainAxisSize.min, children: [
                       Text(state.current.name,
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
-                              color: GuitarBarColors.ink)),
+                              color: context.palette.ink)),
                       const SizedBox(width: 4),
-                      const Icon(Icons.expand_more,
-                          size: 16, color: GuitarBarColors.muted),
+                      Icon(Icons.expand_more,
+                          size: 16, color: context.palette.muted),
                     ]),
                   ]),
             ),
@@ -302,7 +302,7 @@ class _TunerPageState extends State<TunerPage> {
         const SizedBox(height: 12),
         // 输入设备选择（长期保留）：默认设备是虚拟声卡时可一键切到真麦。
         Row(children: [
-          const Icon(Icons.mic_none, size: 16, color: GuitarBarColors.muted),
+          Icon(Icons.mic_none, size: 16, color: context.palette.muted),
           const SizedBox(width: 8),
           Expanded(
             child: DropdownButtonFormField<String>(
@@ -334,34 +334,35 @@ class _TunerPageState extends State<TunerPage> {
           // 默认设备是虚拟声卡；rms 正常但音高 null → 检测 bug。
           Text(
               'chunks:${_mic.chunkCount}  窗:${_mic.windowCount}  cs:${_mic.lastChunkSamples}  ws:${_mic.lastWindowSamples}  rms:${_mic.lastRms.toStringAsFixed(6)}  dev:${_mic.currentDeviceName ?? '-'}  on:$_micOn',
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 12,
-                  color: GuitarBarColors.muted,
-                  fontFeatures: [FontFeature.tabularFigures()])),
+                  color: context.palette.muted,
+                  fontFeatures: const [FontFeature.tabularFigures()])),
           // 格式自适应轮换（D3）：fmt 当前格式 / 静音窗 连续 rms==0 窗数 /
           // hex 最近 chunk 前 16 字节（全 00 = 真数字静音；非零乱值 = 格式误读）。
           Text(
               'fmt:${_mic.currentFormatText}  静音窗:${_mic.zeroWindows}  hex:${_mic.lastChunkHex}',
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 12,
-                  color: GuitarBarColors.muted,
-                  fontFeatures: [FontFeature.tabularFigures()])),
+                  color: context.palette.muted,
+                  fontFeatures: const [FontFeature.tabularFigures()])),
           if (_lastError != null)
             Text('err: $_lastError',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 12,
-                    color: GuitarBarColors.negative,
-                    fontFeatures: [FontFeature.tabularFigures()])),
+                    color: context.palette.negative,
+                    fontFeatures: const [FontFeature.tabularFigures()])),
           // 回调内异常（Error/Exception 一并捕获）：非空即说明音频处理链在
           // 回调层炸过，配合 窗/cs/ws 定位断链层。
           if (_mic.callbackErr.isNotEmpty) ...[
             Text('cberr: ${_mic.callbackErr}',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 12,
-                    color: GuitarBarColors.negative,
-                    fontFeatures: [FontFeature.tabularFigures()])),
+                    color: context.palette.negative,
+                    fontFeatures: const [FontFeature.tabularFigures()])),
             Text(_mic.callbackErrSt,
-                style: const TextStyle(fontSize: 10, color: GuitarBarColors.muted)),
+                style: TextStyle(
+                    fontSize: 10, color: context.palette.muted)),
           ],
         ],
       ]),
@@ -392,34 +393,35 @@ class _TunerPageState extends State<TunerPage> {
                   const SizedBox(width: 12),
                   Text('♭',
                       style: TextStyle(
-                          fontSize: 18, color: GuitarBarColors.muted)),
+                          fontSize: 20, color: context.palette.muted)),
                   Expanded(
                       child: Container(
-                          height: 1, color: GuitarBarColors.rule)),
+                          height: 1.5, color: context.palette.muted)),
                   Text('♯',
                       style: TextStyle(
-                          fontSize: 18, color: GuitarBarColors.muted)),
+                          fontSize: 20, color: context.palette.muted)),
                   const SizedBox(width: 12),
                 ])),
-            // 垂线：顶端挂在轨道上，向下 56。
+            // 垂线：墨色 2px 挂在轨道上（弦的隐喻），向下 56 与环顶相连。
             Positioned(
                 top: 0,
-                left: x - 0.5,
+                left: x - 1,
                 child: Container(
-                    width: 1, height: 56, color: GuitarBarColors.border)),
-            // 铅垂环：直径 28，ink 3px 描边；到位填充 positive 绿。
+                    width: 2, height: 56, color: context.palette.ink)),
+            // 铅垂环：直径 32，ink 3.5px 描边，surface 填充随主题；到位填充 positive 绿。
             Positioned(
                 top: 56,
-                left: x - 14,
+                left: x - 16,
                 child: Container(
-                    width: 28,
-                    height: 28,
+                    width: 32,
+                    height: 32,
                     decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color:
-                            inTune ? GuitarBarColors.positive : GuitarBarColors.surface,
+                        color: inTune
+                            ? context.palette.positive
+                            : context.palette.surface,
                         border: Border.all(
-                            color: GuitarBarColors.ink, width: 3)))),
+                            color: context.palette.ink, width: 3.5)))),
           ]);
         }),
       ),
@@ -433,7 +435,7 @@ class _TunerPageState extends State<TunerPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
         decoration: BoxDecoration(
-            color: GuitarBarColors.ink, borderRadius: BorderRadius.circular(32)),
+            color: context.palette.ink, borderRadius: BorderRadius.circular(32)),
         child: targetNote == null
             ? const Text('弹拨任意琴弦开始调音',
                 style: TextStyle(fontSize: 16, color: Colors.white))
@@ -491,17 +493,20 @@ class _TunerPageState extends State<TunerPage> {
     final Color borderColor;
     final Color textColor;
     if (inTune) {
-      bg = GuitarBarColors.pillPositiveBg;
-      borderColor = GuitarBarColors.positive;
-      textColor = GuitarBarColors.positive;
+      bg = context.palette.pillPositiveBg;
+      borderColor = context.palette.positive;
+      textColor = context.palette.positive;
     } else if (hit) {
-      bg = const Color(0xFFF5EAD9); // dataHue 浅色调
-      borderColor = GuitarBarColors.dataHue;
-      textColor = GuitarBarColors.ink;
+      // dataHue 浅调：alphaBlend 随主题自适应（亮色 ≈ #EAE1D9，暗色自动生成暗琥珀底）。
+      bg = Color.alphaBlend(
+          context.palette.dataHue.withValues(alpha: 0.18),
+          context.palette.surface);
+      borderColor = context.palette.dataHue;
+      textColor = context.palette.ink;
     } else {
-      bg = GuitarBarColors.surface;
-      borderColor = GuitarBarColors.controlBorder;
-      textColor = GuitarBarColors.ink;
+      bg = context.palette.surface;
+      borderColor = context.palette.controlBorder;
+      textColor = context.palette.ink;
     }
     return InkWell(
       onTap: () => _onStringTap(state, i),
@@ -680,9 +685,9 @@ class _PresetSheet extends StatelessWidget {
                         // 当前调弦：行尾 check + 标题加粗（比 selected 底色更可感知）。
                         title: Text(t.name,
                             style: state.current.id == t.id
-                                ? const TextStyle(
+                                ? TextStyle(
                                     fontWeight: FontWeight.w600,
-                                    color: GuitarBarColors.ink)
+                                    color: context.palette.ink)
                                 : null),
                         subtitle:
                             Text(t.strings.map((n) => n.name).join(' ')),
@@ -694,10 +699,10 @@ class _PresetSheet extends StatelessWidget {
                         trailing:
                             Row(mainAxisSize: MainAxisSize.min, children: [
                           if (state.current.id == t.id)
-                            const Padding(
-                                padding: EdgeInsets.only(right: 4),
+                            Padding(
+                                padding: const EdgeInsets.only(right: 4),
                                 child: Icon(Icons.check,
-                                    color: GuitarBarColors.ink)),
+                                    color: context.palette.ink)),
                           if (g == TuningGroup.custom)
                             IconButton(
                                 icon: const Icon(Icons.delete_outline),
@@ -713,15 +718,15 @@ class _PresetSheet extends StatelessWidget {
                       ),
                     if (g == TuningGroup.custom)
                       ListTile(
-                        leading: const Icon(Icons.add_circle_outline,
-                            color: GuitarBarColors.ink),
+                        leading: Icon(Icons.add_circle_outline,
+                            color: context.palette.ink),
                         title: Text('新建自定义调弦',
                             style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w500,
-                                color: GuitarBarColors.ink)),
-                        trailing: const Icon(Icons.chevron_right,
-                            color: GuitarBarColors.muted),
+                                color: context.palette.ink)),
+                        trailing: Icon(Icons.chevron_right,
+                            color: context.palette.muted),
                         onTap: () => _showEditor(context, state),
                       ),
                   ],

@@ -35,6 +35,9 @@ class GuitarBarApp extends StatelessWidget {
         // debug 构建演示截图不带右上角 DEBUG 丝带（release 本就没有）。
         debugShowCheckedModeBanner: false,
         theme: GuitarBarTheme.light(),
+        darkTheme: GuitarBarTheme.dark(),
+        // 随系统切换；Task 17 个人中心再加手动切换器。
+        themeMode: ThemeMode.system,
         home: const RootPage(),
       );
 }
