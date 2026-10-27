@@ -236,12 +236,48 @@ class _TunerPageState extends State<TunerPage> {
               tooltip: '新建自定义调弦',
               icon: Icon(Icons.add_circle_outline,
                   color: context.palette.ink)),
-          const SizedBox(width: 4),
-          // 自动认弦开关：开 = _lockedString 为空（自动）；关 = 手动
-          // （锁定当前命中的弦，未检测则锁 6 弦，随后可点钮换弦）。
-          Text('自动',
-              style: TextStyle(
-                  fontSize: 14, color: context.palette.muted)),
+        ]),
+        const SizedBox(height: 4),
+        Row(children: [
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: InkWell(
+                onTap: () => _showPresetSheet(context, state),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  // 热区 ≥44px 高。
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(state.current.group.label,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: context.palette.muted)),
+                        const SizedBox(height: 2),
+                        Row(mainAxisSize: MainAxisSize.min, children: [
+                          Text(state.current.name,
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: context.palette.ink)),
+                          const SizedBox(width: 4),
+                          Icon(Icons.expand_more,
+                              size: 16, color: context.palette.muted),
+                        ]),
+                      ]),
+                ),
+              ),
+            ),
+          ),
+          // 自动/手动开关（行尾）：开 = 自动认弦；关 = 手动（锁定当前
+          // 命中的弦，未检测则锁 6 弦，随后可点钮换弦）。标签随状态切字。
+          Text(_lockedString == null ? '自动' : '手动',
+              style:
+                  TextStyle(fontSize: 12, color: context.palette.muted)),
           Switch(
             value: _lockedString == null,
             onChanged: (auto) => setState(() => _lockedString = auto
@@ -249,39 +285,6 @@ class _TunerPageState extends State<TunerPage> {
                 : (autoIdx >= 0 ? autoIdx : 0)),
           ),
         ]),
-        const SizedBox(height: 4),
-        // 当前调弦小型入口（左上，无边框坐在地色上）：预设面板的常驻入口。
-        // 竖排两行避免组名与调弦名横向连读（如 "Drop" + "Drop D"）。
-        Align(
-          alignment: Alignment.centerLeft,
-          child: InkWell(
-            onTap: () => _showPresetSheet(context, state),
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              // 热区 ≥44px 高。
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(state.current.group.label,
-                        style: TextStyle(
-                            fontSize: 12, color: context.palette.muted)),
-                    const SizedBox(height: 2),
-                    Row(mainAxisSize: MainAxisSize.min, children: [
-                      Text(state.current.name,
-                          style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: context.palette.ink)),
-                      const SizedBox(width: 4),
-                      Icon(Icons.expand_more,
-                          size: 16, color: context.palette.muted),
-                    ]),
-                  ]),
-            ),
-          ),
-        ),
         const SizedBox(height: 8),
         // 铅垂滑轨（GuitarTuna 同款）：水平细线轨道 + ♭/♯ 两端，垂线与
         // 白色铅垂环整体随音分偏差水平滑动，居中 = 准。
