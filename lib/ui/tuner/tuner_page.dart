@@ -403,19 +403,20 @@ class _TunerPageState extends State<TunerPage> {
                 top: 0,
                 left: 0,
                 right: 0,
-                child: Row(children: [
-                  const SizedBox(width: 12),
-                  Text('♭',
-                      style: TextStyle(
-                          fontSize: 20, color: context.palette.muted)),
-                  Expanded(
-                      child: Container(
-                          height: 1.5, color: context.palette.muted)),
-                  Text('♯',
-                      style: TextStyle(
-                          fontSize: 20, color: context.palette.muted)),
-                  const SizedBox(width: 12),
-                ])),
+                child: Padding(
+                  // ♭/♯ 分居两端（旧滑动环的轨道连线已删，环固定后无意义）。
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('♭',
+                            style: TextStyle(
+                                fontSize: 20, color: context.palette.muted)),
+                        Text('♯',
+                            style: TextStyle(
+                                fontSize: 20, color: context.palette.muted)),
+                      ]),
+                )),
             // 移动指示线（与网格线同宽，比 T4 旧参考线更深），随偏差滑动。
             Positioned(
                 top: 0,
