@@ -176,12 +176,19 @@ class MicPitchStream {
             .take(16)
             .map((b) => b.toRadixString(16).padLeft(2, '0'))
             .join(' ');
-        final i16 = Int16List.view(
-            chunk.buffer, chunk.offsetInBytes, chunk.lengthInBytes ~/ 2);
-        // 多声道交错：按声道步长取首声道，能量与音高检测都按单声道。
+        // ByteData.getInt16 不要求 2 字节对齐——record 的 chunk 是大缓冲
+        // 子视图，offsetInBytes 可为奇数；Int16List.view 对奇偏移创建即抛
+        // RangeError（真凶：该块样本全丢、音高流假死）。
+        final bd = ByteData.sublistView(chunk);
         final doubles = ch == 1
-            ? [for (final v in i16) v / 32768.0]
-            : [for (var i = 0; i < i16.length; i += ch) i16[i] / 32768.0];
+            ? [
+                for (var i = 0; i < chunk.lengthInBytes ~/ 2; i++)
+                  bd.getInt16(i * 2, Endian.little) / 32768.0
+              ]
+            : [
+                for (var i = 0; i + ch * 2 <= chunk.lengthInBytes; i += ch * 2)
+                  bd.getInt16(i, Endian.little) / 32768.0
+              ];
         for (final w in _windower.add(doubles)) {
           windowCount++;
           lastWindowSamples = w.length;
