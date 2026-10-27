@@ -33,4 +33,19 @@ void main() {
     await s2.load();
     expect(s2.mode, ThemeMode.system);
   });
+
+  test('toggleDebugDiagnostics 往返持久化', () async {
+    final s = ThemeSettingsState(db);
+    await s.load();
+    expect(s.debugDiagnostics, isFalse);
+    await s.toggleDebugDiagnostics();
+    expect(s.debugDiagnostics, isTrue);
+    final s2 = ThemeSettingsState(db);
+    await s2.load();
+    expect(s2.debugDiagnostics, isTrue);
+    await s2.toggleDebugDiagnostics();
+    final s3 = ThemeSettingsState(db);
+    await s3.load();
+    expect(s3.debugDiagnostics, isFalse);
+  });
 }

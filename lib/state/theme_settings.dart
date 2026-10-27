@@ -9,6 +9,9 @@ class ThemeSettingsState extends ChangeNotifier {
 
   ThemeMode mode = ThemeMode.system;
 
+  /// 调试诊断显示开关（调音页诊断行默认隐藏，开关打开才显示）。
+  bool debugDiagnostics = false;
+
   Future<void> load() async {
     final row = await (_db.select(_db.settings)
             ..where((t) => t.key.equals('themeMode')))
@@ -18,6 +21,10 @@ class ThemeSettingsState extends ChangeNotifier {
       'dark' => ThemeMode.dark,
       _ => ThemeMode.system,
     };
+    final dbg = await (_db.select(_db.settings)
+            ..where((t) => t.key.equals('debugDiagnostics')))
+        .getSingleOrNull();
+    debugDiagnostics = dbg?.value == '1';
     notifyListeners();
   }
 
@@ -25,6 +32,14 @@ class ThemeSettingsState extends ChangeNotifier {
     mode = m;
     await _db.into(_db.settings).insertOnConflictUpdate(
         SettingsCompanion.insert(key: 'themeMode', value: m.name));
+    notifyListeners();
+  }
+
+  Future<void> toggleDebugDiagnostics() async {
+    debugDiagnostics = !debugDiagnostics;
+    await _db.into(_db.settings).insertOnConflictUpdate(
+        SettingsCompanion.insert(
+            key: 'debugDiagnostics', value: debugDiagnostics ? '1' : '0'));
     notifyListeners();
   }
 }
