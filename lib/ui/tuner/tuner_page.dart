@@ -402,6 +402,17 @@ class _TunerPageState extends State<TunerPage> {
                     fontSize: 12,
                     color: GuitarBarColors.negative,
                     fontFeatures: [FontFeature.tabularFigures()])),
+          // 回调内异常（Error/Exception 一并捕获）：非空即说明音频处理链在
+          // 回调层炸过，配合 窗/cs/ws 定位断链层。
+          if (_mic.callbackErr.isNotEmpty) ...[
+            Text('cberr: ${_mic.callbackErr}',
+                style: const TextStyle(
+                    fontSize: 12,
+                    color: GuitarBarColors.negative,
+                    fontFeatures: [FontFeature.tabularFigures()])),
+            Text(_mic.callbackErrSt,
+                style: const TextStyle(fontSize: 10, color: GuitarBarColors.muted)),
+          ],
         ],
       ]),
     );

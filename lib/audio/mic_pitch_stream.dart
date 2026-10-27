@@ -118,6 +118,14 @@ class MicPitchStream {
   /// 最近一次出窗的窗口样本数（应为 windowSamples=4096）。
   int lastWindowSamples = 0;
 
+  /// 回调内最近一次异常（Error/Exception 一并捕获；诊断行显示）。
+  /// 历史教训：Error（如对已关闭控制器 add 的 StateError）不进 onError、
+  /// 页面 catch Exception 也接不住，静默飞走导致整条音高流假死。
+  String callbackErr = '';
+
+  /// [callbackErr] 对应堆栈前 300 字符。
+  String callbackErrSt = '';
+
   /// 系统输入设备列表（供调音页设备选择器）。
   Future<List<InputDevice>> listDevices() => _rec.listInputDevices();
 
@@ -149,6 +157,8 @@ class MicPitchStream {
     windowCount = 0;
     lastChunkSamples = 0;
     lastWindowSamples = 0;
+    callbackErr = '';
+    callbackErrSt = '';
     _windower = PitchWindower(windowSamples: 4096, hopSamples: 2048);
     final raw = await _rec.startStream(RecordConfig(
         encoder: AudioEncoder.pcm16bits,
@@ -159,41 +169,53 @@ class MicPitchStream {
             ? null
             : InputDevice(id: _deviceId!, label: '')));
     _rawSub = raw.listen((chunk) {
-      chunkCount++;
-      lastChunkSamples = chunk.lengthInBytes ~/ 2;
-      lastChunkHex = chunk
-          .take(16)
-          .map((b) => b.toRadixString(16).padLeft(2, '0'))
-          .join(' ');
-      final i16 = Int16List.view(
-          chunk.buffer, chunk.offsetInBytes, chunk.lengthInBytes ~/ 2);
-      // 多声道交错：按声道步长取首声道，能量与音高检测都按单声道。
-      final doubles = ch == 1
-          ? [for (final v in i16) v / 32768.0]
-          : [for (var i = 0; i < i16.length; i += ch) i16[i] / 32768.0];
-      for (final w in _windower.add(doubles)) {
-        windowCount++;
-        lastWindowSamples = w.length;
-        final rms = windowRms(w);
-        lastRms = rms;
-        if (rms == 0) {
-          _zeroWindows++;
-        } else {
-          _zeroWindows = 0;
-          _formatLocked = true; // 有声：格式有效，停止轮换
+      try {
+        chunkCount++;
+        lastChunkSamples = chunk.lengthInBytes ~/ 2;
+        lastChunkHex = chunk
+            .take(16)
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join(' ');
+        final i16 = Int16List.view(
+            chunk.buffer, chunk.offsetInBytes, chunk.lengthInBytes ~/ 2);
+        // 多声道交错：按声道步长取首声道，能量与音高检测都按单声道。
+        final doubles = ch == 1
+            ? [for (final v in i16) v / 32768.0]
+            : [for (var i = 0; i < i16.length; i += ch) i16[i] / 32768.0];
+        for (final w in _windower.add(doubles)) {
+          windowCount++;
+          lastWindowSamples = w.length;
+          final rms = windowRms(w);
+          lastRms = rms;
+          if (rms == 0) {
+            _zeroWindows++;
+          } else {
+            _zeroWindows = 0;
+            _formatLocked = true; // 有声：格式有效，停止轮换
+          }
+          // 空安全调用：设备端 done 后 _out 已置空，迟到的 chunk 不再炸。
+          _out?.add(rms < rmsGate ? null : detectPitch(w, rate));
         }
-        _out!.add(rms < rmsGate ? null : detectPitch(w, rate));
-      }
-      if (!_formatLocked && !_rotating && _zeroWindows >= 15) {
-        // 约 0.7s 纯数字静音：当前格式无效，自动换下一格式（页面流不断）。
-        _rotating = true;
-        unawaited(_rotateFormat().whenComplete(() => _rotating = false));
+        if (!_formatLocked && !_rotating && _zeroWindows >= 15) {
+          // 约 0.7s 纯数字静音：当前格式无效，自动换下一格式（页面流不断）。
+          _rotating = true;
+          unawaited(_rotateFormat().whenComplete(() => _rotating = false));
+        }
+      } catch (e, st) {
+        // Error 与 Exception 一并显形；不 rethrow——单块异常不中断后续块
+        // （下一块数据自会验证），但真相进诊断行，不再静默飞走。
+        callbackErr = e.toString();
+        callbackErrSt =
+            st.toString().substring(0, st.toString().length.clamp(0, 300));
       }
     }, onError: _out!.addError, onDone: () {
       // 设备端自行结束（拔麦/权限收回）：清状态允许重启，否则永久变砖。
+      // _out 置空与 stop() 对齐——否则后续 _out!.add 对已关闭控制器抛
+      // StateError（Error 子类），每个窗口全炸且无人接住，音高流假死。
       _rawSub = null;
       _busy = false;
-      _out!.close();
+      _out?.close();
+      _out = null;
     });
   }
 
