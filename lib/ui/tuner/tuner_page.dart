@@ -416,13 +416,13 @@ class _TunerPageState extends State<TunerPage> {
                           fontSize: 20, color: context.palette.muted)),
                   const SizedBox(width: 12),
                 ])),
-            // 移动指示线（2px ink 实色，比 T4 中央参考线更深），随偏差滑动。
+            // 移动指示线（与网格线同宽，比 T4 旧参考线更深），随偏差滑动。
             Positioned(
                 top: 0,
                 bottom: 0,
-                left: x - 1,
+                left: x - _gridStroke / 2,
                 child: Container(
-                    width: 2, color: context.palette.ink)),
+                    width: _gridStroke, color: context.palette.ink)),
             // 固定目标环：直径 44，3px ink 描边（暗板即白描边），环内透明底 +
             // 当前音分数（色随 |cents| 三段渐变）。
             Positioned(
@@ -720,10 +720,14 @@ class _HeadstockPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
+/// 网格线与移动指示线的统一线宽（A1：两者粗细完全一致）。
+const _gridStroke = 1.0;
+
 /// 网格背景（T3）：~24px 小方格，以水平中央为轴线条不透明度从中央向
 /// 两侧线性衰减至 0（GuitarTuna 深底白网格的浅/暗主题等价物——ink 基线
 /// 低透明度）。V2：中央参考竖线已删除——固定目标环 + 移动指示线已足够
-/// 标示中央。
+/// 标示中央。A2：竖线相位以水平中央为一条网格线（x = w/2 + k*24），
+/// 指示线 0 音分位置与之精确重合。
 class _GridPainter extends CustomPainter {
   _GridPainter({required this.ink});
 
@@ -733,18 +737,23 @@ class _GridPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     const spacing = 24.0;
     const centerAlpha = 0.10; // 网格基线：中心 10%，向两侧线性衰减
-    final paint = Paint()..strokeWidth = 1;
+    final paint = Paint()..strokeWidth = _gridStroke;
     double alphaAt(double x) =>
         centerAlpha * (1 - ((x - size.width / 2).abs() / (size.width / 2)))
             .clamp(0.0, 1.0);
 
-    for (var x = spacing; x < size.width; x += spacing) {
+    // 竖线：以水平中央为一条网格线向两侧展开。
+    final half = size.width / 2;
+    final kMax = (half / spacing).ceil();
+    for (var k = -kMax; k <= kMax; k++) {
+      final x = half + k * spacing;
+      if (x <= 0 || x >= size.width) continue;
       final a = alphaAt(x);
       if (a <= 0.004) continue;
       paint.color = ink.withValues(alpha: a);
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
     }
-    // 横线按 24px 分段，各段取其水平中心的透明度。
+    // 横线按 24px 分段，各段取其水平中心的透明度（相位从左缘起算）。
     for (var y = spacing; y < size.height; y += spacing) {
       for (var x = 0.0; x < size.width; x += spacing) {
         final a = alphaAt(x + spacing / 2);
