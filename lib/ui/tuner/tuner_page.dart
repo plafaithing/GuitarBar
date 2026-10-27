@@ -275,7 +275,7 @@ class _TunerPageState extends State<TunerPage> {
         TweenAnimationBuilder<double>(
           tween: Tween(end: cents.toDouble()),
           duration: const Duration(milliseconds: 150),
-          curve: Curves.easeOut,
+          curve: Curves.easeOutCubic,
           builder: (context, animCents, _) => SizedBox(
             width: 280,
             height: 280,
@@ -322,10 +322,9 @@ class _TunerPageState extends State<TunerPage> {
             for (var i = 0; i < 6; i++) ...[
               Expanded(
                   child: _stringBlock(state, i,
-                      bordered: _lockedString == null &&
-                          _freq != null &&
-                          i == autoIdx,
-                      inTuneDot:
+                      hit: i == _lockedString ||
+                          (_freq != null && i == autoIdx),
+                      inTune:
                           _freq != null && i == hitIdx && cents.abs() <= 3)),
               if (i < 5) const SizedBox(width: 8),
             ],
@@ -418,52 +417,55 @@ class _TunerPageState extends State<TunerPage> {
     );
   }
 
-  /// 弦块：锁定弦块底 activePill（与自动高亮互斥，锁定优先）；未锁定时自动
-  /// 认弦命中的弦加 dataHue 2px 边框（数据高亮）；命中弦到位（|cents| ≤ 3）
-  /// 右上角 positive 绿点。
+  /// 弦块三态互斥（到位 > 检测命中 > 未检测），数据驱动的状态色：
+  /// 到位（命中弦 |cents| ≤ 3）→ pillPositiveBg 底 + positive 边框与文字；
+  /// 检测命中（锁定弦或自动认弦命中）→ dataHue 浅色调底 + dataHue 边框；
+  /// 未检测 → 透明底无边框。
   Widget _stringBlock(TuningState state, int i,
-      {required bool bordered, required bool inTuneDot}) {
-    final locked = _lockedString == i;
+      {required bool hit, required bool inTune}) {
+    final Color bg;
+    final Color? borderColor;
+    final Color textColor;
+    if (inTune) {
+      bg = GuitarBarColors.pillPositiveBg;
+      borderColor = GuitarBarColors.positive;
+      textColor = GuitarBarColors.positive;
+    } else if (hit) {
+      bg = const Color(0xFFF5EAD9); // dataHue 浅色调
+      borderColor = GuitarBarColors.dataHue;
+      textColor = GuitarBarColors.ink;
+    } else {
+      bg = GuitarBarColors.ground; // 与页面地色一致 = 视觉透明
+      borderColor = null;
+      textColor = GuitarBarColors.ink;
+    }
     return Material(
-      color: locked ? GuitarBarColors.activePill : Colors.transparent,
+      color: bg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: bordered && !locked
-            ? const BorderSide(color: GuitarBarColors.dataHue, width: 2)
-            : BorderSide.none,
+        side: borderColor == null
+            ? BorderSide.none
+            : BorderSide(color: borderColor, width: 2),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () => _onStringTap(state, i),
         child: SizedBox(
           height: 64,
-          child: Stack(children: [
-            Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text('${6 - i}弦',
-                    style: const TextStyle(
-                        fontSize: 12, color: GuitarBarColors.muted)),
-                const SizedBox(height: 2),
-                Text(state.current.strings[i].name,
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: GuitarBarColors.ink,
-                        fontFeatures: const [FontFeature.tabularFigures()])),
-              ]),
-            ),
-            if (inTuneDot)
-              const Positioned(
-                  top: 4,
-                  right: 4,
-                  child: SizedBox(
-                      width: 8,
-                      height: 8,
-                      child: DecoratedBox(
-                          decoration: BoxDecoration(
-                              color: GuitarBarColors.positive,
-                              shape: BoxShape.circle)))),
-          ]),
+          child: Center(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('${6 - i}弦',
+                  style: const TextStyle(
+                      fontSize: 12, color: GuitarBarColors.muted)),
+              const SizedBox(height: 2),
+              Text(state.current.strings[i].name,
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: textColor,
+                      fontFeatures: const [FontFeature.tabularFigures()])),
+            ]),
+          ),
         ),
       ),
     );
@@ -528,10 +530,11 @@ class _TunerPageState extends State<TunerPage> {
   }
 }
 
-/// GuitarTuna 式圆形表盘：±50 音分映射 270° 弧（0 音分在正上方，底部开口），
-/// 主刻度 -50/-25/0/+25/+50 带数值标签；弧线默认 border 灰、|cents| ≤ 3 整段
-/// 转 positive 绿；dataHue 标记点（设计账本：数据色首次用于数据元素）在弧上
-/// 指示当前偏差，细针（ink）从圆心指向标记。
+/// GuitarTuna 式圆形表盘（雷达扫掠）：全环 60 根细刻度做雷达盘基底（±50
+/// 音分对应的 270° 弧段内用 border 色加深、底部 90° 盲区用 rule 色）；270°
+/// 轨道弧到位整段转 positive 绿；从 0 音分到当前偏差画 10px dataHue 加粗弧
+/// （雷达扫掠主体，数据色用于数据元素）；细针（ink 2px）+ dataHue 圆点带
+/// 白描边指向当前偏差。
 class _DialPainter extends CustomPainter {
   _DialPainter({required this.cents, required this.inTune});
   final double cents;
@@ -541,20 +544,51 @@ class _DialPainter extends CustomPainter {
   static double _angleOf(double c) =>
       -math.pi / 2 + (c / 50) * (3 * math.pi / 4);
 
+  /// 归一到 [0, 2π)
+  static double _norm(double a) {
+    while (a < 0) {
+      a += 2 * math.pi;
+    }
+    while (a >= 2 * math.pi) {
+      a -= 2 * math.pi;
+    }
+    return a;
+  }
+
+  static Offset _direction(double c) {
+    final a = _angleOf(c);
+    return Offset(math.cos(a), math.sin(a));
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     // 留 24 外缘给刻度数值标签。
     final radius = math.min(size.width, size.height) / 2 - 24;
 
+    // 270° 轨道弧（到位语义保留：|cents| ≤ 3 时整段转绿）。
     final arcPaint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6
       ..strokeCap = StrokeCap.round
       ..color = inTune ? GuitarBarColors.positive : GuitarBarColors.border;
-    // 从左下端点（135°）顺时针画 270° 到右下端点（45°），开口朝正下方。
     canvas.drawArc(Rect.fromCircle(center: center, radius: radius),
         3 * math.pi / 4, 3 * math.pi / 2, false, arcPaint);
+
+    // 雷达盘基底：全环 60 根细刻度；±50 音分 270° 弧段内 border 色加深，
+    // 底部 90° 盲区 rule 色——有效区与盲区一眼区分。
+    for (var i = 0; i < 60; i++) {
+      final t = _norm(-math.pi / 2 + i * 2 * math.pi / 60);
+      final inArc = t >= 3 * math.pi / 4 || t <= math.pi / 4;
+      final dir = Offset(math.cos(t), math.sin(t));
+      canvas.drawLine(
+          center + dir * (radius - 6),
+          center + dir * radius,
+          Paint()
+            ..strokeWidth = 1
+            ..color =
+                inArc ? GuitarBarColors.border : GuitarBarColors.rule);
+    }
 
     final tickPaint = Paint()
       ..strokeWidth = 2
@@ -576,7 +610,24 @@ class _DialPainter extends CustomPainter {
       tp.paint(canvas, labelCenter - Offset(tp.width / 2, tp.height / 2));
     }
 
-    final dir = _direction(cents.clamp(-50.0, 50.0));
+    // 偏移填充弧（雷达扫掠主体）：0 音分 → 当前偏差，偏多少画多少。
+    final clamped = cents.clamp(-50.0, 50.0);
+    final sweep = _angleOf(clamped) + math.pi / 2; // 相对 12 点的偏角
+    if (sweep.abs() > 0.001) {
+      canvas.drawArc(
+          Rect.fromCircle(center: center, radius: radius),
+          -math.pi / 2,
+          sweep,
+          false,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 10
+            ..strokeCap = StrokeCap.round
+            ..color =
+                inTune ? GuitarBarColors.positive : GuitarBarColors.dataHue);
+    }
+
+    final dir = _direction(clamped);
     final marker = center + dir * radius;
     canvas.drawLine(
         center,
@@ -584,12 +635,9 @@ class _DialPainter extends CustomPainter {
         Paint()
           ..strokeWidth = 2
           ..color = GuitarBarColors.ink);
-    canvas.drawCircle(marker, 4, Paint()..color = GuitarBarColors.dataHue);
-  }
-
-  static Offset _direction(double c) {
-    final a = _angleOf(c);
-    return Offset(math.cos(a), math.sin(a));
+    // 标记点：10px dataHue 圆点 + 3px 白描边（琥珀弧上更立体）。
+    canvas.drawCircle(marker, 8, Paint()..color = GuitarBarColors.surface);
+    canvas.drawCircle(marker, 5, Paint()..color = GuitarBarColors.dataHue);
   }
 
   @override
