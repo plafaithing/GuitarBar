@@ -236,6 +236,18 @@ class _TunerPageState extends State<TunerPage> {
               tooltip: '新建自定义调弦',
               icon: const Icon(Icons.add_circle_outline,
                   color: GuitarBarColors.ink)),
+          const SizedBox(width: 4),
+          // 自动认弦开关：开 = _lockedString 为空（自动）；关 = 手动
+          // （锁定当前命中的弦，未检测则锁 6 弦，随后可点钮换弦）。
+          Text('自动',
+              style: TextStyle(
+                  fontSize: 14, color: GuitarBarColors.muted)),
+          Switch(
+            value: _lockedString == null,
+            onChanged: (auto) => setState(() => _lockedString = auto
+                ? null
+                : (autoIdx >= 0 ? autoIdx : 0)),
+          ),
         ]),
         const SizedBox(height: 4),
         // 当前调弦小型入口（左上，无边框坐在地色上）：预设面板的常驻入口。
@@ -270,79 +282,18 @@ class _TunerPageState extends State<TunerPage> {
             ),
           ),
         ),
-        const Spacer(),
-        // 音频流 ~20Hz 离散更新，150ms easeOut 插值消除指针跳变。
-        TweenAnimationBuilder<double>(
-          tween: Tween(end: cents.toDouble()),
-          duration: const Duration(milliseconds: 150),
-          curve: Curves.easeOutCubic,
-          builder: (context, animCents, _) => SizedBox(
-            width: 280,
-            height: 280,
-            child: Stack(alignment: Alignment.center, children: [
-              Positioned.fill(
-                child: CustomPaint(
-                    painter: _DialPainter(cents: animCents, inTune: inTune)),
-              ),
-              Column(mainAxisSize: MainAxisSize.min, children: [
-                // 签名元素（用户反馈 GuitarTuna 式表盘）：音名 52px/600 有意
-                // 超出 48px 字号房规，属设计账本预留的升级位，不走主题角色。
-                Text(
-                    targetNote?.label(flats: _preferFlats(targetNote)) ?? '--',
-                    style: TextStyle(
-                        fontSize: 52,
-                        fontWeight: FontWeight.w600,
-                        color: GuitarBarColors.ink,
-                        fontFeatures: const [FontFeature.tabularFigures()])),
-                const SizedBox(height: 4),
-                Text(
-                    '${cents.abs()} 音分 ${cents > 0 ? '偏高' : cents < 0 ? '偏低' : ''}',
-                    style: TextStyle(
-                        fontSize: 18,
-                        color: inTune
-                            ? GuitarBarColors.positive
-                            : GuitarBarColors.ink,
-                        fontFeatures: const [FontFeature.tabularFigures()])),
-                const SizedBox(height: 2),
-                Text(
-                    _freq == null
-                        ? '未检测到声音'
-                        : '${_freq!.toStringAsFixed(1)} Hz',
-                    style: TextStyle(
-                        fontSize: 14,
-                        color: GuitarBarColors.muted,
-                        fontFeatures: const [FontFeature.tabularFigures()])),
-              ]),
-            ]),
-          ),
-        ),
-        const Spacer(),
+        const SizedBox(height: 8),
+        // 铅垂滑轨（GuitarTuna 同款）：水平细线轨道 + ♭/♯ 两端，垂线与
+        // 白色铅垂环整体随音分偏差水平滑动，居中 = 准。
+        _plumbGauge(cents.toDouble(), inTune),
+        const SizedBox(height: 12),
+        // 状态 pill（页面主答元素）：未检测为引导文案，检测中显示当前音名。
+        _statusPill(targetNote, cents),
+        const SizedBox(height: 12),
         if (_mode == _TunerMode.guitar)
-          Row(children: [
-            for (var i = 0; i < 6; i++) ...[
-              Expanded(
-                  child: _stringBlock(state, i,
-                      hit: i == _lockedString ||
-                          (_freq != null && i == autoIdx),
-                      inTune:
-                          _freq != null && i == hitIdx && cents.abs() <= 3)),
-              if (i < 5) const SizedBox(width: 8),
-            ],
-            const SizedBox(width: 12),
-            // 行尾模式按钮：锁定时显「手动」（点击回自动）；自动态显「自动」
-            // （muted 禁用，表示当前即是自动）。
-            TextButton(
-                onPressed: _lockedString == null
-                    ? null
-                    : () => setState(() => _lockedString = null),
-                child: Text(_lockedString == null ? '自动' : '手动',
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: _lockedString == null
-                            ? GuitarBarColors.muted
-                            : GuitarBarColors.ink))),
-          ]),
-        const Spacer(),
+          _headstockSection(state,
+              hitIdx: hitIdx, cents: cents, hasFreq: _freq != null),
+        const SizedBox(height: 12),
         Center(
           child: FilledButton(
               onPressed: _toggleMic,
@@ -417,14 +368,127 @@ class _TunerPageState extends State<TunerPage> {
     );
   }
 
-  /// 弦块三态互斥（到位 > 检测命中 > 未检测），数据驱动的状态色：
-  /// 到位（命中弦 |cents| ≤ 3）→ pillPositiveBg 底 + positive 边框与文字；
-  /// 检测命中（锁定弦或自动认弦命中）→ dataHue 浅色调底 + dataHue 边框；
-  /// 未检测 → 透明底无边框。
-  Widget _stringBlock(TuningState state, int i,
+  /// 铅垂滑轨（GuitarTuna 同款）：全宽水平细线轨道，♭/♯ 两端；垂线顶端
+  /// 挂在轨道上、末端白色铅垂环，整体随音分偏差水平滑动（±50 音分映射
+  /// 轨道全宽），居中 = 准；|cents| ≤ 3 时环填充 positive 绿。
+  Widget _plumbGauge(double cents, bool inTune) {
+    return SizedBox(
+      height: 140,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(end: cents.clamp(-50.0, 50.0)),
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutCubic,
+        builder: (context, anim, _) => LayoutBuilder(
+            builder: (context, constraints) {
+          final w = constraints.maxWidth;
+          const margin = 40.0; // ♭/♯ 字宽留白
+          final x = w / 2 + (anim / 50) * (w / 2 - margin);
+          return Stack(fit: StackFit.expand, children: [
+            Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Row(children: [
+                  const SizedBox(width: 12),
+                  Text('♭',
+                      style: TextStyle(
+                          fontSize: 18, color: GuitarBarColors.muted)),
+                  Expanded(
+                      child: Container(
+                          height: 1, color: GuitarBarColors.rule)),
+                  Text('♯',
+                      style: TextStyle(
+                          fontSize: 18, color: GuitarBarColors.muted)),
+                  const SizedBox(width: 12),
+                ])),
+            // 垂线：顶端挂在轨道上，向下 56。
+            Positioned(
+                top: 0,
+                left: x - 0.5,
+                child: Container(
+                    width: 1, height: 56, color: GuitarBarColors.border)),
+            // 铅垂环：直径 28，ink 3px 描边；到位填充 positive 绿。
+            Positioned(
+                top: 56,
+                left: x - 14,
+                child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color:
+                            inTune ? GuitarBarColors.positive : GuitarBarColors.surface,
+                        border: Border.all(
+                            color: GuitarBarColors.ink, width: 3)))),
+          ]);
+        }),
+      ),
+    );
+  }
+
+  /// 状态 pill（页面主答元素）：深色圆角胶囊——未检测显示引导文案，
+  /// 检测中替换为当前音名 40px/600 白字 + 音分小字。
+  Widget _statusPill(Note? targetNote, int cents) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+        decoration: BoxDecoration(
+            color: GuitarBarColors.ink, borderRadius: BorderRadius.circular(32)),
+        child: targetNote == null
+            ? const Text('弹拨任意琴弦开始调音',
+                style: TextStyle(fontSize: 16, color: Colors.white))
+            : Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(targetNote.label(flats: _preferFlats(targetNote)),
+                    style: TextStyle(
+                        fontSize: 40,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                        fontFeatures: const [FontFeature.tabularFigures()])),
+                const SizedBox(width: 10),
+                Text(
+                    '${cents.abs()} 音分 ${cents > 0 ? '偏高' : cents < 0 ? '偏低' : ''}',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white70,
+                        fontFeatures: const [FontFeature.tabularFigures()])),
+              ]),
+      ),
+    );
+  }
+
+  /// 琴头区（签名元素）：风格化琴头插画居中，左右两列圆形弦钮
+  /// （左列 D A E = 4/5/6 弦，右列 G B E = 3/2/1 弦），点击 = 播参考音 + 锁定。
+  Widget _headstockSection(TuningState state,
+      {required int hitIdx, required int cents, required bool hasFreq}) {
+    Widget knobColumn(List<int> indices) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final i in indices)
+            Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: _stringKnob(state, i,
+                    hit: i == _lockedString || (hasFreq && i == hitIdx),
+                    inTune: hasFreq && i == hitIdx && cents.abs() <= 3)),
+        ]);
+    return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      knobColumn(const [2, 1, 0]),
+      const SizedBox(width: 8),
+      SizedBox(
+          width: 250,
+          height: 320,
+          child: CustomPaint(painter: _HeadstockPainter())),
+      const SizedBox(width: 8),
+      knobColumn(const [3, 4, 5]),
+    ]);
+  }
+
+  /// 圆形弦钮（直径 64）三态互斥（到位 > 检测命中 > 未检测），数据驱动的
+  /// 状态色：到位 → pillPositiveBg 底 + positive 边框与文字；命中 → dataHue
+  /// 浅调底 + dataHue 边框；未检测 → surface 白底 + controlBorder 细边。
+  Widget _stringKnob(TuningState state, int i,
       {required bool hit, required bool inTune}) {
     final Color bg;
-    final Color? borderColor;
+    final Color borderColor;
     final Color textColor;
     if (inTune) {
       bg = GuitarBarColors.pillPositiveBg;
@@ -435,38 +499,27 @@ class _TunerPageState extends State<TunerPage> {
       borderColor = GuitarBarColors.dataHue;
       textColor = GuitarBarColors.ink;
     } else {
-      bg = GuitarBarColors.ground; // 与页面地色一致 = 视觉透明
-      borderColor = null;
+      bg = GuitarBarColors.surface;
+      borderColor = GuitarBarColors.controlBorder;
       textColor = GuitarBarColors.ink;
     }
-    return Material(
-      color: bg,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: borderColor == null
-            ? BorderSide.none
-            : BorderSide(color: borderColor, width: 2),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () => _onStringTap(state, i),
-        child: SizedBox(
-          height: 64,
-          child: Center(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Text('${6 - i}弦',
-                  style: const TextStyle(
-                      fontSize: 12, color: GuitarBarColors.muted)),
-              const SizedBox(height: 2),
-              Text(state.current.strings[i].name,
-                  style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: textColor,
-                      fontFeatures: const [FontFeature.tabularFigures()])),
-            ]),
-          ),
-        ),
+    return InkWell(
+      onTap: () => _onStringTap(state, i),
+      customBorder: const CircleBorder(),
+      child: Container(
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: bg,
+            border: Border.all(color: borderColor, width: inTune || hit ? 2 : 1)),
+        alignment: Alignment.center,
+        child: Text(state.current.strings[i].name,
+            style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: textColor,
+                fontFeatures: const [FontFeature.tabularFigures()])),
       ),
     );
   }
@@ -530,119 +583,70 @@ class _TunerPageState extends State<TunerPage> {
   }
 }
 
-/// GuitarTuna 式圆形表盘（雷达扫掠）：全环 60 根细刻度做雷达盘基底（±50
-/// 音分对应的 270° 弧段内用 border 色加深、底部 90° 盲区用 rule 色）；270°
-/// 轨道弧到位整段转 positive 绿；从 0 音分到当前偏差画 10px dataHue 加粗弧
-/// （雷达扫掠主体，数据色用于数据元素）；细针（ink 2px）+ dataHue 圆点带
-/// 白描边指向当前偏差。
-class _DialPainter extends CustomPainter {
-  _DialPainter({required this.cents, required this.inTune});
-  final double cents;
-  final bool inTune;
-
-  /// cents ∈ [-50, 50] → 相对 12 点方向的偏角 ∈ [-135°, +135°]
-  static double _angleOf(double c) =>
-      -math.pi / 2 + (c / 50) * (3 * math.pi / 4);
-
-  /// 归一到 [0, 2π)
-  static double _norm(double a) {
-    while (a < 0) {
-      a += 2 * math.pi;
-    }
-    while (a >= 2 * math.pi) {
-      a -= 2 * math.pi;
-    }
-    return a;
-  }
-
-  static Offset _direction(double c) {
-    final a = _angleOf(c);
-    return Offset(math.cos(a), math.sin(a));
-  }
-
+/// 风格化琴头插画（签名元素，扁平语言不追求照片级）：暖木双色阶圆角梯形
+/// 木板（帽形顶边），顶部浅色弦枕，6 根弦线从弦枕向下穿过琴颈，左右缘各
+/// 3 个银灰旋钮圆点。dataHue 同族木色 = 主题性插画元素。
+class _HeadstockPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    // 留 24 外缘给刻度数值标签。
-    final radius = math.min(size.width, size.height) / 2 - 24;
+    final w = size.width;
+    final h = size.height;
+    const wood = Color(0xFF8A5A2B);
+    const woodLight = Color(0xFFA06A35);
+    const tunerMetal = Color(0xFFC7C2B8);
+    const stringColor = Color(0xFFEFE9DC);
 
-    // 270° 轨道弧（到位语义保留：|cents| ≤ 3 时整段转绿）。
-    final arcPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 6
-      ..strokeCap = StrokeCap.round
-      ..color = inTune ? GuitarBarColors.positive : GuitarBarColors.border;
-    canvas.drawArc(Rect.fromCircle(center: center, radius: radius),
-        3 * math.pi / 4, 3 * math.pi / 2, false, arcPaint);
+    // 木板主体：帽形顶边 + 两侧微内收到底。
+    final body = Path()
+      ..moveTo(w * 0.26, h * 0.18)
+      ..quadraticBezierTo(w * 0.5, h * 0.02, w * 0.74, h * 0.18)
+      ..lineTo(w * 0.71, h * 0.90)
+      ..quadraticBezierTo(w * 0.5, h * 0.97, w * 0.29, h * 0.90)
+      ..close();
+    canvas.drawPath(body, Paint()..color = wood);
 
-    // 雷达盘基底：全环 60 根细刻度；±50 音分 270° 弧段内 border 色加深，
-    // 底部 90° 盲区 rule 色——有效区与盲区一眼区分。
-    for (var i = 0; i < 60; i++) {
-      final t = _norm(-math.pi / 2 + i * 2 * math.pi / 60);
-      final inArc = t >= 3 * math.pi / 4 || t <= math.pi / 4;
-      final dir = Offset(math.cos(t), math.sin(t));
-      canvas.drawLine(
-          center + dir * (radius - 6),
-          center + dir * radius,
-          Paint()
-            ..strokeWidth = 1
-            ..color =
-                inArc ? GuitarBarColors.border : GuitarBarColors.rule);
+    // 右缘高光侧条（双色阶体积感，纯色无渐变）。
+    final sheen = Path()
+      ..moveTo(w * 0.52, h * 0.031)
+      ..quadraticBezierTo(w * 0.735, h * 0.10, w * 0.74, h * 0.18)
+      ..lineTo(w * 0.71, h * 0.90)
+      ..quadraticBezierTo(w * 0.63, h * 0.94, w * 0.58, h * 0.925)
+      ..close();
+    canvas.drawPath(sheen, Paint()..color = woodLight);
+
+    // 底部琴颈（同木色窄条向下出界，暗示接琴体）。
+    canvas.drawRect(
+        Rect.fromLTWH(w * 0.42, h * 0.90, w * 0.16, h * 0.10),
+        Paint()..color = wood);
+
+    // 弦枕（顶部浅色圆角条）。
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(w * 0.37, h * 0.155, w * 0.26, h * 0.030),
+            const Radius.circular(4)),
+        Paint()..color = stringColor);
+
+    // 弦线：弦枕下 6 根向琴颈收拢（浅色 1px）。
+    final stringPaint = Paint()
+      ..strokeWidth = 1
+      ..color = stringColor;
+    for (var i = 0; i < 6; i++) {
+      final topX = w * (0.395 + i * 0.042);
+      final bottomX = w * (0.445 + i * 0.022);
+      canvas.drawLine(Offset(topX, h * 0.185), Offset(bottomX, h * 0.92),
+          stringPaint);
     }
 
-    final tickPaint = Paint()
-      ..strokeWidth = 2
-      ..color = GuitarBarColors.controlBorder;
-    for (final c in const [-50, -25, 0, 25, 50]) {
-      final dir = _direction(c.toDouble());
-      canvas.drawLine(center + dir * (radius - 10),
-          center + dir * radius, tickPaint);
-      final tp = TextPainter(
-          text: TextSpan(
-              text: '$c',
-              style: TextStyle(
-                  fontSize: 11,
-                  color: GuitarBarColors.muted,
-                  fontFeatures: const [FontFeature.tabularFigures()])),
-          textDirection: TextDirection.ltr)
-        ..layout();
-      final labelCenter = center + dir * (radius + 14);
-      tp.paint(canvas, labelCenter - Offset(tp.width / 2, tp.height / 2));
+    // 左右缘各 3 个银灰旋钮圆点（跨缘，呼应外侧交互弦钮行高）。
+    final knobPaint = Paint()..color = tunerMetal;
+    for (final y in const [0.36, 0.55, 0.74]) {
+      canvas.drawCircle(Offset(w * 0.265, h * y), 7, knobPaint);
+      canvas.drawCircle(Offset(w * 0.735, h * y), 7, knobPaint);
     }
-
-    // 偏移填充弧（雷达扫掠主体）：0 音分 → 当前偏差，偏多少画多少。
-    final clamped = cents.clamp(-50.0, 50.0);
-    final sweep = _angleOf(clamped) + math.pi / 2; // 相对 12 点的偏角
-    if (sweep.abs() > 0.001) {
-      canvas.drawArc(
-          Rect.fromCircle(center: center, radius: radius),
-          -math.pi / 2,
-          sweep,
-          false,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 10
-            ..strokeCap = StrokeCap.round
-            ..color =
-                inTune ? GuitarBarColors.positive : GuitarBarColors.dataHue);
-    }
-
-    final dir = _direction(clamped);
-    final marker = center + dir * radius;
-    canvas.drawLine(
-        center,
-        marker,
-        Paint()
-          ..strokeWidth = 2
-          ..color = GuitarBarColors.ink);
-    // 标记点：10px dataHue 圆点 + 3px 白描边（琥珀弧上更立体）。
-    canvas.drawCircle(marker, 8, Paint()..color = GuitarBarColors.surface);
-    canvas.drawCircle(marker, 5, Paint()..color = GuitarBarColors.dataHue);
   }
 
   @override
-  bool shouldRepaint(_DialPainter old) =>
-      old.cents != cents || old.inTune != inTune;
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _PresetSheet extends StatelessWidget {
