@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../data/database.dart';
+import 'profile/profile_page.dart';
 import 'theme.dart';
 import 'tuner/tuner_page.dart';
 
@@ -73,8 +74,10 @@ class _RootPageState extends State<RootPage> {
                 duration: _fadeDuration,
                 child: i == 0
                     ? const TunerPage()
-                    : _Placeholder(_titles[i], _hints[i],
-                        pad: wide ? 24.0 : 16.0),
+                    : i == 2
+                        ? const ProfilePage()
+                        : _Placeholder(_titles[i], _hints[i],
+                            pad: wide ? 24.0 : 16.0),
               ),
             ),
           ),

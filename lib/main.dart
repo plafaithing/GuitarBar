@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'data/database.dart';
+import 'state/theme_settings.dart';
 import 'state/tuning_state.dart';
 import 'ui/root.dart';
 import 'ui/theme.dart';
@@ -23,6 +24,7 @@ Future<void> main() async {
   runApp(MultiProvider(providers: [
     Provider<AppDatabase>.value(value: db),
     ChangeNotifierProvider(create: (_) => TuningState(db)..load()),
+    ChangeNotifierProvider(create: (_) => ThemeSettingsState(db)..load()),
   ], child: const GuitarBarApp()));
 }
 
@@ -30,14 +32,15 @@ class GuitarBarApp extends StatelessWidget {
   const GuitarBarApp({super.key});
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'GuitarBar',
-        // debug 构建演示截图不带右上角 DEBUG 丝带（release 本就没有）。
-        debugShowCheckedModeBanner: false,
-        theme: GuitarBarTheme.light(),
-        darkTheme: GuitarBarTheme.dark(),
-        // 随系统切换；Task 17 个人中心再加手动切换器。
-        themeMode: ThemeMode.system,
-        home: const RootPage(),
+  Widget build(BuildContext context) => Consumer<ThemeSettingsState>(
+        builder: (_, theme, _) => MaterialApp(
+              title: 'GuitarBar',
+              theme: GuitarBarTheme.light(),
+              darkTheme: GuitarBarTheme.dark(),
+              // 主题模式由 ThemeSettingsState 持久化驱动（个人中心三选）。
+              themeMode: theme.mode,
+              debugShowCheckedModeBanner: false,
+              home: const RootPage(),
+            ),
       );
 }
