@@ -37,15 +37,21 @@ class _TunerPageState extends State<TunerPage> {
   // 输入设备（D2）：'' = 系统默认设备；选择持久化到 settings(key: micDeviceId)。
   List<InputDevice> _devices = [];
   String _selectedDeviceId = '';
+  // 设备列表轮询（D4）：2s 一次，有变化才重建；插拔耳机实时可见。
+  Timer? _devicePollTimer;
 
   @override
   void initState() {
     super.initState();
     unawaited(_initDevices());
+    _devicePollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      unawaited(_refreshDevices());
+    });
   }
 
   @override
   void dispose() {
+    _devicePollTimer?.cancel();
     _sub?.cancel();
     unawaited(_mic.dispose()); // 页面销毁必须停麦
     super.dispose();
@@ -142,6 +148,26 @@ class _TunerPageState extends State<TunerPage> {
       if (d.id == id) return d.label;
     }
     return '未知设备';
+  }
+
+  /// 设备列表实时刷新（D4）：重新枚举输入设备，id 集合有变化才 setState；
+  /// 选中设备被拔则回退系统默认（监听中的流会自然 done，不强制切流）。
+  Future<void> _refreshDevices() async {
+    final devices = await _mic.listDevices();
+    if (!mounted) return;
+    if (devices.map((d) => d.id).toSet() == _devices.map((d) => d.id).toSet()) {
+      return; // 无变化不重建
+    }
+    final removed = _selectedDeviceId.isNotEmpty &&
+        !devices.any((d) => d.id == _selectedDeviceId);
+    setState(() {
+      _devices = devices;
+      if (removed) _selectedDeviceId = '';
+    });
+    if (removed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('设备已移除，已回退系统默认')));
+    }
   }
 
   (int, int)? _nearestString() {
@@ -338,6 +364,8 @@ class _TunerPageState extends State<TunerPage> {
                 contentPadding:
                     EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               ),
+              // 展开时强制刷新一次，保证点开看到的永远是最新列表。
+              onTap: () => unawaited(_refreshDevices()),
               items: [
                 const DropdownMenuItem(value: '', child: Text('系统默认设备')),
                 for (final d in _devices)
