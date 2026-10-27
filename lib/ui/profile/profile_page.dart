@@ -65,6 +65,30 @@ class ProfilePage extends StatelessWidget {
                 ]),
                 const Divider(),
                 const SizedBox(height: 4),
+                // 调试模式行（I2）：控制调音页诊断行显隐。
+                Row(children: [
+                  Expanded(
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('调试模式',
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                  color: p.ink)),
+                          const SizedBox(height: 2),
+                          Text('显示调音器性能诊断数据',
+                              style:
+                                  TextStyle(fontSize: 12, color: p.muted)),
+                        ]),
+                  ),
+                  Switch(
+                    value: theme.debugDiagnostics,
+                    onChanged: (_) => theme.toggleDebugDiagnostics(),
+                  ),
+                ]),
+                const Divider(),
+                const SizedBox(height: 4),
                 Row(children: [
                   Expanded(
                     child: Column(

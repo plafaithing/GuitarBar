@@ -14,6 +14,7 @@ import '../../core/music/note.dart';
 import '../../core/music/tuning.dart';
 // drift 生成的数据类 TuningPreset 与 core/music/tuning.dart 重名，hide 之。
 import '../../data/database.dart' hide TuningPreset;
+import '../../state/theme_settings.dart';
 import '../../state/tuning_state.dart';
 import '../../ui/theme.dart';
 
@@ -341,7 +342,9 @@ class _TunerPageState extends State<TunerPage> {
             ),
           ),
         ]),
-        if (kDebugMode) ...[
+        // 诊断行（I2）：默认隐藏，个人中心「调试模式」开关打开才显示。
+        if (kDebugMode &&
+            context.watch<ThemeSettingsState>().debugDiagnostics) ...[
           const SizedBox(height: 4),
           // 诊断行（D1，临时）：chunks=0 且 on:false → 打开设备就失败（看 err 行）；
           // chunks=0 且 on:true → 设备/权限在系统层被挡；rms 长期 <0.005 →
@@ -519,14 +522,15 @@ class _TunerPageState extends State<TunerPage> {
     );
   }
 
-  /// 琴头区（签名元素）：生成图资产（白底琴头+琴颈）+ 六个交互圆钮叠加。
-  /// multiply 混合让白底融入页面地色（浅色主题无缝；深色主题下图像整体
-  /// 变暗融入暗底，代价可接受）。钮位 = 图中三排弦钮（y 0.26/0.44/0.61
-  /// 图高比例 → Alignment y = 2y-1；x 微调贴图中银钮列 ±0.24——规格的
-  /// ±0.98 画布缘落在 contain 留白上，按贴图结果取值）。左列 D A E =
-  /// 4/5/6 弦，右列 G B E = 3/2/1 弦；点击 = 播参考音 + 锁定。
+  /// 琴头区（签名元素）：生成图资产 + 六个交互圆钮。I1 三点：
+  /// ① 整区高度 ×1.2（330→396）；② 钮位移出图片两侧（Alignment.x ∓1.02，
+  /// 不盖图），行心对齐图中三排弦钮（y 0.26/0.44/0.61 图高比例）；
+  /// ③ 深色主题改白色圆角照片卡（白底图放白卡，暗色观感成立），浅色主题
+  /// 保持 multiply 让白底融入地色——multiply 在暗板会把整图乘成近黑，
+  /// 故分支取舍。左列 D A E = 4/5/6 弦，右列 G B E = 3/2/1 弦。
   Widget _headstockSection(TuningState state,
       {required int hitIdx, required int cents, required bool hasFreq}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     Widget knob(Alignment alignment, int stringIdx) => Align(
           alignment: alignment,
           child: _stringKnob(state, stringIdx,
@@ -536,21 +540,42 @@ class _TunerPageState extends State<TunerPage> {
                   hasFreq && stringIdx == hitIdx && cents.abs() <= 3),
         );
     return SizedBox(
-      height: 330,
+      height: 396,
       child: AspectRatio(
         aspectRatio: 2752 / 1536,
-        child: Stack(fit: StackFit.expand, children: [
-          Image.asset('assets/images/headstock.jpg',
-              fit: BoxFit.contain,
-              color: context.palette.ground,
-              colorBlendMode: BlendMode.multiply),
-          knob(const Alignment(-0.24, -0.48), 2),
-          knob(const Alignment(-0.24, -0.12), 1),
-          knob(const Alignment(-0.24, 0.22), 0),
-          knob(const Alignment(0.24, -0.48), 3),
-          knob(const Alignment(0.24, -0.12), 4),
-          knob(const Alignment(0.24, 0.22), 5),
-        ]),
+        child: Stack(
+          clipBehavior: Clip.none, // 钮位居图外缘外，不裁剪
+          fit: StackFit.expand,
+          children: [
+            if (isDark)
+              Positioned.fill(
+                child: Container(
+                  margin: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: context.palette.border)),
+                  child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.asset('assets/images/headstock.jpg',
+                          fit: BoxFit.contain)),
+                ),
+              )
+            else
+              Positioned.fill(
+                child: Image.asset('assets/images/headstock.jpg',
+                    fit: BoxFit.contain,
+                    color: context.palette.ground,
+                    colorBlendMode: BlendMode.multiply),
+              ),
+            knob(const Alignment(-1.02, -0.48), 2),
+            knob(const Alignment(-1.02, -0.12), 1),
+            knob(const Alignment(-1.02, 0.22), 0),
+            knob(const Alignment(1.02, -0.48), 3),
+            knob(const Alignment(1.02, -0.12), 4),
+            knob(const Alignment(1.02, 0.22), 5),
+          ],
+        ),
       ),
     );
   }
