@@ -108,6 +108,16 @@ class MicPitchStream {
   /// 最近一个 chunk 的前 16 字节 hex：全 00 = 真数字静音；非零乱值 = 格式误读。
   String lastChunkHex = '';
 
+  /// 累计出窗数（诊断）：音高流事件链是否活着的直接指标——
+  /// chunks 在涨而 windowCount 恒 0 = 「chunk → 窗口器」之间断链。
+  int windowCount = 0;
+
+  /// 最近一个 chunk 的样本数（lengthInBytes ~/ 2）。
+  int lastChunkSamples = 0;
+
+  /// 最近一次出窗的窗口样本数（应为 windowSamples=4096）。
+  int lastWindowSamples = 0;
+
   /// 系统输入设备列表（供调音页设备选择器）。
   Future<List<InputDevice>> listDevices() => _rec.listInputDevices();
 
@@ -136,6 +146,9 @@ class MicPitchStream {
     lastRms = 0;
     _zeroWindows = 0;
     lastChunkHex = '';
+    windowCount = 0;
+    lastChunkSamples = 0;
+    lastWindowSamples = 0;
     _windower = PitchWindower(windowSamples: 4096, hopSamples: 2048);
     final raw = await _rec.startStream(RecordConfig(
         encoder: AudioEncoder.pcm16bits,
@@ -147,6 +160,7 @@ class MicPitchStream {
             : InputDevice(id: _deviceId!, label: '')));
     _rawSub = raw.listen((chunk) {
       chunkCount++;
+      lastChunkSamples = chunk.lengthInBytes ~/ 2;
       lastChunkHex = chunk
           .take(16)
           .map((b) => b.toRadixString(16).padLeft(2, '0'))
@@ -158,6 +172,8 @@ class MicPitchStream {
           ? [for (final v in i16) v / 32768.0]
           : [for (var i = 0; i < i16.length; i += ch) i16[i] / 32768.0];
       for (final w in _windower.add(doubles)) {
+        windowCount++;
+        lastWindowSamples = w.length;
         final rms = windowRms(w);
         lastRms = rms;
         if (rms == 0) {
