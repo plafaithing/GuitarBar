@@ -437,34 +437,37 @@ class _TunerPageState extends State<TunerPage> {
     );
   }
 
-  /// 音分色三段渐变：≤3 绿；3~25 绿→黄；>25 黄→红。
-  Color _centsColor(double absCents) {
-    const mid = Color(0xFFE6B800);
-    final p = context.palette;
-    if (absCents <= 3) return p.positive;
-    if (absCents <= 25) {
-      return Color.lerp(p.positive, mid, (absCents - 3) / 22)!;
-    }
-    return Color.lerp(
-        mid, p.negative, ((absCents - 25) / 25).clamp(0.0, 1.0))!;
-  }
-
+  /// 目标环（V1）：不透明实底随 |cents| 渐变——未检测 surface 白/暗板；
+  /// ≤3 positive 绿；3~25 绿→黄插值；>25 黄→红。数字色按填充亮度自适应
+  /// （亮底 ink / 暗底白）；描边 3.5px 主题 ink（暗板即白描边）。
   Widget _targetRing(double animCents, bool hasFreq) {
+    final abs = animCents.abs();
+    final p = context.palette;
+    final Color fill;
+    if (!hasFreq) {
+      fill = p.surface;
+    } else if (abs <= 3) {
+      fill = p.positive;
+    } else if (abs <= 25) {
+      fill = Color.lerp(p.positive, const Color(0xFFE6B800), (abs - 3) / 22)!;
+    } else {
+      fill = Color.lerp(const Color(0xFFE6B800), p.negative,
+          ((abs - 25) / 25).clamp(0.0, 1.0))!;
+    }
+    final numColor = fill.computeLuminance() > 0.5 ? p.ink : Colors.white;
     return Container(
       width: 44,
       height: 44,
       decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: Border.all(color: context.palette.ink, width: 3)),
+          color: fill,
+          border: Border.all(color: p.ink, width: 3.5)),
       alignment: Alignment.center,
-      child: Text(
-          hasFreq
-              ? '${animCents.abs().round().clamp(0, 50)}'
-              : '--',
+      child: Text(hasFreq ? '${abs.round().clamp(0, 50)}' : '--',
           style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: _centsColor(animCents.abs()),
+              color: numColor,
               fontFeatures: const [FontFeature.tabularFigures()])),
     );
   }
@@ -717,9 +720,10 @@ class _HeadstockPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-/// 网格背景（T3/T4）：~24px 小方格，以水平中央为轴线条不透明度从中央向
+/// 网格背景（T3）：~24px 小方格，以水平中央为轴线条不透明度从中央向
 /// 两侧线性衰减至 0（GuitarTuna 深底白网格的浅/暗主题等价物——ink 基线
-/// 低透明度）；中央另有一条 1.5px 低透明度全高竖线作"正中央"基准（T4）。
+/// 低透明度）。V2：中央参考竖线已删除——固定目标环 + 移动指示线已足够
+/// 标示中央。
 class _GridPainter extends CustomPainter {
   _GridPainter({required this.ink});
 
@@ -752,14 +756,6 @@ class _GridPainter extends CustomPainter {
             paint);
       }
     }
-
-    // T4：中央参考竖线（1.5px，比网格重、比指示线浅）。
-    canvas.drawLine(
-        Offset(size.width / 2, 0),
-        Offset(size.width / 2, size.height),
-        Paint()
-          ..strokeWidth = 1.5
-          ..color = ink.withValues(alpha: 0.18));
   }
 
   @override
