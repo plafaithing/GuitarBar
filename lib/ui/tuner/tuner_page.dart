@@ -39,6 +39,9 @@ class _TunerPageState extends State<TunerPage> {
   String _selectedDeviceId = '';
   // 设备列表轮询（D4）：2s 一次，有变化才重建；插拔耳机实时可见。
   Timer? _devicePollTimer;
+  // T1：未检测提示「弹拨任意琴弦开始调音」2 秒后自动淡出。
+  Timer? _hintTimer;
+  bool _showHint = true;
 
   @override
   void initState() {
@@ -47,11 +50,15 @@ class _TunerPageState extends State<TunerPage> {
     _devicePollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       unawaited(_refreshDevices());
     });
+    _hintTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _showHint = false);
+    });
   }
 
   @override
   void dispose() {
     _devicePollTimer?.cancel();
+    _hintTimer?.cancel();
     _sub?.cancel();
     unawaited(_mic.dispose()); // 页面销毁必须停麦
     super.dispose();
@@ -122,6 +129,9 @@ class _TunerPageState extends State<TunerPage> {
       _devices = devices;
       _selectedDeviceId = exists ? saved : '';
     });
+    // T2：打开软件即自动开始调音（持久化设备/系统默认；切换设备走
+    // _onDeviceChanged 的 stop→重开，无需再动）。
+    if (mounted && !_micOn) await _toggleMic();
   }
 
   /// 切换输入设备：立即持久化；若在监听则先停再用新设备重开。
@@ -286,22 +296,23 @@ class _TunerPageState extends State<TunerPage> {
           ),
         ]),
         const SizedBox(height: 8),
-        // 铅垂滑轨（GuitarTuna 同款）：水平细线轨道 + ♭/♯ 两端，垂线与
-        // 白色铅垂环整体随音分偏差水平滑动，居中 = 准。
-        _plumbGauge(cents.toDouble(), inTune),
-        const SizedBox(height: 12),
-        // 状态 pill（页面主答元素）：未检测为引导文案，检测中显示当前音名。
-        _statusPill(targetNote, cents),
+        // 网格区（T3/T4/T5）：调弦名行下方到琴头上方——小方格网格底 +
+        // 中央参考竖线（基准）+ 固定目标环/小尖 + 随偏差滑动的指示线。
+        Stack(children: [
+          Positioned.fill(
+            child: CustomPaint(
+                painter: _GridPainter(ink: context.palette.ink)),
+          ),
+          Column(children: [
+            _gaugeArea(cents.toDouble(), inTune, _freq != null),
+            const SizedBox(height: 8),
+            _statusPill(targetNote, cents),
+          ]),
+        ]),
         const SizedBox(height: 12),
         if (_mode == _TunerMode.guitar)
           _headstockSection(state,
               hitIdx: hitIdx, cents: cents, hasFreq: _freq != null),
-        const SizedBox(height: 12),
-        Center(
-          child: FilledButton(
-              onPressed: _toggleMic,
-              child: Text(_micOn ? '停止' : '开始调音')),
-        ),
         const SizedBox(height: 12),
         // 输入设备选择（长期保留）：默认设备是虚拟声卡时可一键切到真麦。
         Row(children: [
@@ -350,7 +361,7 @@ class _TunerPageState extends State<TunerPage> {
                   color: context.palette.muted,
                   fontFeatures: const [FontFeature.tabularFigures()])),
           if (_lastError != null)
-            Text('err: $_lastError',
+            Text('err: $_lastError（重进调音页或重启应用重试）',
                 style: TextStyle(
                     fontSize: 12,
                     color: context.palette.negative,
@@ -372,12 +383,12 @@ class _TunerPageState extends State<TunerPage> {
     );
   }
 
-  /// 铅垂滑轨（GuitarTuna 同款）：全宽水平细线轨道，♭/♯ 两端；垂线顶端
-  /// 挂在轨道上、末端白色铅垂环，整体随音分偏差水平滑动（±50 音分映射
-  /// 轨道全宽），居中 = 准；|cents| ≤ 3 时环填充 positive 绿。
-  Widget _plumbGauge(double cents, bool inTune) {
+  /// 仪表区（高 96）：水平轨道 + ♭/♯ 两端；固定目标环（放大镜式靶心，内写
+  /// 音分数）+ 环下小尖，两者恒在水平中央；2px ink 指示线随检测音分左右
+  /// 平滑滑动（±50 音分映射轨道全宽）——指示线与中央小尖对齐即准。
+  Widget _gaugeArea(double cents, bool inTune, bool hasFreq) {
     return SizedBox(
-      height: 140,
+      height: 96,
       child: TweenAnimationBuilder<double>(
         tween: Tween(end: cents.clamp(-50.0, 50.0)),
         duration: const Duration(milliseconds: 150),
@@ -405,58 +416,101 @@ class _TunerPageState extends State<TunerPage> {
                           fontSize: 20, color: context.palette.muted)),
                   const SizedBox(width: 12),
                 ])),
-            // 垂线：墨色 2px 挂在轨道上（弦的隐喻），向下 56 与环顶相连。
+            // 移动指示线（2px ink 实色，比 T4 中央参考线更深），随偏差滑动。
             Positioned(
                 top: 0,
+                bottom: 0,
                 left: x - 1,
                 child: Container(
-                    width: 2, height: 56, color: context.palette.ink)),
-            // 铅垂环：直径 32，ink 3.5px 描边，surface 填充随主题；到位填充 positive 绿。
+                    width: 2, color: context.palette.ink)),
+            // 固定目标环：直径 44，3px ink 描边（暗板即白描边），环内透明底 +
+            // 当前音分数（色随 |cents| 三段渐变）。
             Positioned(
-                top: 56,
-                left: x - 16,
-                child: Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: inTune
-                            ? context.palette.positive
-                            : context.palette.surface,
-                        border: Border.all(
-                            color: context.palette.ink, width: 3.5)))),
+                top: 24,
+                left: w / 2 - 22,
+                child: _targetRing(anim, hasFreq)),
+            // 环下小尖（GuitarTuna 定位针），正对水平中央。
+            Positioned(top: 68, left: w / 2 - 6, child: _needleTip()),
           ]);
         }),
       ),
     );
   }
 
-  /// 状态 pill（页面主答元素）：深色圆角胶囊——未检测显示引导文案，
-  /// 检测中替换为当前音名 40px/600 白字 + 音分小字。
+  /// 音分色三段渐变：≤3 绿；3~25 绿→黄；>25 黄→红。
+  Color _centsColor(double absCents) {
+    const mid = Color(0xFFE6B800);
+    final p = context.palette;
+    if (absCents <= 3) return p.positive;
+    if (absCents <= 25) {
+      return Color.lerp(p.positive, mid, (absCents - 3) / 22)!;
+    }
+    return Color.lerp(
+        mid, p.negative, ((absCents - 25) / 25).clamp(0.0, 1.0))!;
+  }
+
+  Widget _targetRing(double animCents, bool hasFreq) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: context.palette.ink, width: 3)),
+      alignment: Alignment.center,
+      child: Text(
+          hasFreq
+              ? '${animCents.abs().round().clamp(0, 50)}'
+              : '--',
+          style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: _centsColor(animCents.abs()),
+              fontFeatures: const [FontFeature.tabularFigures()])),
+    );
+  }
+
+  Widget _needleTip() => SizedBox(
+      width: 12,
+      height: 8,
+      child: CustomPaint(painter: _TipPainter(ink: context.palette.ink)));
+
+  /// 状态 pill（页面主答元素）：固定深色胶囊（浅深两主题下都是深底白字，
+  /// GuitarTuna 同款）——未检测显示引导文案 2 秒后淡出，检测中显示当前
+  /// 音名 40px/600 白字 + 音分小字。
   Widget _statusPill(Note? targetNote, int cents) {
     return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-        decoration: BoxDecoration(
-            color: context.palette.ink, borderRadius: BorderRadius.circular(32)),
-        child: targetNote == null
-            ? const Text('弹拨任意琴弦开始调音',
-                style: TextStyle(fontSize: 16, color: Colors.white))
-            : Row(mainAxisSize: MainAxisSize.min, children: [
-                Text(targetNote.label(flats: _preferFlats(targetNote)),
-                    style: TextStyle(
-                        fontSize: 40,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                        fontFeatures: const [FontFeature.tabularFigures()])),
-                const SizedBox(width: 10),
-                Text(
-                    '${cents.abs()} 音分 ${cents > 0 ? '偏高' : cents < 0 ? '偏低' : ''}',
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white70,
-                        fontFeatures: const [FontFeature.tabularFigures()])),
-              ]),
+      child: AnimatedOpacity(
+        opacity: targetNote != null || _showHint ? 1 : 0,
+        duration: const Duration(milliseconds: 300),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          decoration: BoxDecoration(
+              color: const Color(0xE6141414),
+              borderRadius: BorderRadius.circular(32)),
+          child: targetNote == null
+              ? Text('弹拨任意琴弦开始调音',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white))
+              : Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text(targetNote.label(flats: _preferFlats(targetNote)),
+                      style: TextStyle(
+                          fontSize: 40,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                          fontFeatures: const [
+                            FontFeature.tabularFigures()
+                          ])),
+                  const SizedBox(width: 10),
+                  Text(
+                      '${cents.abs()} 音分 ${cents > 0 ? '偏高' : cents < 0 ? '偏低' : ''}',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white70,
+                          fontFeatures: const [FontFeature.tabularFigures()])),
+                ]),
+        ),
       ),
     );
   }
@@ -514,20 +568,26 @@ class _TunerPageState extends State<TunerPage> {
     return InkWell(
       onTap: () => _onStringTap(state, i),
       customBorder: const CircleBorder(),
-      child: Container(
-        width: 64,
-        height: 64,
-        decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: bg,
-            border: Border.all(color: borderColor, width: inTune || hit ? 2 : 1)),
-        alignment: Alignment.center,
-        child: Text(state.current.strings[i].name,
-            style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: textColor,
-                fontFeatures: const [FontFeature.tabularFigures()])),
+      child: AnimatedScale(
+        // 到位微缩（按下感），偏离回弹。
+        scale: inTune ? 0.92 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        child: Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: bg,
+              border: Border.all(
+                  color: borderColor, width: inTune || hit ? 2 : 1)),
+          alignment: Alignment.center,
+          child: Text(state.current.strings[i].name,
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: textColor,
+                  fontFeatures: const [FontFeature.tabularFigures()])),
+        ),
       ),
     );
   }
@@ -655,6 +715,75 @@ class _HeadstockPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// 网格背景（T3/T4）：~24px 小方格，以水平中央为轴线条不透明度从中央向
+/// 两侧线性衰减至 0（GuitarTuna 深底白网格的浅/暗主题等价物——ink 基线
+/// 低透明度）；中央另有一条 1.5px 低透明度全高竖线作"正中央"基准（T4）。
+class _GridPainter extends CustomPainter {
+  _GridPainter({required this.ink});
+
+  final Color ink;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const spacing = 24.0;
+    const centerAlpha = 0.10; // 网格基线：中心 10%，向两侧线性衰减
+    final paint = Paint()..strokeWidth = 1;
+    double alphaAt(double x) =>
+        centerAlpha * (1 - ((x - size.width / 2).abs() / (size.width / 2)))
+            .clamp(0.0, 1.0);
+
+    for (var x = spacing; x < size.width; x += spacing) {
+      final a = alphaAt(x);
+      if (a <= 0.004) continue;
+      paint.color = ink.withValues(alpha: a);
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    // 横线按 24px 分段，各段取其水平中心的透明度。
+    for (var y = spacing; y < size.height; y += spacing) {
+      for (var x = 0.0; x < size.width; x += spacing) {
+        final a = alphaAt(x + spacing / 2);
+        if (a <= 0.004) continue;
+        paint.color = ink.withValues(alpha: a);
+        canvas.drawLine(
+            Offset(x, y),
+            Offset(math.min(x + spacing, size.width), y),
+            paint);
+      }
+    }
+
+    // T4：中央参考竖线（1.5px，比网格重、比指示线浅）。
+    canvas.drawLine(
+        Offset(size.width / 2, 0),
+        Offset(size.width / 2, size.height),
+        Paint()
+          ..strokeWidth = 1.5
+          ..color = ink.withValues(alpha: 0.18));
+  }
+
+  @override
+  bool shouldRepaint(_GridPainter oldDelegate) => oldDelegate.ink != ink;
+}
+
+/// 固定目标环下方的小尖（朝下小三角，GuitarTuna 定位针样式）。
+class _TipPainter extends CustomPainter {
+  _TipPainter({required this.ink});
+
+  final Color ink;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..close();
+    canvas.drawPath(path, Paint()..color = ink);
+  }
+
+  @override
+  bool shouldRepaint(_TipPainter oldDelegate) => oldDelegate.ink != ink;
 }
 
 class _PresetSheet extends StatelessWidget {
