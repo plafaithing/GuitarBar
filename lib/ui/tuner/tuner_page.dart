@@ -522,61 +522,52 @@ class _TunerPageState extends State<TunerPage> {
     );
   }
 
-  /// 琴头区（签名元素）：生成图资产 + 六个交互圆钮。I1 三点：
-  /// ① 整区高度 ×1.2（330→396）；② 钮位移出图片两侧（Alignment.x ∓1.02，
-  /// 不盖图），行心对齐图中三排弦钮（y 0.26/0.44/0.61 图高比例）；
-  /// ③ 深色主题改白色圆角照片卡（白底图放白卡，暗色观感成立），浅色主题
-  /// 保持 multiply 让白底融入地色——multiply 在暗板会把整图乘成近黑，
-  /// 故分支取舍。左列 D A E = 4/5/6 弦，右列 G B E = 3/2/1 弦。
+  /// 琴头区（签名元素）：手绘琴头（Gemini 生成图几何——深玫瑰木、冠形
+  /// 顶边、奶油包边、珍珠镶嵌、大铬钮），无背景坐在地色上。六个交互圆钮
+  /// 与三排弦钮行对齐，中心 = 板缘 ∓ (轴 12 + 钮 26 + 8 + 28 外移)。
+  /// 左列 D A E = 4/5/6 弦，右列 G B E = 3/2/1 弦；点击 = 播参考音 + 锁定。
   Widget _headstockSection(TuningState state,
       {required int hitIdx, required int cents, required bool hasFreq}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    Widget knob(Alignment alignment, int stringIdx) => Align(
-          alignment: alignment,
+    const canvasW = 340.0, canvasH = 320.0;
+    Widget knobAt(double centerX, double centerY, int stringIdx) => Positioned(
+          left: centerX - 32,
+          top: centerY - 32,
           child: _stringKnob(state, stringIdx,
               hit: stringIdx == _lockedString ||
                   (hasFreq && stringIdx == hitIdx),
               inTune:
                   hasFreq && stringIdx == hitIdx && cents.abs() <= 3),
         );
+    // 左右成对：y = 板高 0.30/0.50/0.70 行，钮中心 = 板缘 ∓ 74（轴 12 +
+    // 铬钮 26 + 8 + 28 外移）。
+    List<Widget> knobPair(int row, int stringIdx) {
+      final y = canvasH * (0.04 + 0.78 * const [0.30, 0.50, 0.70][row]);
+      final edge = _HeadstockPainter.edgeX(y, canvasW, canvasH);
+      return [
+        knobAt(edge - 74, y, stringIdx),
+        knobAt(canvasW - edge + 74, y, stringIdx),
+      ];
+    }
+
     return SizedBox(
-      height: 396,
-      child: AspectRatio(
-        aspectRatio: 2752 / 1536,
-        child: Stack(
-          clipBehavior: Clip.none, // 钮位居图外缘外，不裁剪
-          fit: StackFit.expand,
-          children: [
-            if (isDark)
-              Positioned.fill(
-                child: Container(
-                  margin: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: context.palette.border)),
-                  child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: Image.asset('assets/images/headstock.jpg',
-                          fit: BoxFit.contain)),
-                ),
-              )
-            else
-              Positioned.fill(
-                child: Image.asset('assets/images/headstock.jpg',
-                    fit: BoxFit.contain,
-                    color: context.palette.ground,
-                    colorBlendMode: BlendMode.multiply),
-              ),
-            knob(const Alignment(-1.02, -0.48), 2),
-            knob(const Alignment(-1.02, -0.12), 1),
-            knob(const Alignment(-1.02, 0.22), 0),
-            knob(const Alignment(1.02, -0.48), 3),
-            knob(const Alignment(1.02, -0.12), 4),
-            knob(const Alignment(1.02, 0.22), 5),
-          ],
+      width: canvasW,
+      height: canvasH,
+      child: Stack(clipBehavior: Clip.none, children: [
+        Positioned.fill(
+          child: CustomPaint(
+              painter: _HeadstockPainter(
+                  hitIndex: hasFreq ? hitIdx : -1,
+                  inTune: hasFreq && cents.abs() <= 3,
+                  dataHue: context.palette.dataHue,
+                  positive: context.palette.positive)),
         ),
-      ),
+        ...knobPair(0, 2),
+        ...knobPair(1, 1),
+        ...knobPair(2, 0),
+        ...knobPair(0, 3),
+        ...knobPair(1, 4),
+        ...knobPair(2, 5),
+      ]),
     );
   }
 
@@ -686,6 +677,192 @@ class _TunerPageState extends State<TunerPage> {
               ),
             ));
   }
+}
+
+/// 手绘琴头（签名元素，Gemini 生成图几何，扁平纯色块无渐变，无背景）：
+/// 深玫瑰木桨形板（冠形顶边 = 中央小峰 + 两侧微凹，奶油包边 3px），
+/// 顶板中央珍珠镶嵌饰（菱形 + 卷纹），底部奶油弦枕 + 深指板向下出界，
+/// 6 根钢弦从弦枕向上扇形张开连到左右缘六角螺母；每侧 3 组 = 六角螺母
+/// 贴缘 + 轴杆外伸（12×5）+ 端部大圆角矩形铬钮（26×34）。命中/到位弦
+/// 线着色 dataHue/positive（数据元素，随主题）。
+class _HeadstockPainter extends CustomPainter {
+  _HeadstockPainter({
+    required this.hitIndex,
+    required this.inTune,
+    required this.dataHue,
+    required this.positive,
+  });
+
+  final int hitIndex; // 当前检测命中的弦（0..5，-1 无）
+  final bool inTune; // 命中弦是否到位（|cents| ≤ 3）
+  final Color dataHue;
+  final Color positive;
+
+  /// 头板侧缘 x（随 y 线性内收，肩 0.10h → 底 0.82h）——painter 与
+  /// 交互弦钮定位共用。
+  static double edgeX(double y, double w, double h) =>
+      w * (0.32 + 0.03 * ((y / h) - 0.10) / 0.72);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    const bodyColor = Color(0xFF3E2418);
+    const bodyDarkColor = Color(0xFF2E1B10);
+    const binding = Color(0xFFE8DCC8);
+    const inlay = Color(0xFFC9D4C5);
+    const nut = Color(0xFFE8DCC8);
+    const fingerboard = Color(0xFF2B1B10);
+    const stringColor = Color(0xFFC8C4BC);
+    const chrome = Color(0xFFC8C8C8);
+    const chromeLight = Color(0xFFE8E8E8);
+    const chromeDark = Color(0xFF808080);
+    const axis = Color(0xFFA0A0A0);
+
+    // 弦钮三排行（板范围 0.04..0.82h 的 0.30/0.50/0.70）。
+    double knobY(int row) => h * (0.04 + 0.78 * const [0.30, 0.50, 0.70][row]);
+
+    // 桨形轮廓：冠形顶边（肩→凹→中央小峰→凹→肩）+ 两侧缓内收到底。
+    final body = Path()
+      ..moveTo(w * 0.32, h * 0.10)
+      ..quadraticBezierTo(w * 0.43, h * 0.115, w * 0.47, h * 0.075)
+      ..quadraticBezierTo(w * 0.49, h * 0.055, w * 0.50, h * 0.04)
+      ..quadraticBezierTo(w * 0.51, h * 0.055, w * 0.53, h * 0.075)
+      ..quadraticBezierTo(w * 0.57, h * 0.115, w * 0.68, h * 0.10)
+      ..quadraticBezierTo(w * 0.685, h * 0.35, w * 0.65, h * 0.82)
+      ..lineTo(w * 0.35, h * 0.82)
+      ..quadraticBezierTo(w * 0.315, h * 0.35, w * 0.32, h * 0.10)
+      ..close();
+    canvas.drawPath(body, Paint()..color = bodyColor);
+
+    // 右/下深阴影（右耳翼内侧窄条，与外轮廓同走向）。
+    final shade = Path()
+      ..moveTo(w * 0.65, h * 0.14)
+      ..quadraticBezierTo(w * 0.655, h * 0.35, w * 0.625, h * 0.60)
+      ..quadraticBezierTo(w * 0.61, h * 0.73, w * 0.635, h * 0.82)
+      ..lineTo(w * 0.65, h * 0.82)
+      ..quadraticBezierTo(w * 0.625, h * 0.73, w * 0.64, h * 0.60)
+      ..quadraticBezierTo(w * 0.665, h * 0.35, w * 0.68, h * 0.10)
+      ..close();
+    canvas.drawPath(shade, Paint()..color = bodyDarkColor);
+
+    // 奶油包边（3px 沿外轮廓）。
+    canvas.drawPath(
+        body,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3
+          ..color = binding);
+
+    // 珍珠镶嵌饰：顶板中央小菱形 + 左右两撇卷纹（淡青白）。
+    final diamond = Path()
+      ..moveTo(w * 0.50, h * 0.075)
+      ..lineTo(w * 0.515, h * 0.105)
+      ..lineTo(w * 0.50, h * 0.135)
+      ..lineTo(w * 0.485, h * 0.105)
+      ..close();
+    canvas.drawPath(diamond, Paint()..color = inlay);
+    final scrollPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..color = inlay;
+    canvas.drawLine(Offset(w * 0.48, h * 0.105), Offset(w * 0.415, h * 0.105),
+        scrollPaint);
+    canvas.drawLine(Offset(w * 0.52, h * 0.105), Offset(w * 0.585, h * 0.105),
+        scrollPaint);
+
+    // 弦枕（奶油条）+ 指板（深棕出界）。
+    canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(w * 0.35, h * 0.80, w * 0.30, h * 0.035),
+            const Radius.circular(3)),
+        Paint()..color = nut);
+    canvas.drawRect(
+        Rect.fromLTWH(w * 0.37, h * 0.835, w * 0.26, h * 0.165),
+        Paint()..color = fingerboard);
+
+    // 弦线：弦枕向上扇形张开到左右缘六角螺母（命中 dataHue / 到位 positive
+    // 2px），过枕后指板上等距直落。
+    const nutXs = [0.375, 0.425, 0.475, 0.525, 0.575, 0.625];
+    const rowStringIdx = [2, 1, 0, 3, 4, 5]; // 左 3 = 4/5/6 弦，右 3 = 3/2/1 弦
+    final hitColor = inTune ? positive : dataHue;
+    for (var row = 0; row < 3; row++) {
+      final y = knobY(row);
+      final leftHit = rowStringIdx[row] == hitIndex;
+      final rightHit = rowStringIdx[row + 3] == hitIndex;
+      canvas.drawLine(Offset(w * 0.42, h * 0.80), Offset(edgeX(y, w, h), y),
+          Paint()
+            ..strokeWidth = leftHit ? 2.0 : 1.5
+            ..color = leftHit ? hitColor : stringColor);
+      canvas.drawLine(Offset(w * 0.58, h * 0.80),
+          Offset(w - edgeX(y, w, h), y), Paint()
+            ..strokeWidth = rightHit ? 2.0 : 1.5
+            ..color = rightHit ? hitColor : stringColor);
+    }
+    for (var i = 0; i < 6; i++) {
+      canvas.drawLine(Offset(w * nutXs[i], h * 0.835),
+          Offset(w * nutXs[i], h), Paint()..color = stringColor);
+    }
+
+    // 弦钮：每排左右——六角螺母贴缘（r=5 + 高光点）、轴杆外伸（12×5）、
+    // 端部大圆角矩形铬钮（26×34 r10：底 + 左半高光 + 右缘暗条）。
+    Offset hexOffset(double cx, double cy, int i) => Offset(
+        cx + 5 * math.cos(i * 2 * math.pi / 6),
+        cy + 5 * math.sin(i * 2 * math.pi / 6));
+    final nutPaint = Paint()..color = chrome;
+    final nutGlint = Paint()..color = chromeLight;
+    final axisPaint = Paint()..color = axis;
+    final glintHalfPaint = Paint()..color = chromeLight;
+    final darkEdgePaint = Paint()..color = chromeDark;
+    for (var row = 0; row < 3; row++) {
+      final y = knobY(row);
+      final lx = edgeX(y, w, h);
+      final rx = w - lx;
+      // 轴杆 + 铬钮（左：向左；右：向右）。
+      canvas.drawRect(Rect.fromLTWH(lx - 12, y - 2.5, 12, 5), axisPaint);
+      canvas.drawRect(Rect.fromLTWH(rx, y - 2.5, 12, 5), axisPaint);
+      final leftHub = RRect.fromRectAndRadius(
+          Rect.fromLTWH(lx - 38, y - 17, 26, 34), const Radius.circular(10));
+      final rightHub = RRect.fromRectAndRadius(
+          Rect.fromLTWH(rx + 12, y - 17, 26, 34), const Radius.circular(10));
+      for (final hub in [leftHub, rightHub]) {
+        canvas.drawRRect(hub, nutPaint);
+        // 左半高光（裁剪到钮中轴以左）。
+        canvas.save();
+        canvas.clipRect(Rect.fromLTWH(
+            hub.left, hub.top, hub.width / 2, hub.height));
+        canvas.drawRRect(hub, glintHalfPaint);
+        canvas.restore();
+        // 右缘暗条。
+        canvas.drawRect(
+            Rect.fromLTWH(hub.right - 4, hub.top + 3, 4, hub.height - 6),
+            darkEdgePaint);
+      }
+      // 六角螺母贴缘（含左上高光点）。
+      final hex = Path()
+        ..moveTo(lx + 5, y);
+      for (var i = 1; i < 6; i++) {
+        final o = hexOffset(lx, y, i);
+        hex.lineTo(o.dx, o.dy);
+      }
+      hex.close();
+      canvas.drawPath(hex, nutPaint);
+      canvas.drawCircle(Offset(lx - 1.5, y - 1.5), 1.5, nutGlint);
+      final hexR = Path()
+        ..moveTo(rx - 5, y);
+      for (var i = 1; i < 6; i++) {
+        final o = hexOffset(rx, y, i);
+        hexR.lineTo(o.dx, o.dy);
+      }
+      hexR.close();
+      canvas.drawPath(hexR, nutPaint);
+      canvas.drawCircle(Offset(rx + 1.5, y - 1.5), 1.5, nutGlint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_HeadstockPainter oldDelegate) =>
+      oldDelegate.hitIndex != hitIndex || oldDelegate.inTune != inTune;
 }
 
 /// 网格线与移动指示线的统一线宽（A1：两者粗细完全一致）。
