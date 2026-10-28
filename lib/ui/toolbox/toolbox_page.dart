@@ -13,37 +13,32 @@ class ToolboxPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    // V1：独立长条按钮（各自一块，间距 12）——整块面板容器已去。
+    Widget tool(IconData icon, String title, String subtitle, Widget page) =>
+        Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: palette.surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: palette.border),
+          ),
+          child: _ToolRow(
+              icon: icon,
+              title: title,
+              subtitle: subtitle,
+              onTap: () => Navigator.push(
+                  context, MaterialPageRoute(builder: (_) => page))),
+        );
     return Padding(
       padding: const EdgeInsets.all(24),
-      child: Container(
-        decoration: BoxDecoration(
-          color: palette.surface,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: palette.border),
-        ),
-        child: Column(children: [
-          _ToolRow(
-              icon: Icons.music_note_outlined,
-              title: '和弦库',
-              subtitle: '算法生成指法 · 随调弦联动 · 四种试听',
-              onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const ChordPage()))),
-          Divider(height: 1, color: palette.rule),
-          _ToolRow(
-              icon: Icons.piano_outlined,
-              title: '指板音阶',
-              subtitle: '根音+音阶 · 随调弦联动 · 点按发声',
-              onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const FretboardPage()))),
-          Divider(height: 1, color: palette.rule),
-          _ToolRow(
-              icon: Icons.av_timer_outlined,
-              title: '节拍器',
-              subtitle: '细分拍 · Tap 点速',
-              onTap: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const MetronomePage()))),
-        ]),
-      ),
+      child: Column(children: [
+        tool(Icons.music_note_outlined, '和弦库',
+            '算法生成指法 · 随调弦联动 · 四种试听', const ChordPage()),
+        tool(Icons.piano_outlined, '指板音阶', '根音+音阶 · 随调弦联动 · 点按发声',
+            const FretboardPage()),
+        tool(Icons.av_timer_outlined, '节拍器', '细分拍 · Tap 点速',
+            const MetronomePage()),
+      ]),
     );
   }
 }

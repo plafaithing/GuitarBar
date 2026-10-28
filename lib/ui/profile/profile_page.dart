@@ -129,6 +129,10 @@ class _ProfilePageState extends State<ProfilePage> {
           // 主按钮：running 时展示实时计时（每秒随 Consumer 重建）。
           Consumer<PracticeTimer>(builder: (_, t, _) {
             return FilledButton.icon(
+              // V3：主行动 accent 上 positive 绿（深板亮绿同款成立）。
+              style: FilledButton.styleFrom(
+                  backgroundColor: context.palette.positive,
+                  foregroundColor: Colors.white),
               onPressed: () => unawaited(t.running ? t.stop() : t.start()),
               icon: Icon(t.running ? Icons.stop : Icons.play_arrow),
               label: Text(t.running
@@ -415,11 +419,12 @@ class _ProfilePageState extends State<ProfilePage> {
 
   // ---- 公共 ----
 
+  /// V2：面板融底色（ground 与页面背景同色，只剩 1px 边框勾轮廓）。
   Widget _panel(GuitarBarPalette p, Widget child) => Container(
         width: double.infinity,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: p.surface,
+          color: p.ground,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: p.border),
         ),
