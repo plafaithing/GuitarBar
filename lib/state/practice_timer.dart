@@ -19,10 +19,13 @@ class PracticeTimer extends ChangeNotifier {
   Timer? _ticker;
 
   Future<void> start() async {
+    if (running) return; // 幂等守卫：双击同帧的理论竞态（Task 11 busy 先例）
     running = true;
     startedAt = DateTime.now();
     elapsedSeconds = 0;
-    await WakelockPlus.enable(); // 练习中屏幕常亮
+    try {
+      await WakelockPlus.enable(); // 练习中屏幕常亮；失败仅降级，不阻塞计时
+    } catch (_) {}
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       elapsedSeconds++;
       notifyListeners();
@@ -36,7 +39,9 @@ class PracticeTimer extends ChangeNotifier {
     final start = startedAt;
     running = false;
     startedAt = null;
-    await WakelockPlus.disable();
+    try {
+      await WakelockPlus.disable();
+    } catch (_) {} // 屏幕常亮失败不阻塞打卡落库
     if (start != null) {
       final end = DateTime.now();
       await _db.into(_db.practiceSessions).insert(
