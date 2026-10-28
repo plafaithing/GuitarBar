@@ -138,18 +138,32 @@ class _MetronomePageState extends State<MetronomePage> {
             final dial = math.min(c.maxWidth * 0.9, 340.0);
             final beatProgress =
                 tick < 0 ? 0.0 : (tick % cfg.beatsPerBar) / cfg.beatsPerBar;
+            final flashIsDownbeat = tick >= 0 && tick % cfg.beatsPerBar == 0;
+            // F2：闪光衰减——key 绑 currentTick，每次 tick 变化重启动画
+            // （begin 1.0 → end 0.0，时长 = 拍时长 ms）；停止时 tick 不变、
+            // 动画走完停在 0（全 muted）。
             return SizedBox(
               width: dial,
               height: dial,
               child: GestureDetector(
                 onTapUp:
                     _engine.running ? null : (d) => _dialTapUp(d, dial),
-                child: CustomPaint(
-                  painter: _MetronomeDialPainter(
-                      bpm: cfg.bpm.clamp(30, 240).toDouble(),
-                      beatProgress: beatProgress,
-                      palette: palette),
-                  child: Center(
+                child: Stack(fit: StackFit.expand, children: [
+                  TweenAnimationBuilder<double>(
+                    key: ValueKey(tick),
+                    tween: Tween(begin: 1.0, end: 0.0),
+                    duration: Duration(
+                        milliseconds: (60000 / cfg.bpm).round()),
+                    builder: (_, flash, _) => CustomPaint(
+                      painter: _MetronomeDialPainter(
+                          bpm: cfg.bpm.clamp(30, 240).toDouble(),
+                          beatProgress: beatProgress,
+                          flash: flash,
+                          flashIsDownbeat: flashIsDownbeat,
+                          palette: palette),
+                    ),
+                  ),
+                  Center(
                     child: IconButton(
                       onPressed: _toggle,
                       iconSize: 48,
@@ -160,7 +174,7 @@ class _MetronomePageState extends State<MetronomePage> {
                           _engine.running ? Icons.pause : Icons.play_arrow,
                           color: palette.positive)),
                   ),
-                ),
+                ]),
               ),
             );
           }),
@@ -183,6 +197,16 @@ class _MetronomePageState extends State<MetronomePage> {
                 elevation: 2,
                 borderRadius: BorderRadius.circular(8),
                 icon: Icon(Icons.expand_more, color: palette.ink),
+                // F1：运行中禁用但数值/箭头保持全色（disabledHint 替代
+                // value 显示，覆盖 M3 禁用淡出）。
+                style: TextStyle(fontSize: 14, color: palette.ink),
+                iconEnabledColor: palette.ink,
+                iconDisabledColor: palette.ink,
+                disabledHint: Text(
+                    _timeSigs
+                        .firstWhere((e) => e.$1 == cfg.beatsPerBar)
+                        .$2,
+                    style: TextStyle(fontSize: 14, color: palette.ink)),
                 items: [
                   for (final (b, l) in _timeSigs)
                     DropdownMenuItem(value: b, child: Text(l))
@@ -205,6 +229,12 @@ class _MetronomePageState extends State<MetronomePage> {
             elevation: 2,
             borderRadius: BorderRadius.circular(8),
             icon: Icon(Icons.expand_more, color: palette.ink),
+            style: TextStyle(fontSize: 14, color: palette.ink),
+            iconEnabledColor: palette.ink,
+            iconDisabledColor: palette.ink,
+            disabledHint: Text(
+                _subs.firstWhere((e) => e.$1 == cfg.subdivision).$2,
+                style: TextStyle(fontSize: 14, color: palette.ink)),
             items: [
               for (final (s, l) in _subs)
                 DropdownMenuItem(value: s, child: Text(l))
@@ -233,14 +263,25 @@ class _MetronomePageState extends State<MetronomePage> {
 /// 当前 BPM 处 positive 绿圈（20px、3px 描边、透明芯）。纯显示，点按反算
 /// 在页面层。
 class _MetronomeDialPainter extends CustomPainter {
-  _MetronomeDialPainter(
-      {required this.bpm, required this.beatProgress, required this.palette});
+  _MetronomeDialPainter({
+    required this.bpm,
+    required this.beatProgress,
+    required this.flash,
+    required this.flashIsDownbeat,
+    required this.palette,
+  });
 
   final double bpm;
 
   /// M2：当前拍在 300° 弧内的进度（0..1，拍级简化：tick % beatsPerBar /
   /// beatsPerBar）；0 = 停止/拍首（全 muted），随拍推进已过刻度变绿、循环回绕。
   final double beatProgress;
+
+  /// F2：拍闪光强度（0..1，Tween 1→0 按拍时长衰减；停止恒 0）。
+  final double flash;
+
+  /// F2：本次闪光是否小节头拍（黄 #E6B800）——其余拍 positive 绿。
+  final bool flashIsDownbeat;
 
   final GuitarBarPalette palette;
 
@@ -256,10 +297,14 @@ class _MetronomeDialPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = math.min(size.width, size.height) / 2 - 18;
 
-    // 密集细刻度环（M2：已过 beatProgress 的刻度 positive 2px，其余 muted 1px）。
+    // 密集细刻度环（M2 已过段 positive 2px + F2 整环闪光：全环向闪光色
+    // lerp（flash×0.8），按拍时长衰减回基准色，循环跳动）。
+    final flashColor =
+        flashIsDownbeat ? const Color(0xFFE6B800) : palette.positive;
     for (var i = 0; i < 210; i++) {
       final prog = i / 210;
       final lit = beatProgress > 0 && prog <= beatProgress;
+      final base = lit ? palette.positive : palette.muted;
       final a = _start + i / 210 * _sweep;
       final dir = Offset(math.cos(a), math.sin(a));
       canvas.drawLine(
@@ -267,9 +312,7 @@ class _MetronomeDialPainter extends CustomPainter {
           center + dir * radius,
           Paint()
             ..strokeWidth = lit ? 2.0 : 1.0
-            ..color = lit
-                ? palette.positive
-                : palette.muted.withValues(alpha: 0.5));
+            ..color = Color.lerp(base, flashColor, flash * 0.8)!);
     }
 
     // 主刻度标签（角度位置内侧）。
@@ -304,5 +347,7 @@ class _MetronomeDialPainter extends CustomPainter {
   bool shouldRepaint(_MetronomeDialPainter oldDelegate) =>
       oldDelegate.bpm != bpm ||
       oldDelegate.beatProgress != beatProgress ||
+      oldDelegate.flash != flash ||
+      oldDelegate.flashIsDownbeat != flashIsDownbeat ||
       oldDelegate.palette != palette;
 }
