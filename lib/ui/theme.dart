@@ -212,7 +212,7 @@ class GuitarBarTheme {
             // 中性容器角色补全：未覆写的容器角色会走 M3 种子基线紫色，这里
             // 全部指向 surface/border 中性色，堵住 SegmentedButton/FilledButton
             // .tonal/ChoiceChip/Card/AlertDialog/bottomSheet/TextField 描边成片漏紫。
-            secondaryContainer: p.activePill,
+            secondaryContainer: p.surface,
             onSecondaryContainer: p.ink,
             surfaceContainerLowest: p.surface,
             surfaceContainerLow: p.surface,
@@ -231,7 +231,7 @@ class GuitarBarTheme {
             surface: p.surface,
             onSurface: p.ink,
             error: p.negative,
-            secondaryContainer: p.activePill,
+            secondaryContainer: p.surface,
             onSecondaryContainer: p.ink,
             surfaceContainerLowest: p.ground,
             surfaceContainerLow: p.surface,

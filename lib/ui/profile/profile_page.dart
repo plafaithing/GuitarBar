@@ -129,10 +129,12 @@ class _ProfilePageState extends State<ProfilePage> {
           // 主按钮：running 时展示实时计时（每秒随 Consumer 重建）。
           Consumer<PracticeTimer>(builder: (_, t, _) {
             return FilledButton.icon(
-              // V3：主行动 accent 上 positive 绿（深板亮绿同款成立）。
+              // 用户反馈：positive 绿太突兀 → 浅色钮（白底墨字/暗板深底浅字，
+              // 随 palette 自适应）；running 只变图标/文字。
               style: FilledButton.styleFrom(
-                  backgroundColor: context.palette.positive,
-                  foregroundColor: Colors.white),
+                  backgroundColor: context.palette.surface,
+                  foregroundColor: context.palette.ink,
+                  side: BorderSide(color: context.palette.border)),
               onPressed: () => unawaited(t.running ? t.stop() : t.start()),
               icon: Icon(t.running ? Icons.stop : Icons.play_arrow),
               label: Text(t.running
