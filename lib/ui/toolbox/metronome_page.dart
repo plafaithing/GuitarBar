@@ -211,12 +211,14 @@ class _MetronomePageState extends State<MetronomePage> {
                   for (final (b, l) in _timeSigs)
                     DropdownMenuItem(value: b, child: Text(l))
                 ],
-                onChanged: _engine.running
-                    ? null
-                    : (b) => setState(() => _engine.cfg = MetronomeConfig(
-                        bpm: cfg.bpm,
-                        beatsPerBar: b!,
-                        subdivision: cfg.subdivision)),
+                onChanged: (b) {
+                  // 引擎音轨已烘焙 BPM，运行中变更忽略（停止/重启后生效）。
+                  if (_engine.running) return;
+                  setState(() => _engine.cfg = MetronomeConfig(
+                      bpm: cfg.bpm,
+                      beatsPerBar: b!,
+                      subdivision: cfg.subdivision));
+                },
               ),
             ),
           ),
@@ -239,12 +241,14 @@ class _MetronomePageState extends State<MetronomePage> {
               for (final (s, l) in _subs)
                 DropdownMenuItem(value: s, child: Text(l))
             ],
-            onChanged: _engine.running
-                ? null
-                : (s) => setState(() => _engine.cfg = MetronomeConfig(
-                    bpm: cfg.bpm,
-                    beatsPerBar: cfg.beatsPerBar,
-                    subdivision: s!)),
+            onChanged: (s) {
+              // 引擎音轨已烘焙 BPM，运行中变更忽略（停止/重启后生效）。
+              if (_engine.running) return;
+              setState(() => _engine.cfg = MetronomeConfig(
+                  bpm: cfg.bpm,
+                  beatsPerBar: cfg.beatsPerBar,
+                  subdivision: s!));
+            },
           ),
           const SizedBox(width: 24),
           OutlinedButton.icon(
