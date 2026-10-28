@@ -10,7 +10,12 @@ import '../data/database.dart';
 /// 练习期间屏幕常亮（wakelock）。notifyListeners 在记录落库之后触发，
 /// 监听方（个人中心）此时重查即可拿到最新统计。
 class PracticeTimer extends ChangeNotifier {
-  PracticeTimer(this._db);
+  PracticeTimer._(this._db);
+
+  /// 全局单例（关机停机序列需跨 provider 引用；main 里 init 一次）。
+  static late PracticeTimer I;
+  static void init(AppDatabase db) => I = PracticeTimer._(db);
+
   final AppDatabase _db;
 
   bool running = false;

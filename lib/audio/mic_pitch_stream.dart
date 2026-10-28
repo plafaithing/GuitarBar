@@ -61,7 +61,12 @@ const rmsGate = 0.0005;
 ///
 /// 已知问题：Realtek SST 阵列在 44100/1 配置下可能挂起采集线程（进程无法
 /// 终止），故候选表 48k 优先以规避该配置。
+/// 全局唯一采集流（单例，同 SoundEngine.I 模式）——窗口关闭停机序列
+/// 需要跨页面引用同一实例。
 class MicPitchStream {
+  MicPitchStream._();
+  static final MicPitchStream I = MicPitchStream._();
+
   final AudioRecorder _rec = AudioRecorder();
   PitchWindower _windower =
       PitchWindower(windowSamples: 4096, hopSamples: 2048);
@@ -260,6 +265,9 @@ class MicPitchStream {
     _zeroWindows = 0;
   }
 
-  /// 页面销毁时必须调用以停麦并释放录音资源
+  /// 关机清理（停机序列用）：停流并释放录音资源。
   Future<void> dispose() => _rec.dispose();
+
+  /// 关机序列别名（语义对齐 SoundEngine.shutdown）。
+  Future<void> shutdown() => dispose();
 }

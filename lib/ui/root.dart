@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 
+import '../audio/mic_pitch_stream.dart';
+import '../audio/sound_engine.dart';
 import '../data/database.dart';
 import '../state/practice_timer.dart';
 import 'profile/profile_page.dart';
@@ -15,7 +18,7 @@ class RootPage extends StatefulWidget {
   State<RootPage> createState() => _RootPageState();
 }
 
-class _RootPageState extends State<RootPage> {
+class _RootPageState extends State<RootPage> with WindowListener {
   int _tab = 0;
   // 侧栏收起状态持久化到 settings 表（key: sidebarCollapsed，'1'/'0'）。
   bool _collapsed = false;
@@ -37,7 +40,36 @@ class _RootPageState extends State<RootPage> {
   @override
   void initState() {
     super.initState();
+    windowManager.addListener(this);
     _loadCollapsed();
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  /// 窗口关闭拦截（main 里 setPreventClose(true)）：优雅停机序列——任何
+  /// 一步异常或超时（3s）都不阻断最终 destroy。边界：音频驱动级卡死时
+  /// destroy 后进程仍可能残留，最终手段仍是任务管理器/重启。
+  @override
+  void onWindowClose() async {
+    Future<void> guarded(Future<void> f) =>
+        f.timeout(const Duration(seconds: 3), onTimeout: () {});
+    try {
+      await guarded(PracticeTimer.I.stop(note: '应用关闭时自动保存'));
+    } catch (_) {}
+    try {
+      await guarded(MicPitchStream.I.stop());
+    } catch (_) {}
+    try {
+      await guarded(MicPitchStream.I.shutdown());
+    } catch (_) {}
+    try {
+      await guarded(SoundEngine.I.shutdown());
+    } catch (_) {}
+    await windowManager.destroy();
   }
 
   Future<void> _loadCollapsed() async {

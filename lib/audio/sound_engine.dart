@@ -42,4 +42,14 @@ class SoundEngine {
 
   Future<void> disposeSource(AudioSource src) =>
       SoLoud.instance.disposeSource(src);
+
+  /// 关机清理（门面第 7 个成员，冻结接口的追加）：拆除 soloud 引擎——
+  /// 引擎拆除即停止全部活动句柄与音源（未持句柄登记簿，一步到位）。
+  /// 重复调用安全（未初始化时 deinit 抛错，此处吞掉）。
+  /// deinit 为同步 void 调用（非 Future）。
+  Future<void> shutdown() async {
+    try {
+      SoLoud.instance.deinit();
+    } catch (_) {}
+  }
 }

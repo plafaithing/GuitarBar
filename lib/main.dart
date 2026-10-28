@@ -21,12 +21,15 @@ Future<void> main() async {
     await windowManager.show();
     await windowManager.focus();
   });
+  // 拦截 X 关闭：由 root.dart 的 onWindowClose 优雅停机后再 destroy。
+  await windowManager.setPreventClose(true);
   final db = AppDatabase(openConnection());
+  PracticeTimer.init(db);
   runApp(MultiProvider(providers: [
     Provider<AppDatabase>.value(value: db),
     ChangeNotifierProvider(create: (_) => TuningState(db)..load()),
     ChangeNotifierProvider(create: (_) => ThemeSettingsState(db)..load()),
-    ChangeNotifierProvider(create: (_) => PracticeTimer(db)),
+    ChangeNotifierProvider<PracticeTimer>.value(value: PracticeTimer.I),
   ], child: const GuitarBarApp()));
 }
 

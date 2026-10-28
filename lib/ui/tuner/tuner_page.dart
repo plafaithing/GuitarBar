@@ -34,7 +34,7 @@ class _TunerPageState extends State<TunerPage> {
   bool _micOn = false;
   double? _freq;
   StreamSubscription<double?>? _sub;
-  final _mic = MicPitchStream();
+  // 单例（关机序列引用同一实例）：_mic 字段已移除。
   // 最近一次麦克风打开错误（诊断行常驻显示，避免 SnackBar 一闪而过）。
   String? _lastError;
   // 输入设备（D2）：'' = 系统默认设备；选择持久化到 settings(key: micDeviceId)。
@@ -63,7 +63,7 @@ class _TunerPageState extends State<TunerPage> {
     _devicePollTimer?.cancel();
     _hintTimer?.cancel();
     _sub?.cancel();
-    unawaited(_mic.dispose()); // 页面销毁必须停麦
+    unawaited(MicPitchStream.I.stop()); // 单例复用：页面销毁只停流，释放留给关机序列
     super.dispose();
   }
 
@@ -71,13 +71,13 @@ class _TunerPageState extends State<TunerPage> {
     if (_micOn) {
       await _sub?.cancel();
       _sub = null;
-      await _mic.stop();
+      await MicPitchStream.I.stop();
       _micOn = false;
       _freq = null;
     } else {
       try {
-        _mic.currentDeviceName = _deviceDisplayName(_selectedDeviceId);
-        final stream = await _mic.start(
+        MicPitchStream.I.currentDeviceName = _deviceDisplayName(_selectedDeviceId);
+        final stream = await MicPitchStream.I.start(
             deviceId: _selectedDeviceId.isEmpty ? null : _selectedDeviceId);
         _sub = stream.listen(
           (f) {
@@ -125,7 +125,7 @@ class _TunerPageState extends State<TunerPage> {
             ..where((t) => t.key.equals('micDeviceId')))
         .getSingleOrNull();
     final saved = row?.value ?? '';
-    final devices = await _mic.listDevices();
+    final devices = await MicPitchStream.I.listDevices();
     if (!mounted) return;
     final exists = saved.isEmpty || devices.any((d) => d.id == saved);
     setState(() {
@@ -147,7 +147,7 @@ class _TunerPageState extends State<TunerPage> {
     if (!mounted || !_micOn) return;
     await _sub?.cancel();
     _sub = null;
-    await _mic.stop();
+    await MicPitchStream.I.stop();
     if (!mounted) return;
     _micOn = false;
     _freq = null;
@@ -166,7 +166,7 @@ class _TunerPageState extends State<TunerPage> {
   /// 设备列表实时刷新（D4）：重新枚举输入设备，id 集合有变化才 setState；
   /// 选中设备被拔则回退系统默认（监听中的流会自然 done，不强制切流）。
   Future<void> _refreshDevices() async {
-    final devices = await _mic.listDevices();
+    final devices = await MicPitchStream.I.listDevices();
     if (!mounted) return;
     if (devices.map((d) => d.id).toSet() == _devices.map((d) => d.id).toSet()) {
       return; // 无变化不重建
@@ -370,7 +370,7 @@ class _TunerPageState extends State<TunerPage> {
           // chunks=0 且 on:true → 设备/权限在系统层被挡；rms 长期 <0.005 →
           // 默认设备是虚拟声卡；rms 正常但音高 null → 检测 bug。
           Text(
-              'chunks:${_mic.chunkCount}  窗:${_mic.windowCount}  cs:${_mic.lastChunkSamples}  ws:${_mic.lastWindowSamples}  rms:${_mic.lastRms.toStringAsFixed(6)}  dev:${_mic.currentDeviceName ?? '-'}  on:$_micOn',
+              'chunks:${MicPitchStream.I.chunkCount}  窗:${MicPitchStream.I.windowCount}  cs:${MicPitchStream.I.lastChunkSamples}  ws:${MicPitchStream.I.lastWindowSamples}  rms:${MicPitchStream.I.lastRms.toStringAsFixed(6)}  dev:${MicPitchStream.I.currentDeviceName ?? '-'}  on:$_micOn',
               style: TextStyle(
                   fontSize: 12,
                   color: context.palette.muted,
@@ -378,7 +378,7 @@ class _TunerPageState extends State<TunerPage> {
           // 格式自适应轮换（D3）：fmt 当前格式 / 静音窗 连续 rms==0 窗数 /
           // hex 最近 chunk 前 16 字节（全 00 = 真数字静音；非零乱值 = 格式误读）。
           Text(
-              'fmt:${_mic.currentFormatText}  静音窗:${_mic.zeroWindows}  hex:${_mic.lastChunkHex}',
+              'fmt:${MicPitchStream.I.currentFormatText}  静音窗:${MicPitchStream.I.zeroWindows}  hex:${MicPitchStream.I.lastChunkHex}',
               style: TextStyle(
                   fontSize: 12,
                   color: context.palette.muted,
@@ -391,13 +391,13 @@ class _TunerPageState extends State<TunerPage> {
                     fontFeatures: const [FontFeature.tabularFigures()])),
           // 回调内异常（Error/Exception 一并捕获）：非空即说明音频处理链在
           // 回调层炸过，配合 窗/cs/ws 定位断链层。
-          if (_mic.callbackErr.isNotEmpty) ...[
-            Text('cberr: ${_mic.callbackErr}',
+          if (MicPitchStream.I.callbackErr.isNotEmpty) ...[
+            Text('cberr: ${MicPitchStream.I.callbackErr}',
                 style: TextStyle(
                     fontSize: 12,
                     color: context.palette.negative,
                     fontFeatures: const [FontFeature.tabularFigures()])),
-            Text(_mic.callbackErrSt,
+            Text(MicPitchStream.I.callbackErrSt,
                 style: TextStyle(
                     fontSize: 10, color: context.palette.muted)),
           ],
