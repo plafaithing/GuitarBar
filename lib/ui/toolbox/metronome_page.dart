@@ -130,112 +130,97 @@ class _MetronomePageState extends State<MetronomePage> {
         ]),
         Text('每分钟节拍数', style: TextStyle(fontSize: 12, color: palette.muted)),
         const SizedBox(height: 16),
-        // T2 转盘（显示 + 点按设 BPM；运行中禁用）+ 中央播放键。
-        LayoutBuilder(builder: (context, c) {
-          final dial = math.min(c.maxWidth * 0.9, 340.0);
-          return SizedBox(
-            width: dial,
-            height: dial,
-            child: GestureDetector(
-              onTapUp:
-                  _engine.running ? null : (d) => _dialTapUp(d, dial),
-              child: CustomPaint(
-                painter: _MetronomeDialPainter(
-                    bpm: cfg.bpm.clamp(30, 240).toDouble(),
-                    palette: palette),
-                child: Center(
-                  child: IconButton(
-                    onPressed: _toggle,
-                    iconSize: 40,
-                    icon: Icon(_engine.running ? Icons.pause : Icons.play_arrow,
-                        color: palette.positive)),
-                ),
-              ),
-            ),
-          );
-        }),
-        const SizedBox(height: 12),
-        // 拍点指示灯：小节头 dataHue、正拍 ink、非活动 rule（数据元素着色）。
+        // T2 转盘（M2：currentTick 驱动 beatProgress，已过刻度 positive 绿跳、
+        // 循环回绕；停止时恒 0 全 muted）+ 中央播放键（追加：80px/icon 48）。
         ValueListenableBuilder<int>(
           valueListenable: _engine.currentTick,
-          builder: (_, tick, _) {
-            final beatInBar =
-                tick < 0 ? -1 : (tick ~/ cfg.subdivision) % cfg.beatsPerBar;
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                for (var i = 0; i < cfg.beatsPerBar; i++)
-                  Padding(
-                    padding: const EdgeInsets.all(6),
-                    child: Container(
-                      width: 20,
-                      height: 20,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: i == beatInBar
-                            ? (i == 0 ? palette.dataHue : palette.ink)
-                            : palette.rule,
-                      ),
-                    ),
+          builder: (_, tick, _) => LayoutBuilder(builder: (context, c) {
+            final dial = math.min(c.maxWidth * 0.9, 340.0);
+            final beatProgress =
+                tick < 0 ? 0.0 : (tick % cfg.beatsPerBar) / cfg.beatsPerBar;
+            return SizedBox(
+              width: dial,
+              height: dial,
+              child: GestureDetector(
+                onTapUp:
+                    _engine.running ? null : (d) => _dialTapUp(d, dial),
+                child: CustomPaint(
+                  painter: _MetronomeDialPainter(
+                      bpm: cfg.bpm.clamp(30, 240).toDouble(),
+                      beatProgress: beatProgress,
+                      palette: palette),
+                  child: Center(
+                    child: IconButton(
+                      onPressed: _toggle,
+                      iconSize: 48,
+                      constraints: const BoxConstraints(
+                          minWidth: 80, minHeight: 80),
+                      padding: EdgeInsets.zero,
+                      icon: Icon(
+                          _engine.running ? Icons.pause : Icons.play_arrow,
+                          color: palette.positive)),
                   ),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 16),
-        // T4/T5：拍号胶囊 + 细分下拉 + Tap 点速。
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Column(children: [
-            Container(
-              decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: palette.ink)),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<int>(
-                  value: cfg.beatsPerBar,
-                  items: [
-                    for (final (b, l) in _timeSigs)
-                      DropdownMenuItem(value: b, child: Text(l))
-                  ],
-                  onChanged: _engine.running
-                      ? null
-                      : (b) => setState(() => _engine.cfg = MetronomeConfig(
-                          bpm: cfg.bpm,
-                          beatsPerBar: b!,
-                          subdivision: cfg.subdivision)),
                 ),
               ),
+            );
+          }),
+        ),
+        const SizedBox(height: 16),
+        // T4/T5 + M1/M3：拍号胶囊与细分下拉——label Text 并排常显（禁用只
+        // 灰 Dropdown 本体），箭头 ink、菜单深浅底随 palette。
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Text('拍号', style: TextStyle(fontSize: 12, color: palette.muted)),
+          const SizedBox(width: 8),
+          Container(
+            decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: palette.ink)),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                value: cfg.beatsPerBar,
+                dropdownColor: palette.surface,
+                elevation: 2,
+                borderRadius: BorderRadius.circular(8),
+                icon: Icon(Icons.expand_more, color: palette.ink),
+                items: [
+                  for (final (b, l) in _timeSigs)
+                    DropdownMenuItem(value: b, child: Text(l))
+                ],
+                onChanged: _engine.running
+                    ? null
+                    : (b) => setState(() => _engine.cfg = MetronomeConfig(
+                        bpm: cfg.bpm,
+                        beatsPerBar: b!,
+                        subdivision: cfg.subdivision)),
+              ),
             ),
-            const SizedBox(height: 4),
-            Text('拍号', style: TextStyle(fontSize: 12, color: palette.muted)),
-          ]),
+          ),
           const SizedBox(width: 24),
-          Column(children: [
-            DropdownButton<int>(
-              value: cfg.subdivision,
-              items: [
-                for (final (s, l) in _subs)
-                  DropdownMenuItem(value: s, child: Text(l))
-              ],
-              onChanged: _engine.running
-                  ? null
-                  : (s) => setState(() => _engine.cfg = MetronomeConfig(
-                      bpm: cfg.bpm,
-                      beatsPerBar: cfg.beatsPerBar,
-                      subdivision: s!)),
-            ),
-            const SizedBox(height: 4),
-            Text('细分', style: TextStyle(fontSize: 12, color: palette.muted)),
-          ]),
+          Text('细分', style: TextStyle(fontSize: 12, color: palette.muted)),
+          const SizedBox(width: 8),
+          DropdownButton<int>(
+            value: cfg.subdivision,
+            dropdownColor: palette.surface,
+            elevation: 2,
+            borderRadius: BorderRadius.circular(8),
+            icon: Icon(Icons.expand_more, color: palette.ink),
+            items: [
+              for (final (s, l) in _subs)
+                DropdownMenuItem(value: s, child: Text(l))
+            ],
+            onChanged: _engine.running
+                ? null
+                : (s) => setState(() => _engine.cfg = MetronomeConfig(
+                    bpm: cfg.bpm,
+                    beatsPerBar: cfg.beatsPerBar,
+                    subdivision: s!)),
+          ),
           const SizedBox(width: 24),
-          Column(children: [
-            OutlinedButton.icon(
-                onPressed: _tap,
-                icon: const Icon(Icons.back_hand, size: 16),
-                label: const Text('Tap 点速')),
-          ]),
+          OutlinedButton.icon(
+              onPressed: _tap,
+              icon: const Icon(Icons.back_hand, size: 16),
+              label: const Text('Tap 点速')),
         ]),
       ]),
       ),
@@ -248,9 +233,15 @@ class _MetronomePageState extends State<MetronomePage> {
 /// 当前 BPM 处 positive 绿圈（20px、3px 描边、透明芯）。纯显示，点按反算
 /// 在页面层。
 class _MetronomeDialPainter extends CustomPainter {
-  _MetronomeDialPainter({required this.bpm, required this.palette});
+  _MetronomeDialPainter(
+      {required this.bpm, required this.beatProgress, required this.palette});
 
   final double bpm;
+
+  /// M2：当前拍在 300° 弧内的进度（0..1，拍级简化：tick % beatsPerBar /
+  /// beatsPerBar）；0 = 停止/拍首（全 muted），随拍推进已过刻度变绿、循环回绕。
+  final double beatProgress;
+
   final GuitarBarPalette palette;
 
   static const _start = 2 * math.pi * 120 / 360; // 左下起点（30 BPM）
@@ -265,15 +256,20 @@ class _MetronomeDialPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = math.min(size.width, size.height) / 2 - 18;
 
-    // 密集细刻度环（1px muted@0.5）。
-    final tick = Paint()
-      ..strokeWidth = 1
-      ..color = palette.muted.withValues(alpha: 0.5);
+    // 密集细刻度环（M2：已过 beatProgress 的刻度 positive 2px，其余 muted 1px）。
     for (var i = 0; i < 210; i++) {
+      final prog = i / 210;
+      final lit = beatProgress > 0 && prog <= beatProgress;
       final a = _start + i / 210 * _sweep;
       final dir = Offset(math.cos(a), math.sin(a));
-      canvas.drawLine(center + dir * (radius - 10),
-          center + dir * radius, tick);
+      canvas.drawLine(
+          center + dir * (radius - 10),
+          center + dir * radius,
+          Paint()
+            ..strokeWidth = lit ? 2.0 : 1.0
+            ..color = lit
+                ? palette.positive
+                : palette.muted.withValues(alpha: 0.5));
     }
 
     // 主刻度标签（角度位置内侧）。
@@ -306,5 +302,7 @@ class _MetronomeDialPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_MetronomeDialPainter oldDelegate) =>
-      oldDelegate.bpm != bpm || oldDelegate.palette != palette;
+      oldDelegate.bpm != bpm ||
+      oldDelegate.beatProgress != beatProgress ||
+      oldDelegate.palette != palette;
 }

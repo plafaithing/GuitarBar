@@ -30,10 +30,14 @@ class GuitarBarPalette {
     required this.negative,
     required this.pillPositiveBg,
     required this.pillPositiveInk,
+    required this.panel,
   });
 
   /// 画布底色（浅：云杉暖白 / 暗：暖黑）
   final Color ground;
+
+  /// 面板底色（比 ground 深一档：浅 EDEBE6 暖灰 / 暗 1C1B18 亮一档）
+  final Color panel;
 
   /// 卡片/面板表面
   final Color surface;
@@ -80,6 +84,7 @@ class GuitarBarPalette {
 /// 浅色板（云杉暖白）
 const GuitarBarPalette lightPalette = GuitarBarPalette(
   ground: Color(0xFFF7F5F1),
+  panel: Color(0xFFEDEBE6),
   surface: Color(0xFFFFFFFF),
   activePill: Color(0xFFECECEC),
   border: Color(0xFFE6E6E6),
@@ -98,6 +103,7 @@ const GuitarBarPalette lightPalette = GuitarBarPalette(
 /// 暗色板（暖黑，取自主题材质而非纯黑；琥珀提亮保暗底可读）
 const GuitarBarPalette darkPalette = GuitarBarPalette(
   ground: Color(0xFF141311),
+  panel: Color(0xFF1C1B18),
   surface: Color(0xFF201F1C),
   activePill: Color(0xFF35342F),
   border: Color(0xFF2E2D2A),
@@ -277,6 +283,22 @@ class GuitarBarTheme {
         ),
       ),
       dividerTheme: DividerThemeData(color: p.border, thickness: 1, space: 1),
+      // 下拉菜单样式（作用于 M3 DropdownMenu 组件；传统 DropdownButton 的
+      // 菜单不受此主题控制，由组件自身 dropdownColor/elevation/borderRadius
+      // 落地同款视觉——见节拍器页）。浮层允许轻阴影（设计系统菜单浮层例外）。
+      dropdownMenuTheme: DropdownMenuThemeData(
+        menuStyle: MenuStyle(
+          backgroundColor: WidgetStatePropertyAll(p.surface),
+          elevation: const WidgetStatePropertyAll(2),
+          shadowColor: WidgetStatePropertyAll(p.ink.withValues(alpha: 0.12)),
+          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+          shape: WidgetStatePropertyAll(RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(color: p.border))),
+          padding: const WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+        ),
+      ),
       // 全 app 开关统一：选中 = positive 绿轨 + 白 thumb（调音器「自动」
       // 与个人中心「调试模式」同款；未选轨道用 controlBorder 中性）。
       switchTheme: SwitchThemeData(

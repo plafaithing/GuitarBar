@@ -149,6 +149,8 @@ class _ChordPageState extends State<ChordPage> {
             itemBuilder: (_, i) {
               final v = _voicings[i];
               return Card(
+                // P2：结果卡片比地色深一档（palette.panel）。
+                color: context.palette.panel,
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(children: [

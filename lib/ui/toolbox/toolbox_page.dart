@@ -18,7 +18,7 @@ class ToolboxPage extends StatelessWidget {
         Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-            color: palette.surface,
+            color: palette.panel,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: palette.border),
           ),

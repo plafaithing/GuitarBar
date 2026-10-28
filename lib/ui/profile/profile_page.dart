@@ -426,7 +426,7 @@ class _ProfilePageState extends State<ProfilePage> {
         width: double.infinity,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: p.ground,
+          color: p.panel,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: p.border),
         ),
