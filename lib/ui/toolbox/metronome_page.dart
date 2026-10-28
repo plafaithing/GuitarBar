@@ -190,7 +190,11 @@ class _MetronomePageState extends State<MetronomePage> {
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(color: palette.ink)),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-            child: DropdownButtonHideUnderline(
+            child: AbsorbPointer(
+              // 运行中吸收点击：菜单不弹、数值恒显全色（onChanged 守卫为
+              // 纵深防御）。
+              absorbing: _engine.running,
+              child: DropdownButtonHideUnderline(
               child: DropdownButton<int>(
                 value: cfg.beatsPerBar,
                 dropdownColor: palette.surface,
@@ -222,11 +226,16 @@ class _MetronomePageState extends State<MetronomePage> {
               ),
             ),
           ),
+        ),
           const SizedBox(width: 24),
           Text('细分', style: TextStyle(fontSize: 12, color: palette.muted)),
           const SizedBox(width: 8),
-          DropdownButton<int>(
-            value: cfg.subdivision,
+          AbsorbPointer(
+            // 运行中吸收点击：菜单不弹、数值恒显全色（onChanged 守卫为
+            // 纵深防御）。
+            absorbing: _engine.running,
+            child: DropdownButton<int>(
+              value: cfg.subdivision,
             dropdownColor: palette.surface,
             elevation: 2,
             borderRadius: BorderRadius.circular(8),
@@ -250,6 +259,7 @@ class _MetronomePageState extends State<MetronomePage> {
                   subdivision: s!));
             },
           ),
+        ),
           const SizedBox(width: 24),
           OutlinedButton.icon(
               onPressed: _tap,
