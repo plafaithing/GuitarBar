@@ -22,6 +22,8 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   late final AppDatabase _db;
   final TextEditingController _minutesCtrl = TextEditingController();
+  // H2：热力图悬停日（ValueNotifier 局部刷新，不 setState 整页）。
+  final ValueNotifier<DateTime?> _hoverDay = ValueNotifier(null);
 
   @override
   void initState() {
@@ -32,6 +34,7 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void dispose() {
     _minutesCtrl.dispose();
+    _hoverDay.dispose();
     super.dispose();
   }
 
@@ -210,36 +213,113 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  /// 热力图：最近 90 天（滚动窗口，不按周对齐），横向 GridView，7 行。
+  /// 热力图：最近 90 天（滚动窗口，不按周对齐），横向 GridView，7 行；
+  /// H2：右侧信息栏（悬停日详情 / 本周合计）。
   Widget _heatmap(Map<DateTime, int> minutes, GuitarBarPalette p) {
     final now = DateTime.now();
     final today0 = DateTime(now.year, now.month, now.day);
     final start = today0.subtract(const Duration(days: 89));
-    return SizedBox(
-      height: 124, // 7 行 × 16px + 6 × 2px 间距
-      child: GridView.count(
-        scrollDirection: Axis.horizontal,
-        crossAxisCount: 7,
-        mainAxisSpacing: 2,
-        crossAxisSpacing: 2,
-        children: [
-          for (var i = 0; i < 90; i++)
-            Container(
-              decoration: BoxDecoration(
-                color: _heatColor(
-                    minutes[start.add(Duration(days: i))] ?? 0,
-                    p,
-                    start.add(Duration(days: i)).isAfter(today0)),
-                borderRadius: BorderRadius.circular(3),
-              ),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: 124, // 7 行 × 16px + 6 × 2px 间距
+            child: GridView.count(
+              scrollDirection: Axis.horizontal,
+              crossAxisCount: 7,
+              mainAxisSpacing: 2,
+              crossAxisSpacing: 2,
+              children: [
+                for (var i = 0; i < 90; i++)
+                  MouseRegion(
+                    onEnter: (_) =>
+                        _hoverDay.value = start.add(Duration(days: i)),
+                    onExit: (_) => _hoverDay.value = null,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _heatColor(
+                            minutes[start.add(Duration(days: i))] ?? 0,
+                            p,
+                            start.add(Duration(days: i)).isAfter(today0),
+                            isDark),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-        ],
-      ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        // 信息栏：悬停显示单日详情，未悬停显示本周合计。
+        SizedBox(
+          width: 150,
+          child: ValueListenableBuilder<DateTime?>(
+            valueListenable: _hoverDay,
+            builder: (context, hover, _) {
+              if (hover == null) {
+                final weekMinutes = [
+                  for (var i = 0; i < 7; i++)
+                    minutes[today0.subtract(Duration(days: i))] ?? 0
+                ].fold(0, (a, b) => a + b);
+                return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('悬停查看单日',
+                          style:
+                              TextStyle(fontSize: 12, color: p.muted)),
+                      const SizedBox(height: 4),
+                      Text('本周 $weekMinutes 分钟',
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: p.ink,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures()
+                              ])),
+                    ]);
+              }
+              final min = minutes[hover] ?? 0;
+              final weekday = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][
+                  hover.weekday - 1];
+              return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                        '${hover.year}-${hover.month.toString().padLeft(2, '0')}-${hover.day.toString().padLeft(2, '0')} $weekday',
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: p.ink)),
+                    const SizedBox(height: 4),
+                    Text(min > 0 ? '$min 分钟' : '未练习',
+                        style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w600,
+                            color: _heatColor(min, p, false, isDark),
+                            fontFeatures: const [
+                              FontFeature.tabularFigures()
+                            ])),
+                  ]);
+            },
+          ),
+        ),
+      ],
     );
   }
 
-  /// 色阶：0 → rule；<20 分 → dataHue@0.3；<45 分 → @0.6；≥45 分 → 全量。
-  Color _heatColor(int min, GuitarBarPalette p, bool future) {
+  /// 色阶（H1 按主题分支）：浅色 0 → rule；<20 分 → dataHue@0.3；<45 →
+  /// @0.6；≥45 → 全量。深色实底绿阶梯（GitHub 深色同款）：0 → surface；
+  /// <20 → 0xFF1B3A2A；<45 → 0xFF1F5C3D；≥45 → positive。
+  Color _heatColor(int min, GuitarBarPalette p, bool future, bool isDark) {
+    if (isDark) {
+      if (future || min == 0) return p.surface;
+      if (min < 20) return const Color(0xFF1B3A2A);
+      if (min < 45) return const Color(0xFF1F5C3D);
+      return p.positive;
+    }
     if (future || min == 0) return p.rule;
     if (min < 20) return p.dataHue.withValues(alpha: 0.3);
     if (min < 45) return p.dataHue.withValues(alpha: 0.6);
