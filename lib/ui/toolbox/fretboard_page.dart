@@ -32,15 +32,17 @@ class _FretboardPageState extends State<FretboardPage> {
     super.initState();
     _player.init().then((_) {
       if (mounted) setState(() => _ready = true);
-    });
+    }).onError((_, _) {});
   }
 
   Future<void> _tapCell(TuningState state, int stringIdx, int fret) async {
     final midi = state.current.strings[stringIdx].midi + fret;
-    if (_ready) {
-      final src = await _player.loadPcm(pluck(Note(midi).frequency(state.a4)));
-      _player.play(src);
-    }
+    if (!_ready) return;
+    final src =
+        await _player.loadPcm(pluck(Note(midi).frequency(state.a4)));
+    _player.play(src);
+    Future.delayed(const Duration(seconds: 2),
+        () => _player.disposeSource(src)); // 1.2s 音频 + 200ms 余量
   }
 
   @override
@@ -89,7 +91,7 @@ class _FretboardPageState extends State<FretboardPage> {
             final cellH = (c.maxHeight - 20) / 6;
             return GestureDetector(
               onTapUp: (d) {
-                final fret = ((d.localPosition.dx) ~/ cellW) - 1;
+                final fret = ((d.localPosition.dx / cellW) - 1).round();
                 final str = (d.localPosition.dy ~/ cellH).clamp(0, 5);
                 if (fret >= 0 && fret <= _frets) unawaited(_tapCell(state, str, fret));
               },
