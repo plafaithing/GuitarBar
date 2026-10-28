@@ -106,8 +106,14 @@ class ProfilePage extends StatelessWidget {
                         ]),
                   ),
                   OutlinedButton(
-                      onPressed: () => unawaited(
-                          exportToFile(context.read<AppDatabase>())),
+                      onPressed: () async {
+                        final ok =
+                            await exportToFile(context.read<AppDatabase>());
+                        if (context.mounted && ok) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('已导出')));
+                        }
+                      },
                       child: const Text('导出 JSON')),
                   const SizedBox(width: 8),
                   OutlinedButton(
@@ -131,13 +137,15 @@ class ProfilePage extends StatelessWidget {
   }
 
   /// 导入 JSON 备份：backup.dart 契约——失败会抛异常（事务整体回滚，
-  /// 数据库保持原状），此处 catch 并向用户提示失败原因。
+  /// 数据库保持原状），此处 catch 并向用户提示失败原因；取消选择静默返回。
   Future<void> _importData(BuildContext context) async {
     final db = context.read<AppDatabase>();
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await importFromFile(db);
-      messenger.showSnackBar(const SnackBar(content: Text('导入完成')));
+      final ok = await importFromFile(db);
+      if (ok) {
+        messenger.showSnackBar(const SnackBar(content: Text('导入完成')));
+      }
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('导入失败: $e')));
     }

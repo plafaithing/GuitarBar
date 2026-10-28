@@ -58,26 +58,28 @@ Future<void> importFromJson(AppDatabase db, Map<String, dynamic> json) async {
   });
 }
 
-/// UI 用：导出到用户选择的文件
-Future<void> exportToFile(AppDatabase db) async {
+/// UI 用：导出到用户选择的文件；返回是否实际保存（取消选择返回 false）。
+Future<bool> exportToFile(AppDatabase db) async {
   final json = await exportToJson(db);
   final location = await getSaveLocation(
       suggestedName: 'guitarbar-backup-${DateTime.now().millisecondsSinceEpoch}.json');
-  if (location == null) return;
+  if (location == null) return false;
   final f = XFile.fromData(utf8.encode(jsonEncode(json)),
       mimeType: 'application/json');
   await f.saveTo(location.path);
+  return true;
 }
 
-/// UI 用：从用户选择的文件导入
+/// UI 用：从用户选择的文件导入；返回是否实际导入（取消选择返回 false）。
 ///
 /// 会抛异常（JSON 解析/字段类型不匹配/备份版本不支持等）；
 /// 失败时导入事务整体回滚，数据库保持原状。
-/// 调用方（Task 17）需 try/catch 并向用户提示失败原因。
-Future<void> importFromFile(AppDatabase db) async {
+/// 调用方需 try/catch 并向用户提示失败原因。
+Future<bool> importFromFile(AppDatabase db) async {
   final f = await openFile(acceptedTypeGroups: const [
     XTypeGroup(label: 'JSON', extensions: ['json'])
   ]);
-  if (f == null) return;
+  if (f == null) return false;
   await importFromJson(db, jsonDecode(await f.readAsString()) as Map<String, dynamic>);
+  return true;
 }
