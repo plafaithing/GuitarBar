@@ -90,7 +90,8 @@ class _FretboardPageState extends State<FretboardPage> {
           Expanded(
             child: Center(
               child: FractionallySizedBox(
-                widthFactor: 0.7,
+                widthFactor: 0.77,
+                heightFactor: 0.7,
                 child: LayoutBuilder(builder: (context, c) {
                   final cellW = c.maxWidth / (_frets + 1);
                   final cellH = (c.maxHeight - 20) / 6;
