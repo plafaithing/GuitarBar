@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../data/database.dart';
 import 'profile/profile_page.dart';
 import 'theme.dart';
+import 'toolbox/toolbox_page.dart';
 import 'tuner/tuner_page.dart';
 
 class RootPage extends StatefulWidget {
@@ -28,11 +29,6 @@ class _RootPageState extends State<RootPage> {
     Icons.music_note,
     Icons.home_repair_service,
     Icons.person,
-  ];
-  static const _hints = [
-    '拨响一根弦，这里会显示音高与偏差。',
-    '音阶、和弦与指法工具会在这里出现。',
-    '练习记录与偏好设置将在这里出现。',
   ];
   // 切页淡入：动效只做反馈（app 屏规则 150-200ms）。
   static const Duration _fadeDuration = Duration(milliseconds: 150);
@@ -76,8 +72,7 @@ class _RootPageState extends State<RootPage> {
                     ? const TunerPage()
                     : i == 2
                         ? const ProfilePage()
-                        : _Placeholder(_titles[i], _hints[i],
-                            pad: wide ? 24.0 : 16.0),
+                        : const ToolboxPage(),
               ),
             ),
           ),
@@ -322,29 +317,4 @@ class _PickPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-/// 占位页：Task 12-17 用真实页面替换。
-class _Placeholder extends StatelessWidget {
-  const _Placeholder(this.title, this.hint, {required this.pad});
-
-  final String title;
-  final String hint;
-  final double pad;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return Padding(
-      padding: EdgeInsets.all(pad),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: textTheme.titleLarge),
-          const SizedBox(height: 8),
-          Text(hint, style: textTheme.bodyMedium?.copyWith(color: context.palette.muted)),
-        ],
-      ),
-    );
-  }
 }
