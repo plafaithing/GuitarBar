@@ -10,6 +10,8 @@ import '../../core/music/chord_parser.dart';
 import '../../core/music/fingering.dart';
 import '../../state/tuning_state.dart';
 import '../../ui/theme.dart';
+import '../../ui/tuner/preset_editor.dart';
+import '../../ui/tuner/preset_sheet.dart';
 
 class ChordPage extends StatefulWidget {
   const ChordPage({super.key});
@@ -22,10 +24,16 @@ class _ChordPageState extends State<ChordPage> {
   List<ChordVoicing> _voicings = [];
   String? _error;
   bool _ready = false;
+  late TuningState _tuning;
+  String? _lastTuningId;
 
   @override
   void initState() {
     super.initState();
+    _tuning = context.read<TuningState>();
+    _lastTuningId = _tuning.current.id;
+    // 预设变更自动重查：当前调弦 id 变化 → 用新 strings 重算指法。
+    _tuning.addListener(_onTuningChanged);
     SoundEngine.I.init().then((_) {
       if (mounted) setState(() => _ready = true);
     }).onError((_, _) {
@@ -33,8 +41,46 @@ class _ChordPageState extends State<ChordPage> {
     });
   }
 
+  void _onTuningChanged() {
+    if (_tuning.current.id == _lastTuningId) return;
+    _lastTuningId = _tuning.current.id;
+    _search();
+  }
+
+  /// 调弦入口：弹出预设选择浮层（与调音器共享全局预设语义）。
+  void _showTuningSheet() {
+    final mq = MediaQuery.of(context);
+    final state = _tuning;
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.42),
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        insetPadding: const EdgeInsets.all(24),
+        child: SizedBox(
+          width: (mq.size.width * 0.9).clamp(320.0, 420.0),
+          height: (mq.size.height * 0.72).clamp(420.0, 640.0),
+          child: PresetSheet(
+            state: state,
+            onSelect: (t) {
+              state.select(t);
+              Navigator.pop(dialogContext);
+            },
+            onCreate: () => showPresetEditor(dialogContext, state),
+            onDuplicate: (t) => showPresetEditor(dialogContext, state, base: t),
+            // 和弦库入口的删除暂无确认弹窗（直接删，可撤销性依赖重进）；
+            // 调音器入口带确认，差异待统一。
+            onDelete: (t) => state.deleteCustom(t),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
+    _tuning.removeListener(_onTuningChanged);
     _input.dispose();
     super.dispose();
   }
@@ -67,6 +113,7 @@ class _ChordPageState extends State<ChordPage> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final state = context.watch<TuningState>();
     return Scaffold(
       appBar: AppBar(title: const Text('和弦库')),
       body: Padding(
@@ -83,6 +130,14 @@ class _ChordPageState extends State<ChordPage> {
           ),
           const SizedBox(width: 8),
           FilledButton(onPressed: _search, child: const Text('查询')),
+          const SizedBox(width: 8),
+          // 调弦入口：tap 打开预设浮层（全局预设，与调音器共享）。
+          IconButton(
+              onPressed: _showTuningSheet,
+              tooltip: '切换调弦预设',
+              icon: const Icon(Icons.tune)),
+          Text(state.current.name,
+              style: TextStyle(fontSize: 12, color: palette.muted)),
         ]),
         if (_error != null)
           Padding(
