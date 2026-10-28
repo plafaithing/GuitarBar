@@ -67,7 +67,9 @@ class _ChordPageState extends State<ChordPage> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Padding(
+    return Scaffold(
+      appBar: AppBar(title: const Text('和弦库')),
+      body: Padding(
       padding: const EdgeInsets.all(24),
       child: Column(children: [
         Row(children: [
@@ -133,6 +135,7 @@ class _ChordPageState extends State<ChordPage> {
           ),
         ),
       ]),
+      ),
     );
   }
 }

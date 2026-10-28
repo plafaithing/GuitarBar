@@ -51,7 +51,9 @@ class _FretboardPageState extends State<FretboardPage> {
     final palette = context.palette;
     final grid = fretboardGrid(state.current.strings, _rootPc, _scale, frets: _frets);
     final majorPcs = scalePitchClasses(_rootPc, ScaleType.major);
-    return Padding(
+    return Scaffold(
+      appBar: AppBar(title: const Text('指板音阶')),
+      body: Padding(
       padding: const EdgeInsets.all(24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -110,6 +112,7 @@ class _FretboardPageState extends State<FretboardPage> {
           }),
         ),
       ]),
+      ),
     );
   }
 }

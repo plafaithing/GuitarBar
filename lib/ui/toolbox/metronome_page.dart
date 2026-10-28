@@ -44,7 +44,9 @@ class _MetronomePageState extends State<MetronomePage> {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final cfg = _engine.cfg;
-    return Padding(
+    return Scaffold(
+      appBar: AppBar(title: const Text('节拍器')),
+      body: Padding(
       padding: const EdgeInsets.all(24),
       child: Column(children: [
         // 拍点指示灯：小节头 dataHue、正拍 ink、非活动 rule（数据元素着色）
@@ -124,6 +126,7 @@ class _MetronomePageState extends State<MetronomePage> {
           ),
         ]),
       ]),
+      ),
     );
   }
 }
