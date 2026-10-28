@@ -9,7 +9,6 @@ import 'package:record/record.dart';
 import '../../audio/mic_pitch_stream.dart';
 import '../../audio/sound_engine.dart';
 import '../../audio/synth.dart';
-import '../../core/music/builtin_tunings.dart';
 import '../../core/music/note.dart';
 import '../../core/music/tuning.dart';
 // drift 生成的数据类 TuningPreset 与 core/music/tuning.dart 重名，hide 之。
@@ -17,6 +16,9 @@ import '../../data/database.dart' hide TuningPreset;
 import '../../state/theme_settings.dart';
 import '../../state/tuning_state.dart';
 import '../../ui/theme.dart';
+import 'guitar_headstock.dart';
+import 'preset_editor.dart';
+import 'preset_sheet.dart';
 
 enum _TunerMode { guitar, chromatic }
 
@@ -220,7 +222,15 @@ class _TunerPageState extends State<TunerPage> {
     // 当前命中弦（锁定优先，-1 = 未命中），弦块高亮/到位点用它。
     final hitIdx = _lockedString ?? autoIdx;
 
-    return Padding(
+    // 页面高度自适应：琴头吃掉剩余竖向空间（iPad 11 寸横屏更饱满），
+    // 窗口太矮时整页滚动而不是溢出（旧版在默认窗口即溢出 3px）。
+    return LayoutBuilder(builder: (context, viewport) {
+      final headHeight =
+          ((viewport.maxHeight - 48) * 0.52).clamp(320.0, 640.0);
+      return SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: viewport.maxHeight),
+          child: Padding(
       padding: const EdgeInsets.all(24),
       child: Column(children: [
         Row(children: [
@@ -243,7 +253,7 @@ class _TunerPageState extends State<TunerPage> {
                       fontFeatures: const [FontFeature.tabularFigures()]))),
           IconButton(
               // 右上 = 一键新建自定义（编辑器）；左上入口 = 选/管预设。
-              onPressed: () => _showEditor(context, state),
+              onPressed: () => showPresetEditor(context, state),
               tooltip: '新建自定义调弦',
               icon: Icon(Icons.add_circle_outline,
                   color: context.palette.ink)),
@@ -294,12 +304,7 @@ class _TunerPageState extends State<TunerPage> {
             onChanged: (auto) => setState(() => _lockedString = auto
                 ? null
                 : (autoIdx >= 0 ? autoIdx : 0)),
-            // S4：激活填充 positive 绿（GuitarTuna 同款），thumb 恒白。
-            thumbColor: const WidgetStatePropertyAll(Colors.white),
-            trackColor: WidgetStateProperty.resolveWith((states) =>
-                states.contains(WidgetState.selected)
-                    ? context.palette.positive
-                    : null),
+            // 样式继承主题 SwitchTheme（positive 绿轨 + 白 thumb），零本地覆盖。
           ),
         ]),
         const SizedBox(height: 8),
@@ -318,8 +323,17 @@ class _TunerPageState extends State<TunerPage> {
         ]),
         const SizedBox(height: 12),
         if (_mode == _TunerMode.guitar)
-          _headstockSection(state,
-              hitIdx: hitIdx, cents: cents, hasFreq: _freq != null),
+          SizedBox(
+            height: headHeight,
+            child: GuitarHeadstock(
+              labels: [for (final n in state.current.strings) n.name],
+              hitIndex: hitIdx,
+              lockedIndex: _lockedString,
+              hasPitch: _freq != null,
+              cents: cents,
+              onTapString: (i) => _onStringTap(state, i),
+            ),
+          ),
         const SizedBox(height: 12),
         // 输入设备选择（长期保留）：默认设备是虚拟声卡时可一键切到真麦。
         Row(children: [
@@ -389,7 +403,10 @@ class _TunerPageState extends State<TunerPage> {
           ],
         ],
       ]),
-    );
+          ),
+        ),
+      );
+    });
   }
 
   /// 仪表区（高 96）：♭/♯ 两端；滑动目标环（不透明实底随 |cents| 渐变，
@@ -397,7 +414,7 @@ class _TunerPageState extends State<TunerPage> {
   /// 全宽）——滑到与固定中央基准轴（网格层）重合即调准（环变绿）。
   Widget _gaugeArea(double cents, bool inTune, bool hasFreq) {
     return SizedBox(
-      height: 96,
+      height: 84,
       child: TweenAnimationBuilder<double>(
         tween: Tween(end: cents.clamp(-50.0, 50.0)),
         duration: const Duration(milliseconds: 300),
@@ -516,106 +533,6 @@ class _TunerPageState extends State<TunerPage> {
     );
   }
 
-  /// 琴头区（签名元素）：手绘琴头（Gemini 生成图几何——深玫瑰木、冠形
-  /// 顶边、奶油包边、珍珠镶嵌、大铬钮），无背景坐在地色上。六个交互圆钮
-  /// 与三排弦钮行对齐，中心 = 板缘 ∓ (轴 12 + 钮 26 + 8 + 28 外移)。
-  /// 左列 D A E = 4/5/6 弦，右列 G B E = 3/2/1 弦；点击 = 播参考音 + 锁定。
-  Widget _headstockSection(TuningState state,
-      {required int hitIdx, required int cents, required bool hasFreq}) {
-    const canvasW = 340.0, canvasH = 320.0;
-    Widget knobAt(double centerX, double centerY, int stringIdx) => Positioned(
-          left: centerX - 24,
-          top: centerY - 24,
-          child: _stringKnob(state, stringIdx,
-              hit: stringIdx == _lockedString ||
-                  (hasFreq && stringIdx == hitIdx),
-              inTune:
-                  hasFreq && stringIdx == hitIdx && cents.abs() <= 3),
-        );
-    // 左右成对（F2/F3）：行 y = 三排螺母行（钮径 48、行距 ≥ 56 → 隙 ≥ 8），
-    // 列心 = 板缘 ∓ (30 空隙 + 24 半钮)。
-    List<Widget> knobPair(int row, int stringIdx) {
-      final y = canvasH * (0.06 + 0.82 * const [0.25, 0.50, 0.75][row]);
-      final edge = _HeadstockPainter.edgeX(y, canvasW, canvasH);
-      return [
-        knobAt(edge - 54, y, stringIdx),
-        knobAt(canvasW - edge + 54, y, stringIdx),
-      ];
-    }
-
-    return SizedBox(
-      width: canvasW,
-      height: canvasH,
-      child: Stack(clipBehavior: Clip.none, children: [
-        Positioned.fill(
-          child: CustomPaint(
-              painter: _HeadstockPainter(
-                  hitIndex: hasFreq ? hitIdx : -1,
-                  inTune: hasFreq && cents.abs() <= 3,
-                  dataHue: context.palette.dataHue,
-                  positive: context.palette.positive)),
-        ),
-        // F1 行序：行 0 = 弦 4（左）+ 弦 3（右）；行 1 = 5 + 2；行 2 = 6 + 1。
-        ...knobPair(0, 2),
-        ...knobPair(0, 3),
-        ...knobPair(1, 1),
-        ...knobPair(1, 4),
-        ...knobPair(2, 0),
-        ...knobPair(2, 5),
-      ]),
-    );
-  }
-
-  /// 圆形弦钮（直径 64）三态互斥（到位 > 检测命中 > 未检测），数据驱动的
-  /// 状态色：到位 → pillPositiveBg 底 + positive 边框与文字；命中 → dataHue
-  /// 浅调底 + dataHue 边框；未检测 → surface 白底 + controlBorder 细边。
-  Widget _stringKnob(TuningState state, int i,
-      {required bool hit, required bool inTune}) {
-    final Color bg;
-    final Color borderColor;
-    final Color textColor;
-    if (inTune) {
-      bg = context.palette.pillPositiveBg;
-      borderColor = context.palette.positive;
-      textColor = context.palette.positive;
-    } else if (hit) {
-      // dataHue 浅调：alphaBlend 随主题自适应（亮色 ≈ #EAE1D9，暗色自动生成暗琥珀底）。
-      bg = Color.alphaBlend(
-          context.palette.dataHue.withValues(alpha: 0.18),
-          context.palette.surface);
-      borderColor = context.palette.dataHue;
-      textColor = context.palette.ink;
-    } else {
-      bg = context.palette.surface;
-      borderColor = context.palette.controlBorder;
-      textColor = context.palette.ink;
-    }
-    return InkWell(
-      onTap: () => _onStringTap(state, i),
-      customBorder: const CircleBorder(),
-      child: AnimatedScale(
-        // 到位微缩（按下感），偏离回弹。
-        scale: inTune ? 0.92 : 1.0,
-        duration: const Duration(milliseconds: 120),
-        child: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: bg,
-              border: Border.all(
-                  color: borderColor, width: inTune || hit ? 2 : 1)),
-          alignment: Alignment.center,
-          child: Text(state.current.strings[i].name,
-              style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: textColor,
-                  fontFeatures: const [FontFeature.tabularFigures()])),
-        ),
-      ),
-    );
-  }
 
   /// 点弦块：播放参考音 + 锁定该弦；已锁定再点仅重复播音，解锁走「自动」按钮。
   void _onStringTap(TuningState state, int i) {
@@ -657,240 +574,55 @@ class _TunerPageState extends State<TunerPage> {
     ));
   }
 
-  /// 预设选择对话框：宽 360、高度随内容（超 480 才内部滚动）；圆角 16
-  /// （浮层软圆角档）；标题行与 ✕ 在 _PresetSheet 内容区内。
-  void _showPresetSheet(BuildContext context, TuningState state) {
+  /// 删除前确认；删除后预设面板保持打开（PresetSheet 监听 state 自动刷新）。
+  void _confirmDelete(
+      BuildContext context, TuningState state, TuningPreset t) {
     showDialog(
         context: context,
-        builder: (_) => AlertDialog(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-              contentPadding: EdgeInsets.zero,
-              content: ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 480),
-                child: SizedBox(width: 360, child: _PresetSheet(state: state)),
-              ),
+        builder: (dialogContext) => AlertDialog(
+              title: const Text('删除预设'),
+              content: Text('确定删除「${t.name}」？此操作不可撤销。'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('取消')),
+                FilledButton(
+                    onPressed: () {
+                      state.deleteCustom(t);
+                      Navigator.pop(dialogContext); // 只关确认框
+                    },
+                    child: const Text('删除')),
+              ],
             ));
   }
-}
 
-/// 手绘琴头（签名元素，Gemini 生成图几何，扁平纯色块无渐变，无背景）：
-/// 深玫瑰木桨形板（冠形顶边 = 中央小峰 + 两侧微凹，奶油包边 3px），
-/// 顶板中央珍珠镶嵌饰（菱形 + 卷纹，S5 加强）+ 排间隙小菱形点，底部奶油
-/// 弦枕 + 深指板向下出界；6 根钢弦（S1）从弦枕窄间距起点向上**分组扇形
-/// 张开**——6/5/4 弦（左 3 根）连左侧三个六角螺母、3/2/1 弦连右侧；每侧
-/// 3 组 = 六角螺母贴缘 + 轴杆外伸（12×5）+ 端部大圆角矩形铬钮（26×34）。
-/// 命中/到位弦线着色 dataHue/positive（数据元素，随主题）。
-class _HeadstockPainter extends CustomPainter {
-  _HeadstockPainter({
-    required this.hitIndex,
-    required this.inTune,
-    required this.dataHue,
-    required this.positive,
-  });
-
-  final int hitIndex; // 当前检测命中的弦（0..5，-1 无）
-  final bool inTune; // 命中弦是否到位（|cents| ≤ 3）
-  final Color dataHue;
-  final Color positive;
-
-  /// 头板侧缘 x（顶 0.06h 半宽 0.23w → 底 0.88h 半宽 0.20w，线性内收）——
-  /// painter 与交互弦钮定位共用。
-  static double edgeX(double y, double w, double h) {
-    final t = (((y / h) - 0.06) / 0.82).clamp(0.0, 1.0);
-    return w * (0.5 - (0.23 - 0.03 * t));
+  /// 预设选择浮层：尺寸随窗口取（宽 320~420、高 420~640），超出内部滚动。
+  void _showPresetSheet(BuildContext context, TuningState state) {
+    final mq = MediaQuery.of(context);
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.42),
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        insetPadding: const EdgeInsets.all(24),
+        child: SizedBox(
+          width: (mq.size.width * 0.9).clamp(320.0, 420.0),
+          height: (mq.size.height * 0.72).clamp(420.0, 640.0),
+          child: PresetSheet(
+            state: state,
+            onSelect: (t) {
+              state.select(t);
+              Navigator.pop(dialogContext);
+            },
+            onCreate: () => showPresetEditor(dialogContext, state),
+            onDuplicate: (t) => showPresetEditor(dialogContext, state, base: t),
+            onDelete: (t) => _confirmDelete(dialogContext, state, t),
+          ),
+        ),
+      ),
+    );
   }
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    const bodyColor = Color(0xFF3E2418);
-    const bodyDarkColor = Color(0xFF2E1B10);
-    const binding = Color(0xFFE8DCC8);
-    const inlay = Color(0xFFC9D4C5);
-    const nut = Color(0xFFE8DCC8);
-    const fingerboard = Color(0xFF2B1B10);
-    const stringColor = Color(0xFFC8C4BC);
-    const chrome = Color(0xFFC8C8C8);
-    const chromeLight = Color(0xFFE8E8E8);
-    const chromeDark = Color(0xFF808080);
-    const axis = Color(0xFFA0A0A0);
-
-    // 弦钮三排行（板范围 0.06..0.88h 均布 0.25/0.50/0.75——行距 0.205h，
-    // 满足 F2 交互钮 48 径 + 8px 隙）。
-    double knobY(int row) => h * (0.06 + 0.82 * const [0.25, 0.50, 0.75][row]);
-
-    // 桨形轮廓：冠形顶边（肩→凹→中央小峰→凹→肩）+ 两侧缓内收到底。
-    final body = Path()
-      ..moveTo(w * 0.27, h * 0.115)
-      ..quadraticBezierTo(w * 0.40, h * 0.132, w * 0.468, h * 0.088)
-      ..quadraticBezierTo(w * 0.49, h * 0.070, w * 0.50, h * 0.060)
-      ..quadraticBezierTo(w * 0.51, h * 0.070, w * 0.532, h * 0.088)
-      ..quadraticBezierTo(w * 0.60, h * 0.132, w * 0.73, h * 0.115)
-      ..quadraticBezierTo(w * 0.735, h * 0.40, w * 0.70, h * 0.88)
-      ..lineTo(w * 0.30, h * 0.88)
-      ..quadraticBezierTo(w * 0.265, h * 0.40, w * 0.27, h * 0.115)
-      ..close();
-    canvas.drawPath(body, Paint()..color = bodyColor);
-
-    // 右/下深阴影（右耳翼内侧窄条，与外轮廓同走向）。
-    final shade = Path()
-      ..moveTo(w * 0.655, h * 0.16)
-      ..quadraticBezierTo(w * 0.66, h * 0.40, w * 0.628, h * 0.64)
-      ..quadraticBezierTo(w * 0.612, h * 0.78, w * 0.638, h * 0.88)
-      ..lineTo(w * 0.65, h * 0.88)
-      ..quadraticBezierTo(w * 0.625, h * 0.78, w * 0.64, h * 0.64)
-      ..quadraticBezierTo(w * 0.67, h * 0.40, w * 0.70, h * 0.115)
-      ..close();
-    canvas.drawPath(shade, Paint()..color = bodyDarkColor);
-
-    // 奶油包边（3px 沿外轮廓）。
-    canvas.drawPath(
-        body,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 3
-          ..color = binding);
-
-    // 珍珠镶嵌主饰（F5）：菱形核心 + 左右各两段卷曲纹 + 上下小圆点
-    // （整体宽 ~0.16w，GuitarTuna 式对称卷草纹）。
-    final diamond = Path()
-      ..moveTo(w * 0.50, h * 0.055)
-      ..lineTo(w * 0.520, h * 0.10)
-      ..lineTo(w * 0.50, h * 0.145)
-      ..lineTo(w * 0.480, h * 0.10)
-      ..close();
-    canvas.drawPath(diamond, Paint()..color = inlay);
-    final curlPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..color = inlay;
-    final curlL = Path()
-      ..moveTo(w * 0.480, h * 0.10)
-      ..quadraticBezierTo(w * 0.452, h * 0.086, w * 0.440, h * 0.102)
-      ..quadraticBezierTo(w * 0.428, h * 0.118, w * 0.420, h * 0.100);
-    canvas.drawPath(curlL, curlPaint);
-    final curlR = Path()
-      ..moveTo(w * 0.520, h * 0.10)
-      ..quadraticBezierTo(w * 0.548, h * 0.086, w * 0.560, h * 0.102)
-      ..quadraticBezierTo(w * 0.572, h * 0.118, w * 0.580, h * 0.100);
-    canvas.drawPath(curlR, curlPaint);
-    canvas.drawCircle(Offset(w * 0.50, h * 0.038), 2, Paint()..color = inlay);
-    canvas.drawCircle(Offset(w * 0.50, h * 0.162), 2, Paint()..color = inlay);
-
-    // 排间隙复合小饰（F5）：菱形 + 两侧小卷纹（比主饰小 50%）。
-    for (final y in [
-      (knobY(0) + knobY(1)) / 2,
-      (knobY(1) + knobY(2)) / 2,
-    ]) {
-      for (final x in const [0.42, 0.58]) {
-        final dot = Path()
-          ..moveTo(w * x, y - 3.5)
-          ..lineTo(w * x + 3.5, y)
-          ..lineTo(w * x, y + 3.5)
-          ..lineTo(w * x - 3.5, y)
-          ..close();
-        canvas.drawPath(dot, Paint()..color = inlay);
-        final curlL = Path()
-          ..moveTo(w * x - 3.5, y)
-          ..quadraticBezierTo(w * x - 6.5, y - 2.5, w * x - 9.5, y);
-        canvas.drawPath(curlL, curlPaint);
-        final curlR = Path()
-          ..moveTo(w * x + 3.5, y)
-          ..quadraticBezierTo(w * x + 6.5, y - 2.5, w * x + 9.5, y);
-        canvas.drawPath(curlR, curlPaint);
-      }
-    }
-
-    // 弦枕（奶油条，宽 = 头板底 0.40w，高 8px）+ 指板（深棕出界）。
-    canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(w * 0.30, h * 0.88, w * 0.40, 8),
-            const Radius.circular(3)),
-        Paint()..color = nut);
-    canvas.drawRect(
-        Rect.fromLTWH(w * 0.35, h * 0.88 + 8, w * 0.30, h - (h * 0.88 + 8)),
-        Paint()..color = fingerboard);
-
-    // 弦线（F1 行序翻转）：弦枕七分内分点（自左向右 6/5/4/3/2/1 = 弦 idx
-    // 0..5），每弦一条直线直连各自钮位——弦 6/5/4 → 左列行 2/1/0（左列
-    // 自下而上 6/5/4）、弦 3/2/1 → 右列行 0/1/2（右列自下而上 1/2/3），
-    // 弦线呈自然斜向无交叉；命中 dataHue / 到位 positive 2px；过弦枕沿
-    // 琴颈平行直落（延续弦枕间距）。
-    final nutTop = h * 0.88;
-    final hitColor = inTune ? positive : dataHue;
-    final pts = [for (var i = 0; i < 6; i++) w * (0.28 + 0.44 * (i + 1) / 7)];
-    for (var s = 0; s < 6; s++) {
-      final isLeft = s < 3;
-      final row = isLeft ? 2 - s : s - 3; // 左列行 2/1/0 = 弦 6/5/4；右列行 0/1/2 = 弦 3/2/1
-      final y = knobY(row);
-      final hit = hitIndex == s;
-      final endX = isLeft ? edgeX(y, w, h) : w - edgeX(y, w, h);
-      canvas.drawLine(Offset(pts[s], nutTop), Offset(endX, y), Paint()
-        ..strokeWidth = hit ? 2.0 : 1.5
-        ..color = hit ? hitColor : stringColor);
-      // 过弦枕沿琴颈平行直落（延续弦枕间距）。
-      canvas.drawLine(Offset(pts[s], h * 0.88 + 8), Offset(pts[s], h), Paint()
-        ..strokeWidth = hit ? 2.0 : 1.5
-        ..color = hit ? hitColor : stringColor);
-    }
-
-    // 弦钮：每排左右——六角螺母贴缘（r=5 + 高光点）、轴杆外伸（12×5）、
-    // 端部大圆角矩形铬钮（26×34 r10：底 + 左半高光 + 右缘暗条）。
-    Offset hexOffset(double cx, double cy, int i) => Offset(
-        cx + 5 * math.cos(i * 2 * math.pi / 6),
-        cy + 5 * math.sin(i * 2 * math.pi / 6));
-    final nutPaint = Paint()..color = chrome;
-    final nutGlint = Paint()..color = chromeLight;
-    final axisPaint = Paint()..color = axis;
-    final glintHalfPaint = Paint()..color = chromeLight;
-    final darkEdgePaint = Paint()..color = chromeDark;
-    for (var row = 0; row < 3; row++) {
-      final y = knobY(row);
-      final lx = edgeX(y, w, h);
-      final rx = w - lx;
-      canvas.drawRect(Rect.fromLTWH(lx - 12, y - 2.5, 12, 5), axisPaint);
-      canvas.drawRect(Rect.fromLTWH(rx, y - 2.5, 12, 5), axisPaint);
-      final leftHub = RRect.fromRectAndRadius(
-          Rect.fromLTWH(lx - 38, y - 17, 26, 34), const Radius.circular(10));
-      final rightHub = RRect.fromRectAndRadius(
-          Rect.fromLTWH(rx + 12, y - 17, 26, 34), const Radius.circular(10));
-      for (final hub in [leftHub, rightHub]) {
-        canvas.drawRRect(hub, nutPaint);
-        canvas.save();
-        canvas.clipRect(
-            Rect.fromLTWH(hub.left, hub.top, hub.width / 2, hub.height));
-        canvas.drawRRect(hub, glintHalfPaint);
-        canvas.restore();
-        canvas.drawRect(
-            Rect.fromLTWH(hub.right - 4, hub.top + 3, 4, hub.height - 6),
-            darkEdgePaint);
-      }
-      final hex = Path()
-        ..moveTo(lx + 5, y);
-      for (var i = 1; i < 6; i++) {
-        final o = hexOffset(lx, y, i);
-        hex.lineTo(o.dx, o.dy);
-      }
-      hex.close();
-      canvas.drawPath(hex, nutPaint);
-      canvas.drawCircle(Offset(lx - 1.5, y - 1.5), 1.5, nutGlint);
-      final hexR = Path()
-        ..moveTo(rx - 5, y);
-      for (var i = 1; i < 6; i++) {
-        final o = hexOffset(rx, y, i);
-        hexR.lineTo(o.dx, o.dy);
-      }
-      hexR.close();
-      canvas.drawPath(hexR, nutPaint);
-      canvas.drawCircle(Offset(rx + 1.5, y - 1.5), 1.5, nutGlint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_HeadstockPainter oldDelegate) =>
-      oldDelegate.hitIndex != hitIndex || oldDelegate.inTune != inTune;
 }
 
 /// 网格线与移动指示线的统一线宽（A1：两者粗细完全一致）。
@@ -969,200 +701,4 @@ class _TipPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_TipPainter oldDelegate) => oldDelegate.ink != ink;
-}
-
-class _PresetSheet extends StatelessWidget {
-  const _PresetSheet({required this.state});
-  final TuningState state;
-
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    // 面板直接持有 state 未 watch，不包监听则增删预设后面板不刷新。
-    return ListenableBuilder(
-      listenable: state,
-      builder: (context, _) => SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 标题行：调弦预设 + ✕（底部「关闭」文字按钮已由 ✕ 替代）。
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
-              child: Row(children: [
-                Text('调弦预设',
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: p.ink)),
-                const Spacer(),
-                IconButton(
-                    icon: const Icon(Icons.close),
-                    tooltip: '关闭',
-                    onPressed: () => Navigator.pop(context)),
-              ]),
-            ),
-            const SizedBox(height: 4),
-            // 自定义组置顶：组标题 + 行尾「＋ 新建」，预设行紧随其后。
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(children: [
-                Text('自定义', style: TextStyle(fontSize: 12, color: p.muted)),
-                const Spacer(),
-                TextButton(
-                    onPressed: () => _showEditor(context, state),
-                    child:
-                        Text('＋ 新建', style: TextStyle(fontSize: 12, color: p.ink))),
-              ]),
-            ),
-            for (final t in state.custom) _presetRow(context, t, isCustom: true),
-            // 内置四组平铺（无折叠，全展开）。
-            for (final g in const [
-              TuningGroup.standardDown,
-              TuningGroup.drop,
-              TuningGroup.open,
-              TuningGroup.special,
-            ]) ...[
-              const SizedBox(height: 8),
-              Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child:
-                      Text(g.label, style: TextStyle(fontSize: 12, color: p.muted))),
-              for (final t in builtinTunings.where((x) => x.group == g))
-                _presetRow(context, t, isCustom: false),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 预设行（R2.4）：高 52、左右 padding 16、rule 色 1px 底分隔；当前项
-  /// positive ✓ + 名称加粗（无高亮背景）；自定义行删除钮 / 内置行复制钮
-  /// （选择/新建/复制/删除操作与旧版零改动）。
-  Widget _presetRow(BuildContext context, TuningPreset t,
-      {required bool isCustom}) {
-    final p = context.palette;
-    final current = state.current.id == t.id;
-    return InkWell(
-      onTap: () {
-        state.select(t);
-        Navigator.pop(context);
-      },
-      child: Container(
-        height: 52,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration:
-            BoxDecoration(border: Border(bottom: BorderSide(color: p.rule))),
-        child: Row(children: [
-          Expanded(
-            child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(t.name,
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight:
-                              current ? FontWeight.w600 : FontWeight.w400,
-                          color: p.ink)),
-                  Text(t.strings.map((n) => n.name).join(' '),
-                      style: TextStyle(fontSize: 12, color: p.muted)),
-                ]),
-          ),
-          if (current)
-            Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: Icon(Icons.check, color: p.positive)),
-          if (isCustom)
-            IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () => _confirmDelete(context, state, t))
-          else
-            IconButton(
-                icon: const Icon(Icons.copy),
-                tooltip: '复制为新预设',
-                onPressed: () => _showEditor(context, state, base: t)),
-        ]),
-      ),
-    );
-  }
-
-  /// 删除前确认；删除后预设面板保持打开（ListenableBuilder 自动刷新列表）。
-  void _confirmDelete(
-      BuildContext context, TuningState state, TuningPreset t) {
-    showDialog(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-              title: const Text('删除预设'),
-              content: Text('确定删除「${t.name}」？此操作不可撤销。'),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    child: const Text('取消')),
-                FilledButton(
-                    onPressed: () {
-                      state.deleteCustom(t);
-                      Navigator.pop(dialogContext); // 只关确认框
-                    },
-                    child: const Text('删除')),
-              ],
-            ));
-  }
-}
-
-/// 自定义调弦编辑器（顶层函数：预设对话框与顶部「新建自定义」入口共用）。
-/// 命名 + 六根弦逐弦下拉选音 + 保存。
-void _showEditor(BuildContext context, TuningState state,
-    {TuningPreset? base}) {
-  var name = base != null ? '${base.name} 副本' : '新调弦';
-  var picked = List<Note>.from(base?.strings ??
-      [Note.parse('E2'), Note.parse('A2'), Note.parse('D3'),
-       Note.parse('G3'), Note.parse('B3'), Note.parse('E4')]);
-  final allNotes = [for (var m = 28; m <= 88; m++) Note(m)];
-  showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-            title: TextFormField(
-                initialValue: name,
-                onChanged: (v) => name = v,
-                decoration: const InputDecoration(labelText: '预设名称')),
-            content: SizedBox(
-              width: 320,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (var i = 0; i < 6; i++)
-                    DropdownButtonFormField<Note>(
-                      // Flutter 3.47：value 已弃用，改用 initialValue。
-                      initialValue: picked[i],
-                      decoration: InputDecoration(labelText: '${6 - i} 弦'),
-                      items: [
-                        for (final n in allNotes)
-                          DropdownMenuItem(value: n, child: Text(n.name))
-                      ],
-                      onChanged: (n) => picked[i] = n!,
-                    ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('取消')),
-              FilledButton(
-                  onPressed: () {
-                    final trimmed = name.trim();
-                    if (trimmed.isEmpty) {
-                      ScaffoldMessenger.of(dialogContext).showSnackBar(
-                          const SnackBar(content: Text('预设名称不能为空')));
-                      return;
-                    }
-                    state.addCustom(
-                        trimmed, picked.map((n) => n.name).toList());
-                    Navigator.pop(dialogContext);
-                  },
-                  child: const Text('保存')),
-            ],
-          ));
 }

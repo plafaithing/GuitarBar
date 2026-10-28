@@ -147,6 +147,21 @@ extension GuitarBarPaletteContext on BuildContext {
       Theme.of(this).extension<GuitarBarPaletteExtension>()!.palette;
 }
 
+/// 全局界面字体：微软雅黑。
+///
+/// 放在主题层统一生效（ThemeData.textTheme 应用一次，页面里内联的 TextStyle
+/// 不指定 family 时会从 DefaultTextStyle 继承），这样不会出现「某页字对、
+/// 另一页字不对」。系统没有该字体时按 [kUiFontFallback] 逐级回退：macOS 用
+/// 苹方、iOS 用黑体，最后落到平台默认，不会出现方块字。
+const String kUiFontFamily = 'Microsoft YaHei';
+const List<String> kUiFontFallback = [
+  'PingFang SC',
+  'Hiragino Sans GB',
+  'Heiti SC',
+  'Noto Sans CJK SC',
+  'sans-serif',
+];
+
 class GuitarBarTheme {
   GuitarBarTheme._();
 
@@ -231,7 +246,9 @@ class GuitarBarTheme {
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: p.ground,
-      textTheme: _textThemeFor(p.ink),
+      // 全局字体：所有角色统一到微软雅黑（见 kUiFontFamily）。
+      textTheme: _textThemeFor(p.ink)
+          .apply(fontFamily: kUiFontFamily, fontFamilyFallback: kUiFontFallback),
       appBarTheme: AppBarTheme(
         backgroundColor: p.ground,
         foregroundColor: p.ink,
@@ -260,6 +277,16 @@ class GuitarBarTheme {
         ),
       ),
       dividerTheme: DividerThemeData(color: p.border, thickness: 1, space: 1),
+      // 全 app 开关统一：选中 = positive 绿轨 + 白 thumb（调音器「自动」
+      // 与个人中心「调试模式」同款；未选轨道用 controlBorder 中性）。
+      switchTheme: SwitchThemeData(
+        thumbColor: const WidgetStatePropertyAll(Colors.white),
+        trackColor: WidgetStateProperty.resolveWith((states) =>
+            states.contains(WidgetState.selected)
+                ? p.positive
+                : p.controlBorder),
+        trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+      ),
       extensions: [GuitarBarPaletteExtension(p)],
     );
   }
