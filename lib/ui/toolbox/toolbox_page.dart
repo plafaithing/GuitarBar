@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import 'chord_page.dart';
+import 'fretboard_page.dart';
 import 'metronome_page.dart';
 
 /// 工具箱容器：面板行式列表，行高 56，后续新工具加行即扩展。
-/// （指板音阶行待 Task 15 页面落地后追加，保持本提交编译自洽。）
+/// 指板音阶行已落地（Task 15）。
 class ToolboxPage extends StatelessWidget {
   const ToolboxPage({super.key});
 
@@ -27,6 +28,13 @@ class ToolboxPage extends StatelessWidget {
               subtitle: '算法生成指法 · 随调弦联动 · 四种试听',
               onTap: () => Navigator.push(context,
                   MaterialPageRoute(builder: (_) => const ChordPage()))),
+          Divider(height: 1, color: palette.rule),
+          _ToolRow(
+              icon: Icons.piano_outlined,
+              title: '指板音阶',
+              subtitle: '根音+音阶 · 随调弦联动 · 点按发声',
+              onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const FretboardPage()))),
           Divider(height: 1, color: palette.rule),
           _ToolRow(
               icon: Icons.av_timer_outlined,
