@@ -22,7 +22,8 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   late final AppDatabase _db;
   final TextEditingController _minutesCtrl = TextEditingController();
-  // H2：热力图悬停日（ValueNotifier 局部刷新，不 setState 整页）。
+  // H2/H4：热力图悬停或点选的日期（ValueNotifier 局部刷新，不 setState
+  // 整页；触屏点选持续显示直到点其它格）。
   final ValueNotifier<DateTime?> _hoverDay = ValueNotifier(null);
 
   @override
@@ -233,19 +234,20 @@ class _ProfilePageState extends State<ProfilePage> {
               crossAxisSpacing: 2,
               children: [
                 for (var i = 0; i < 90; i++)
-                  MouseRegion(
-                    onEnter: (_) =>
+                  GestureDetector(
+                    // H4：触屏点选（与鼠标悬停并存；点选持续显示直到点其它格）。
+                    onTap: () =>
                         _hoverDay.value = start.add(Duration(days: i)),
-                    onExit: (_) => _hoverDay.value = null,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: _heatColor(
-                            minutes[start.add(Duration(days: i))] ?? 0,
-                            p,
-                            start.add(Duration(days: i)).isAfter(today0),
-                            isDark),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
+                    child: MouseRegion(
+                      onEnter: (_) =>
+                          _hoverDay.value = start.add(Duration(days: i)),
+                      onExit: (_) => _hoverDay.value = null,
+                      child: _heatCell(
+                          start.add(Duration(days: i)),
+                          minutes[start.add(Duration(days: i))] ?? 0,
+                          start.add(Duration(days: i)).isAfter(today0),
+                          p,
+                          isDark),
                     ),
                   ),
               ],
@@ -324,6 +326,20 @@ class _ProfilePageState extends State<ProfilePage> {
     if (min < 20) return p.dataHue.withValues(alpha: 0.3);
     if (min < 45) return p.dataHue.withValues(alpha: 0.6);
     return p.dataHue;
+  }
+
+  /// 单日格（H3）：空格 1px palette.border 边框可见化（两主题皆可辨），
+  /// 已练格维持色阶无边框。
+  Widget _heatCell(DateTime day, int min, bool future, GuitarBarPalette p,
+      bool isDark) {
+    final empty = future || min == 0;
+    return Container(
+      decoration: BoxDecoration(
+        color: _heatColor(min, p, future, isDark),
+        borderRadius: BorderRadius.circular(3),
+        border: empty ? Border.all(color: p.border) : null,
+      ),
+    );
   }
 
   /// 手动补卡：选日期（当日 20:00 起算）+ 面板内输入分钟数。
