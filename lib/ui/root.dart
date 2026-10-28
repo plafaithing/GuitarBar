@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../data/database.dart';
+import '../state/practice_timer.dart';
 import 'profile/profile_page.dart';
 import 'theme.dart';
 import 'toolbox/toolbox_page.dart';
@@ -78,7 +79,30 @@ class _RootPageState extends State<RootPage> {
           ),
       ]);
       return Scaffold(
-        appBar: wide ? null : AppBar(title: Text(_titles[_tab])),
+        appBar: wide
+            ? null
+            : AppBar(
+                title: Text(_titles[_tab]),
+                // 顶栏练习计时 chip：仅窄屏（有 AppBar）且计时中显示；
+                // 宽屏无 AppBar，计时在个人中心页内可见。
+                actions: [
+                  Consumer<PracticeTimer>(builder: (_, t, _) {
+                    if (!t.running) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 16),
+                      child: Center(
+                        child: Text(
+                          '${t.elapsedSeconds ~/ 60}:${(t.elapsedSeconds % 60).toString().padLeft(2, '0')}',
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontFeatures: const [FontFeature.tabularFigures()],
+                              color: context.palette.ink),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
         body: wide
             ? Row(children: [
                 _SideNav(

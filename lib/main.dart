@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'data/database.dart';
+import 'state/practice_timer.dart';
 import 'state/theme_settings.dart';
 import 'state/tuning_state.dart';
 import 'ui/root.dart';
@@ -25,6 +26,7 @@ Future<void> main() async {
     Provider<AppDatabase>.value(value: db),
     ChangeNotifierProvider(create: (_) => TuningState(db)..load()),
     ChangeNotifierProvider(create: (_) => ThemeSettingsState(db)..load()),
+    ChangeNotifierProvider(create: (_) => PracticeTimer(db)),
   ], child: const GuitarBarApp()));
 }
 
