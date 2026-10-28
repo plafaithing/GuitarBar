@@ -24,6 +24,12 @@ class _ProfilePageState extends State<ProfilePage> {
   final TextEditingController _minutesCtrl = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    _db = context.read<AppDatabase>();
+  }
+
+  @override
   void dispose() {
     _minutesCtrl.dispose();
     super.dispose();
