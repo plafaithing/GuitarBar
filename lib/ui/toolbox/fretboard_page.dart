@@ -10,6 +10,8 @@ import '../../core/music/note.dart';
 import '../../core/music/scale.dart';
 import '../../state/tuning_state.dart';
 import '../../ui/theme.dart';
+import '../../ui/tuner/preset_editor.dart';
+import '../../ui/tuner/preset_sheet.dart';
 
 class FretboardPage extends StatefulWidget {
   const FretboardPage({super.key});
@@ -33,6 +35,36 @@ class _FretboardPageState extends State<FretboardPage> {
     _player.init().then((_) {
       if (mounted) setState(() => _ready = true);
     }).onError((_, _) {});
+  }
+
+  /// 调弦入口（与和弦库同款）：弹出预设选择浮层（全局预设语义）。
+  void _showTuningSheet() {
+    final mq = MediaQuery.of(context);
+    final state = context.read<TuningState>();
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.42),
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        insetPadding: const EdgeInsets.all(24),
+        child: SizedBox(
+          width: (mq.size.width * 0.9).clamp(320.0, 420.0),
+          height: (mq.size.height * 0.72).clamp(420.0, 640.0),
+          child: PresetSheet(
+            state: state,
+            onSelect: (t) {
+              state.select(t);
+              Navigator.pop(dialogContext);
+            },
+            onCreate: () => showPresetEditor(dialogContext, state),
+            onDuplicate: (t) => showPresetEditor(dialogContext, state, base: t),
+            // 指板入口的删除暂无确认弹窗（与和弦库入口一致，待统一）。
+            onDelete: (t) => state.deleteCustom(t),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _tapCell(TuningState state, int stringIdx, int fret) async {
@@ -83,9 +115,15 @@ class _FretboardPageState extends State<FretboardPage> {
               selected: {_showSolfege},
               onSelectionChanged: (s) => setState(() => _showSolfege = s.first),
             ),
+            const SizedBox(width: 8),
+            // 调弦入口（与和弦库同款）：tap 打开预设浮层（全局预设共享）。
+            IconButton(
+                onPressed: _showTuningSheet,
+                tooltip: '切换调弦预设',
+                icon: const Icon(Icons.tune)),
+            Text(state.current.name,
+                style: TextStyle(fontSize: 12, color: palette.muted)),
           ]),
-          Text('调弦：${state.current.name}',
-              style: TextStyle(fontSize: 12, color: palette.muted)),
           const SizedBox(height: 8),
           Expanded(
             child: Center(
