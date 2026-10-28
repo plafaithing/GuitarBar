@@ -23,9 +23,8 @@ class PracticeTimer extends ChangeNotifier {
     running = true;
     startedAt = DateTime.now();
     elapsedSeconds = 0;
-    try {
-      await WakelockPlus.enable(); // 练习中屏幕常亮；失败仅降级，不阻塞计时
-    } catch (_) {}
+    // wakelock 与计时解耦：常亮失败只降级，绝不阻塞计时（用户实测该调用可挂起）
+    unawaited(WakelockPlus.enable().catchError((_) {}));
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       elapsedSeconds++;
       notifyListeners();
@@ -39,9 +38,7 @@ class PracticeTimer extends ChangeNotifier {
     final start = startedAt;
     running = false;
     startedAt = null;
-    try {
-      await WakelockPlus.disable();
-    } catch (_) {} // 屏幕常亮失败不阻塞打卡落库
+    unawaited(WakelockPlus.disable().catchError((_) {}));
     if (start != null) {
       final end = DateTime.now();
       await _db.into(_db.practiceSessions).insert(
