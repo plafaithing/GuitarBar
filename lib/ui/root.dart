@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
-import '../audio/mic_pitch_stream.dart';
-import '../audio/sound_engine.dart';
 import '../data/database.dart';
 import '../state/practice_timer.dart';
 import 'profile/profile_page.dart';
@@ -50,24 +48,14 @@ class _RootPageState extends State<RootPage> with WindowListener {
     super.dispose();
   }
 
-  /// 窗口关闭拦截（main 里 setPreventClose(true)）：优雅停机序列——任何
-  /// 一步异常或超时（3s）都不阻断最终 destroy。边界：音频驱动级卡死时
-  /// destroy 后进程仍可能残留，最终手段仍是任务管理器/重启。
+  /// 窗口关闭拦截（main 里 setPreventClose(true)）：快速路径——唯一数据
+  /// 关键步（打卡落库，毫秒级）完成后立即 destroy；音频栈（麦克风流/引擎
+  /// 拆除）不等待，随进程退出由系统回收。边界：音频驱动级卡死时 destroy 后
+  /// 进程仍可能残留，最终手段仍是任务管理器/重启。
   @override
   void onWindowClose() async {
-    Future<void> guarded(Future<void> f) =>
-        f.timeout(const Duration(seconds: 3), onTimeout: () {});
     try {
-      await guarded(PracticeTimer.I.stop(note: '应用关闭时自动保存'));
-    } catch (_) {}
-    try {
-      await guarded(MicPitchStream.I.stop());
-    } catch (_) {}
-    try {
-      await guarded(MicPitchStream.I.shutdown());
-    } catch (_) {}
-    try {
-      await guarded(SoundEngine.I.shutdown());
+      await PracticeTimer.I.stop(note: '应用关闭时自动保存');
     } catch (_) {}
     await windowManager.destroy();
   }

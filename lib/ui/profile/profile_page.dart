@@ -20,39 +20,14 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  late final PracticeTimer _timer;
   late final AppDatabase _db;
   final TextEditingController _minutesCtrl = TextEditingController();
-  Future<List<PracticeSession>> _sessions = Future.value(const []);
-  // 侦测 running true→false（stop 落库完成后）触发统计刷新。
-  bool _wasRunning = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _timer = context.read<PracticeTimer>();
-    _db = context.read<AppDatabase>();
-    _sessions = _loadSessions();
-    _timer.addListener(_onTimerChanged);
-  }
 
   @override
   void dispose() {
-    _timer.removeListener(_onTimerChanged);
     _minutesCtrl.dispose();
     super.dispose();
   }
-
-  void _onTimerChanged() {
-    if (_wasRunning && !_timer.running) {
-      // stop() 在打卡记录落库之后才 notifyListeners，此时重查即得最新统计。
-      setState(() => _sessions = _loadSessions());
-    }
-    _wasRunning = _timer.running;
-  }
-
-  Future<List<PracticeSession>> _loadSessions() =>
-      _db.select(_db.practiceSessions).get();
 
   @override
   Widget build(BuildContext context) {
@@ -153,8 +128,10 @@ class _ProfilePageState extends State<ProfilePage> {
           }),
         ]),
         const SizedBox(height: 16),
-        FutureBuilder<List<PracticeSession>>(
-          future: _sessions,
+        // watch：表级响应式——停止落库/补卡/导入的任何变更自动重发，
+        // 统计与热力图零手动刷新。
+        StreamBuilder<List<PracticeSession>>(
+          stream: _db.select(_db.practiceSessions).watch(),
           builder: (context, snap) {
             final rows = snap.data ?? const <PracticeSession>[];
             return Column(
@@ -162,7 +139,7 @@ class _ProfilePageState extends State<ProfilePage> {
               children: [
                 _statBar(rows, p),
                 const SizedBox(height: 16),
-                Text('最近 12 周',
+                Text('最近 90 天',
                     style: TextStyle(fontSize: 12, color: p.muted)),
                 const SizedBox(height: 8),
                 _heatmap(minutesPerDay(rows), p),
@@ -227,12 +204,11 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  /// 热力图：最近 12 周（84 天），横向 GridView，7 行 = 周一…周日（列 = 周）。
+  /// 热力图：最近 90 天（滚动窗口，不按周对齐），横向 GridView，7 行。
   Widget _heatmap(Map<DateTime, int> minutes, GuitarBarPalette p) {
     final now = DateTime.now();
     final today0 = DateTime(now.year, now.month, now.day);
-    final monday = today0.subtract(Duration(days: today0.weekday - 1));
-    final start = monday.subtract(const Duration(days: 77)); // 12 周网格起点
+    final start = today0.subtract(const Duration(days: 89));
     return SizedBox(
       height: 124, // 7 行 × 16px + 6 × 2px 间距
       child: GridView.count(
@@ -241,7 +217,7 @@ class _ProfilePageState extends State<ProfilePage> {
         mainAxisSpacing: 2,
         crossAxisSpacing: 2,
         children: [
-          for (var i = 0; i < 84; i++)
+          for (var i = 0; i < 90; i++)
             Container(
               decoration: BoxDecoration(
                 color: _heatColor(
@@ -287,7 +263,7 @@ class _ProfilePageState extends State<ProfilePage> {
             endedAt: start.add(Duration(minutes: minutes)),
             durationSeconds: minutes * 60));
     _minutesCtrl.clear();
-    setState(() => _sessions = _loadSessions());
+    // 落库 → practice_sessions 表的 watch 流自动重发，统计/热力图即时刷新。
   }
 
   // ---- 数据分组 ----
@@ -328,8 +304,7 @@ class _ProfilePageState extends State<ProfilePage> {
       final ok = await importFromFile(_db);
       if (ok) {
         messenger.showSnackBar(const SnackBar(content: Text('导入完成')));
-        // 导入会替换练习记录，统计/热力图同步刷新。
-        setState(() => _sessions = _loadSessions());
+        // 导入替换练习记录表 → watch 流自动重发，统计/热力图同步刷新。
       }
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('导入失败: $e')));

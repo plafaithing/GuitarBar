@@ -54,64 +54,73 @@ class _FretboardPageState extends State<FretboardPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('指板音阶')),
       body: Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          DropdownButton<int>(
-            value: _rootPc,
-            items: [
-              for (var pc = 0; pc < 12; pc++)
-                DropdownMenuItem(value: pc, child: Text(_pcNames[pc]))
-            ],
-            onChanged: (v) => setState(() => _rootPc = v!),
-          ),
-          const SizedBox(width: 16),
-          DropdownButton<ScaleType>(
-            value: _scale,
-            items: [
-              for (final s in ScaleType.values)
-                DropdownMenuItem(value: s, child: Text(s.label))
-            ],
-            onChanged: (s) => setState(() => _scale = s!),
-          ),
-          const SizedBox(width: 16),
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(value: false, label: Text('音名')),
-              ButtonSegment(value: true, label: Text('唱名')),
-            ],
-            selected: {_showSolfege},
-            onSelectionChanged: (s) => setState(() => _showSolfege = s.first),
+        padding: const EdgeInsets.all(24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            DropdownButton<int>(
+              value: _rootPc,
+              items: [
+                for (var pc = 0; pc < 12; pc++)
+                  DropdownMenuItem(value: pc, child: Text(_pcNames[pc]))
+              ],
+              onChanged: (v) => setState(() => _rootPc = v!),
+            ),
+            const SizedBox(width: 16),
+            DropdownButton<ScaleType>(
+              value: _scale,
+              items: [
+                for (final s in ScaleType.values)
+                  DropdownMenuItem(value: s, child: Text(s.label))
+              ],
+              onChanged: (s) => setState(() => _scale = s!),
+            ),
+            const SizedBox(width: 16),
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, label: Text('音名')),
+                ButtonSegment(value: true, label: Text('唱名')),
+              ],
+              selected: {_showSolfege},
+              onSelectionChanged: (s) => setState(() => _showSolfege = s.first),
+            ),
+          ]),
+          Text('调弦：${state.current.name}',
+              style: TextStyle(fontSize: 12, color: palette.muted)),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Center(
+              child: FractionallySizedBox(
+                widthFactor: 0.7,
+                child: LayoutBuilder(builder: (context, c) {
+                  final cellW = c.maxWidth / (_frets + 1);
+                  final cellH = (c.maxHeight - 20) / 6;
+                  return GestureDetector(
+                    onTapUp: (d) {
+                      final fret =
+                          ((d.localPosition.dx / cellW) - 1).round();
+                      final str =
+                          (d.localPosition.dy ~/ cellH).clamp(0, 5);
+                      if (fret >= 0 && fret <= _frets) {
+                        unawaited(_tapCell(state, str, fret));
+                      }
+                    },
+                    child: CustomPaint(
+                      size: Size(c.maxWidth, c.maxHeight),
+                      painter: _FretboardPainter(
+                          grid: grid,
+                          cellW: cellW,
+                          cellH: cellH,
+                          showSolfege: _showSolfege,
+                          rootPc: _rootPc,
+                          majorPcs: majorPcs,
+                          palette: palette),
+                    ),
+                  );
+                }),
+              ),
+            ),
           ),
         ]),
-        Text('调弦：${state.current.name}',
-            style: TextStyle(fontSize: 12, color: palette.muted)),
-        const SizedBox(height: 8),
-        Expanded(
-          child: LayoutBuilder(builder: (context, c) {
-            final cellW = c.maxWidth / (_frets + 1);
-            final cellH = (c.maxHeight - 20) / 6;
-            return GestureDetector(
-              onTapUp: (d) {
-                final fret = ((d.localPosition.dx / cellW) - 1).round();
-                final str = (d.localPosition.dy ~/ cellH).clamp(0, 5);
-                if (fret >= 0 && fret <= _frets) unawaited(_tapCell(state, str, fret));
-              },
-              child: CustomPaint(
-                size: Size(c.maxWidth, c.maxHeight),
-                painter: _FretboardPainter(
-                    grid: grid,
-                    cellW: cellW,
-                    cellH: cellH,
-                    showSolfege: _showSolfege,
-                    rootPc: _rootPc,
-                    majorPcs: majorPcs,
-                    palette: palette),
-              ),
-            );
-          }),
-        ),
-      ]),
       ),
     );
   }
