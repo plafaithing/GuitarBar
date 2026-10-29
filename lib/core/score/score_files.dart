@@ -17,6 +17,8 @@ class ScoreFiles {
     return src.copy(p.join(dir.path, 'source.$ext'));
   }
 
+  /// 批量写入页图（page-001.png 起按页序编号）。
+  /// 不清理既有页图（调用方约定只在导入时写一次）。
   Future<void> savePagePngs(int id, List<Uint8List> pngs) async {
     final dir = dirFor(id);
     await dir.create(recursive: true);
@@ -38,8 +40,10 @@ class ScoreFiles {
       ..sort((a, b) => p.basename(a.path).compareTo(p.basename(b.path)));
   }
 
+  /// 按行对象定位原谱：sourcePath 的目录段（`scores/<id>/`）只是相对应用
+  /// 支持目录的元数据（导出 zip 用），实际文件在 `<base>/<id>/` 下。
   File sourceFile(int id, String sourcePath) =>
-      File(p.join(baseDir.path, sourcePath));
+      File(p.join(dirFor(id).path, p.basename(sourcePath)));
 
   Future<void> delete(int id) async {
     final dir = dirFor(id);

@@ -30,15 +30,22 @@ void main() {
     expect(pages[0].path, contains('page-001.png'));
     expect(pages[1].path, contains('page-002.png'));
 
+    // sourcePath 目录段只是元数据，实际文件在 <base>/<id>/ 下。
+    expect(files.sourceFile(5, 'scores/5/source.jpg').existsSync(), isTrue);
+
     await files.delete(5);
     expect(files.pagePngs(5), isEmpty);
     expect(File(saved.path).existsSync(), isFalse);
   });
 
-  test('normalizeImage：小图原样返回，大图缩到上限', () async {
+  test('normalizeImage：小图重编码为原尺寸 PNG，大图缩到上限', () async {
     final small = Uint8List.fromList(
         imgpkg.encodePng(imgpkg.Image(width: 100, height: 80)));
-    expect((await normalizeImage(small)).length, small.length);
+    final smallOut = await normalizeImage(small);
+    // 输出须是合法 PNG 且保持原尺寸（重编码后字节不必与输入相等）。
+    final smallDecoded = imgpkg.decodePng(smallOut)!;
+    expect(smallDecoded.width, 100);
+    expect(smallDecoded.height, 80);
 
     final big = Uint8List.fromList(
         imgpkg.encodePng(imgpkg.Image(width: 5000, height: 2500)));
@@ -51,5 +58,11 @@ void main() {
   test('normalizeImage：垃圾字节抛 FormatException', () async {
     expect(() => normalizeImage(Uint8List.fromList([1, 2, 3])),
         throwsFormatException);
+  });
+
+  test('normalizeImage：截断 GIF 抛 FormatException', () async {
+    final truncatedGif =
+        Uint8List.fromList([...('GIF89a'.codeUnits), 1, 2, 3, 4]);
+    expect(() => normalizeImage(truncatedGif), throwsFormatException);
   });
 }

@@ -2,19 +2,22 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as imgpkg;
 
-/// 图片规范化：长边 ≤ maxSide 等比缩到 PNG（识别输入与页图统一格式）。
-/// 解码失败抛 FormatException。
+/// 图片规范化：解码后统一输出 PNG——长边 ≤ maxSide 保持原尺寸，否则等比
+/// 缩到上限；识别输入与页图共用同一格式通道。解码失败抛 FormatException。
 Future<Uint8List> normalizeImage(Uint8List bytes, {int maxSide = 4096}) async {
   imgpkg.Image? decoded;
   try {
     decoded = imgpkg.decodeImage(bytes);
-  } catch (_) {
+  } catch (e) {
     // 部分解码器对垃圾输入不返回 null 而是直接抛异常（如 GifDecoder
     // isValidFile 越界读），在胶水层统一转成 FormatException。
-    throw const FormatException('无法解码图片');
+    throw FormatException('无法解码图片：$e');
   }
   if (decoded == null) throw const FormatException('无法解码图片');
-  if (decoded.width <= maxSide && decoded.height <= maxSide) return bytes;
+  // 始终输出 PNG：不透传原始字节，避免 JPEG 内容顶着 .png 文件名/mime 传播。
+  if (decoded.width <= maxSide && decoded.height <= maxSide) {
+    return Uint8List.fromList(imgpkg.encodePng(decoded));
+  }
   final w = decoded.width >= decoded.height
       ? maxSide
       : (decoded.width * maxSide / decoded.height).round();
