@@ -857,6 +857,503 @@ class SettingsCompanion extends UpdateCompanion<Setting> {
   }
 }
 
+class $ScoresTable extends Scores with TableInfo<$ScoresTable, Score> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ScoresTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceTypeMeta = const VerificationMeta(
+    'sourceType',
+  );
+  @override
+  late final GeneratedColumn<String> sourceType = GeneratedColumn<String>(
+    'source_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourcePathMeta = const VerificationMeta(
+    'sourcePath',
+  );
+  @override
+  late final GeneratedColumn<String> sourcePath = GeneratedColumn<String>(
+    'source_path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _irJsonMeta = const VerificationMeta('irJson');
+  @override
+  late final GeneratedColumn<String> irJson = GeneratedColumn<String>(
+    'ir_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _tuningMeta = const VerificationMeta('tuning');
+  @override
+  late final GeneratedColumn<String> tuning = GeneratedColumn<String>(
+    'tuning',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    title,
+    sourceType,
+    sourcePath,
+    irJson,
+    tuning,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'scores';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<Score> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('source_type')) {
+      context.handle(
+        _sourceTypeMeta,
+        sourceType.isAcceptableOrUnknown(data['source_type']!, _sourceTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceTypeMeta);
+    }
+    if (data.containsKey('source_path')) {
+      context.handle(
+        _sourcePathMeta,
+        sourcePath.isAcceptableOrUnknown(data['source_path']!, _sourcePathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourcePathMeta);
+    }
+    if (data.containsKey('ir_json')) {
+      context.handle(
+        _irJsonMeta,
+        irJson.isAcceptableOrUnknown(data['ir_json']!, _irJsonMeta),
+      );
+    }
+    if (data.containsKey('tuning')) {
+      context.handle(
+        _tuningMeta,
+        tuning.isAcceptableOrUnknown(data['tuning']!, _tuningMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  Score map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return Score(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      sourceType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_type'],
+      )!,
+      sourcePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_path'],
+      )!,
+      irJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ir_json'],
+      ),
+      tuning: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tuning'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $ScoresTable createAlias(String alias) {
+    return $ScoresTable(attachedDatabase, alias);
+  }
+}
+
+class Score extends DataClass implements Insertable<Score> {
+  final int id;
+  final String title;
+  final String sourceType;
+  final String sourcePath;
+  final String? irJson;
+  final String? tuning;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  const Score({
+    required this.id,
+    required this.title,
+    required this.sourceType,
+    required this.sourcePath,
+    this.irJson,
+    this.tuning,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['title'] = Variable<String>(title);
+    map['source_type'] = Variable<String>(sourceType);
+    map['source_path'] = Variable<String>(sourcePath);
+    if (!nullToAbsent || irJson != null) {
+      map['ir_json'] = Variable<String>(irJson);
+    }
+    if (!nullToAbsent || tuning != null) {
+      map['tuning'] = Variable<String>(tuning);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  ScoresCompanion toCompanion(bool nullToAbsent) {
+    return ScoresCompanion(
+      id: Value(id),
+      title: Value(title),
+      sourceType: Value(sourceType),
+      sourcePath: Value(sourcePath),
+      irJson: irJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(irJson),
+      tuning: tuning == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tuning),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory Score.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return Score(
+      id: serializer.fromJson<int>(json['id']),
+      title: serializer.fromJson<String>(json['title']),
+      sourceType: serializer.fromJson<String>(json['sourceType']),
+      sourcePath: serializer.fromJson<String>(json['sourcePath']),
+      irJson: serializer.fromJson<String?>(json['irJson']),
+      tuning: serializer.fromJson<String?>(json['tuning']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'title': serializer.toJson<String>(title),
+      'sourceType': serializer.toJson<String>(sourceType),
+      'sourcePath': serializer.toJson<String>(sourcePath),
+      'irJson': serializer.toJson<String?>(irJson),
+      'tuning': serializer.toJson<String?>(tuning),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  Score copyWith({
+    int? id,
+    String? title,
+    String? sourceType,
+    String? sourcePath,
+    Value<String?> irJson = const Value.absent(),
+    Value<String?> tuning = const Value.absent(),
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => Score(
+    id: id ?? this.id,
+    title: title ?? this.title,
+    sourceType: sourceType ?? this.sourceType,
+    sourcePath: sourcePath ?? this.sourcePath,
+    irJson: irJson.present ? irJson.value : this.irJson,
+    tuning: tuning.present ? tuning.value : this.tuning,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  Score copyWithCompanion(ScoresCompanion data) {
+    return Score(
+      id: data.id.present ? data.id.value : this.id,
+      title: data.title.present ? data.title.value : this.title,
+      sourceType: data.sourceType.present
+          ? data.sourceType.value
+          : this.sourceType,
+      sourcePath: data.sourcePath.present
+          ? data.sourcePath.value
+          : this.sourcePath,
+      irJson: data.irJson.present ? data.irJson.value : this.irJson,
+      tuning: data.tuning.present ? data.tuning.value : this.tuning,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('Score(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('sourceType: $sourceType, ')
+          ..write('sourcePath: $sourcePath, ')
+          ..write('irJson: $irJson, ')
+          ..write('tuning: $tuning, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    title,
+    sourceType,
+    sourcePath,
+    irJson,
+    tuning,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Score &&
+          other.id == this.id &&
+          other.title == this.title &&
+          other.sourceType == this.sourceType &&
+          other.sourcePath == this.sourcePath &&
+          other.irJson == this.irJson &&
+          other.tuning == this.tuning &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class ScoresCompanion extends UpdateCompanion<Score> {
+  final Value<int> id;
+  final Value<String> title;
+  final Value<String> sourceType;
+  final Value<String> sourcePath;
+  final Value<String?> irJson;
+  final Value<String?> tuning;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  const ScoresCompanion({
+    this.id = const Value.absent(),
+    this.title = const Value.absent(),
+    this.sourceType = const Value.absent(),
+    this.sourcePath = const Value.absent(),
+    this.irJson = const Value.absent(),
+    this.tuning = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  ScoresCompanion.insert({
+    this.id = const Value.absent(),
+    required String title,
+    required String sourceType,
+    required String sourcePath,
+    this.irJson = const Value.absent(),
+    this.tuning = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  }) : title = Value(title),
+       sourceType = Value(sourceType),
+       sourcePath = Value(sourcePath);
+  static Insertable<Score> custom({
+    Expression<int>? id,
+    Expression<String>? title,
+    Expression<String>? sourceType,
+    Expression<String>? sourcePath,
+    Expression<String>? irJson,
+    Expression<String>? tuning,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (title != null) 'title': title,
+      if (sourceType != null) 'source_type': sourceType,
+      if (sourcePath != null) 'source_path': sourcePath,
+      if (irJson != null) 'ir_json': irJson,
+      if (tuning != null) 'tuning': tuning,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  ScoresCompanion copyWith({
+    Value<int>? id,
+    Value<String>? title,
+    Value<String>? sourceType,
+    Value<String>? sourcePath,
+    Value<String?>? irJson,
+    Value<String?>? tuning,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+  }) {
+    return ScoresCompanion(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      sourceType: sourceType ?? this.sourceType,
+      sourcePath: sourcePath ?? this.sourcePath,
+      irJson: irJson ?? this.irJson,
+      tuning: tuning ?? this.tuning,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (sourceType.present) {
+      map['source_type'] = Variable<String>(sourceType.value);
+    }
+    if (sourcePath.present) {
+      map['source_path'] = Variable<String>(sourcePath.value);
+    }
+    if (irJson.present) {
+      map['ir_json'] = Variable<String>(irJson.value);
+    }
+    if (tuning.present) {
+      map['tuning'] = Variable<String>(tuning.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ScoresCompanion(')
+          ..write('id: $id, ')
+          ..write('title: $title, ')
+          ..write('sourceType: $sourceType, ')
+          ..write('sourcePath: $sourcePath, ')
+          ..write('irJson: $irJson, ')
+          ..write('tuning: $tuning, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -865,6 +1362,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   );
   late final $TuningPresetsTable tuningPresets = $TuningPresetsTable(this);
   late final $SettingsTable settings = $SettingsTable(this);
+  late final $ScoresTable scores = $ScoresTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -873,6 +1371,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     practiceSessions,
     tuningPresets,
     settings,
+    scores,
   ];
   @override
   DriftDatabaseOptions get options =>
@@ -1408,6 +1907,262 @@ typedef $$SettingsTableProcessedTableManager =
       Setting,
       PrefetchHooks Function()
     >;
+typedef $$ScoresTableCreateCompanionBuilder = ScoresCompanion Function({
+  Value<int> id,
+  required String title,
+  required String sourceType,
+  required String sourcePath,
+  Value<String?> irJson,
+  Value<String?> tuning,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+});
+typedef $$ScoresTableUpdateCompanionBuilder = ScoresCompanion Function({
+  Value<int> id,
+  Value<String> title,
+  Value<String> sourceType,
+  Value<String> sourcePath,
+  Value<String?> irJson,
+  Value<String?> tuning,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+});
+
+class $$ScoresTableFilterComposer
+    extends Composer<_$AppDatabase, $ScoresTable> {
+  $$ScoresTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceType => $composableBuilder(
+    column: $table.sourceType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourcePath => $composableBuilder(
+    column: $table.sourcePath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get irJson => $composableBuilder(
+    column: $table.irJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tuning => $composableBuilder(
+    column: $table.tuning,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ScoresTableOrderingComposer
+    extends Composer<_$AppDatabase, $ScoresTable> {
+  $$ScoresTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceType => $composableBuilder(
+    column: $table.sourceType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourcePath => $composableBuilder(
+    column: $table.sourcePath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get irJson => $composableBuilder(
+    column: $table.irJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tuning => $composableBuilder(
+    column: $table.tuning,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ScoresTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ScoresTable> {
+  $$ScoresTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceType => $composableBuilder(
+    column: $table.sourceType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sourcePath => $composableBuilder(
+    column: $table.sourcePath,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get irJson =>
+      $composableBuilder(column: $table.irJson, builder: (column) => column);
+
+  GeneratedColumn<String> get tuning =>
+      $composableBuilder(column: $table.tuning, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$ScoresTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ScoresTable,
+          Score,
+          $$ScoresTableFilterComposer,
+          $$ScoresTableOrderingComposer,
+          $$ScoresTableAnnotationComposer,
+          $$ScoresTableCreateCompanionBuilder,
+          $$ScoresTableUpdateCompanionBuilder,
+          (Score, BaseReferences<_$AppDatabase, $ScoresTable, Score>),
+          Score,
+          PrefetchHooks Function()
+        > {
+  $$ScoresTableTableManager(_$AppDatabase db, $ScoresTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ScoresTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ScoresTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ScoresTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<String> sourceType = const Value.absent(),
+                Value<String> sourcePath = const Value.absent(),
+                Value<String?> irJson = const Value.absent(),
+                Value<String?> tuning = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+              }) => ScoresCompanion(
+                id: id,
+                title: title,
+                sourceType: sourceType,
+                sourcePath: sourcePath,
+                irJson: irJson,
+                tuning: tuning,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String title,
+                required String sourceType,
+                required String sourcePath,
+                Value<String?> irJson = const Value.absent(),
+                Value<String?> tuning = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+              }) => ScoresCompanion.insert(
+                id: id,
+                title: title,
+                sourceType: sourceType,
+                sourcePath: sourcePath,
+                irJson: irJson,
+                tuning: tuning,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$ScoresTable, Score>(table),
+                  BaseReferences<_$AppDatabase, $ScoresTable, Score>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ScoresTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ScoresTable,
+      Score,
+      $$ScoresTableFilterComposer,
+      $$ScoresTableOrderingComposer,
+      $$ScoresTableAnnotationComposer,
+      $$ScoresTableCreateCompanionBuilder,
+      $$ScoresTableUpdateCompanionBuilder,
+      (Score, BaseReferences<_$AppDatabase, $ScoresTable, Score>),
+      Score,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -1418,4 +2173,6 @@ class $AppDatabaseManager {
       $$TuningPresetsTableTableManager(_db, _db.tuningPresets);
   $$SettingsTableTableManager get settings =>
       $$SettingsTableTableManager(_db, _db.settings);
+  $$ScoresTableTableManager get scores =>
+      $$ScoresTableTableManager(_db, _db.scores);
 }

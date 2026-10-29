@@ -29,12 +29,34 @@ class Settings extends Table {
   Set<Column> get primaryKey => {key};
 }
 
-@DriftDatabase(tables: [PracticeSessions, TuningPresets, Settings])
+class Scores extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get title => text()();
+  // 'image' | 'pdf'
+  TextColumn get sourceType => text()();
+  // 相对应用支持目录：scores/<id>/source.<ext>（原谱文件，永不改动）
+  TextColumn get sourcePath => text()();
+  // 识谱结果 IR JSON；null = 未识谱
+  TextColumn get irJson => text().nullable()();
+  // "E2,A2,D3,G3,B3,E4"；null = 未识谱
+  TextColumn get tuning => text().nullable()();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+}
+
+@DriftDatabase(tables: [PracticeSessions, TuningPresets, Settings, Scores])
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onUpgrade: (m, from, to) async {
+          if (from < 2) await m.createTable(scores);
+        },
+      );
 }
 
 LazyDatabase openConnection() => LazyDatabase(() async {

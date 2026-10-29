@@ -43,4 +43,19 @@ void main() {
     final row = await (db.select(db.settings)..where((t) => t.key.equals('a4'))).getSingle();
     expect(row.value, '435');
   });
+
+  // —— Scores 表（二期 M1）——
+  test('scores 表：插入与默认值', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final id = await db.into(db.scores).insert(ScoresCompanion.insert(
+        title: '测试曲', sourceType: 'image', sourcePath: 'scores/1/source.jpg'));
+    final row = await (db.select(db.scores)..where((s) => s.id.equals(id)))
+        .getSingle();
+    expect(row.title, '测试曲');
+    expect(row.sourceType, 'image');
+    expect(row.sourcePath, 'scores/1/source.jpg');
+    expect(row.irJson, isNull); // 未识谱
+    expect(row.tuning, isNull);
+    await db.close();
+  });
 }
