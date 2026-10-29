@@ -46,6 +46,7 @@ dependencies:
   record: ^7.1.2
   flutter_soloud: ^5.2.1
   image: ^4.3.0
+  pdfrx: ^2.5.0
 
 dev_dependencies:
   flutter_test:
