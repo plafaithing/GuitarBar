@@ -23,8 +23,8 @@
 - [x] 二期 brainstorming：曲谱来源（图片/PDF 为主）、GLM 视觉识谱、零校对直入库（听觉校对+置信度+交叉验证防护三层），设计确认
 - [x] 设计文档落盘 `docs/superpowers/specs/2026-10-29-phase2-score-library-design.md`（统一 IR / 识谱管线 / 渲染式播放 / 里程碑 M1-M7）
 - [x] 用户审阅二期设计文档（2026-10-29：模型无关配置页、Tabtify 调研入册、外部工具方案回退、源文件仓库定位，均已入册；用户确认"先做吧"）
-- [ ] writing-plans 编写二期实现计划（M1-M4 主线优先）
-- [ ] 实现二期（按里程碑推进）
+- [x] writing-plans 编写二期实现计划（2026-10-29，`docs/superpowers/plans/2026-10-29-phase2-score-library.md`，M1-M4 主线 16 任务；M5-M7 另立计划）
+- [ ] 实现二期 M1-M4（按里程碑推进）
 
 ## Review（2026-10-25 本次会话）
 
