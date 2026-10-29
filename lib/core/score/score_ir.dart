@@ -136,7 +136,7 @@ class NoteIr {
   final double duration; // 单位拍
   final int string; // 1-6，1 = 最细高音弦
   final int fret; // 0-24，0 = 空弦
-  final String? technique; // null | h | p | s | b | x
+  final String? technique; // null | h | p | s | b | x | H
   final double? confidence; // null = 非 AI 来源
 
   Map<String, dynamic> toJson() => {
