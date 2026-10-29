@@ -18,6 +18,14 @@
 - [ ] **用户硬件实测**（电脑在公司，拿回后走 `tasks/acceptance.md` 清单）：真吉他全弦调音实测、和弦听感、节拍器 5 分钟长跑、打卡全流程、导出导入一致性
 - [ ] 麦克风调试战役遗留确认：offsetInBytes 真凶修复（fc40c78）+ 48k 优先（117cc0f）+ 音频增强关闭——三项叠加后真吉他也无声音的话，深挖 SST 驱动层（战役记录见 `docs/design-ledger.md`）
 
+## 二期（2026-10-29 启动）
+
+- [x] 二期 brainstorming：曲谱来源（图片/PDF 为主）、GLM 视觉识谱、零校对直入库（听觉校对+置信度+交叉验证防护三层），设计确认
+- [x] 设计文档落盘 `docs/superpowers/specs/2026-10-29-phase2-score-library-design.md`（统一 IR / 识谱管线 / 渲染式播放 / 里程碑 M1-M7）
+- [ ] 用户审阅二期设计文档
+- [ ] writing-plans 编写二期实现计划（M1-M4 主线优先）
+- [ ] 实现二期（按里程碑推进）
+
 ## Review（2026-10-25 本次会话）
 
 1. **markitdown MCP 修复（已完成）**：根因 = 全局 mcp SDK 已升级 2.3.0，而清华镜像上的 markitdown-mcp 0.0.1a4 只兼容 mcp 1.x（启动即崩 → CONNECTION_CLOSED）。方案：独立 venv `C:\Users\plafa\.claude\mcp-venvs\markitdown`（官方 PyPI 安装；pip 解析后落定 0.0.1a4 + mcp 1.8.1，因 azure 依赖与 mcp 2.x 冲突回退；另需钉 `pydantic==2.11.7` 修复 mcp 1.8 依赖的内部 API 在 pydantic 2.12+ 被移除的问题），`~/.claude.json` 已指向 venv 内 exe，`--help` 验证通过，JSON 校验通过。改配置前备份：`~/.claude.json.bak-markitdown-fix`。
