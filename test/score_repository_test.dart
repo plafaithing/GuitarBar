@@ -93,4 +93,22 @@ void main() {
     // 文件已清：base 下无任何曲谱目录（boom.pdf 是用户源文件，不属于清理范围）。
     expect(tmp.listSync().whereType<Directory>(), isEmpty);
   });
+
+  test('导入图片文件夹：多图合成多页、sourcePath 为空标记', () async {
+    final d = Directory('${tmp.path}/曲谱文件夹')..createSync();
+    File('${d.path}/p2.jpg').writeAsBytesSync(tinyPng());
+    File('${d.path}/p1.jpg').writeAsBytesSync(tinyPng());
+    final row = await repo.importImages(
+        title: 'Like a star',
+        images: [File('${d.path}/p1.jpg'), File('${d.path}/p2.jpg')]);
+    expect(row.sourceType, 'image');
+    expect(row.sourcePath, '');
+    expect(repo.files.pagePngs(row.id).length, 2);
+    // 混入非图片扩展名：实现按扩展名校验拒绝。
+    expect(
+        () => repo.importImages(
+            title: 'x',
+            images: [File('${d.path}/notes.txt')..writeAsBytesSync([1])]),
+        throwsArgumentError);
+  });
 }

@@ -72,7 +72,7 @@ class _ScoresPageState extends State<ScoresPage> {
     }
   }
 
-  Future<void> _import() async {
+  Future<void> _importFile() async {
     final repo = _repo;
     if (repo == null || _busy) return;
     final file = await openFile(acceptedTypeGroups: [
@@ -86,6 +86,41 @@ class _ScoresPageState extends State<ScoresPage> {
     setState(() => _busy = true);
     try {
       await repo.importScore(title: title.trim(), source: File(file.path));
+      await _reload();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('导入失败：$e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _importFolder() async {
+    final repo = _repo;
+    if (repo == null || _busy) return;
+    final dirPath = await getDirectoryPath();
+    if (dirPath == null || !mounted) return;
+    const imageExts = ['png', 'jpg', 'jpeg', 'webp'];
+    final images = Directory(dirPath)
+        .listSync()
+        .whereType<File>()
+        .where((f) => imageExts
+            .contains(p.extension(f.path).replaceFirst('.', '').toLowerCase()))
+        .toList()
+      ..sort((a, b) => ScoreRepository.naturalCompare(
+          p.basename(a.path), p.basename(b.path)));
+    if (images.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('文件夹里没有图片（png/jpg/jpeg/webp）')));
+      return;
+    }
+    final title = await _askTitle(p.basename(dirPath));
+    if (title == null || title.trim().isEmpty || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await repo.importImages(title: title.trim(), images: images);
       await _reload();
     } catch (e) {
       if (mounted) {
@@ -132,15 +167,30 @@ class _ScoresPageState extends State<ScoresPage> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             const Spacer(),
-            FilledButton.icon(
-                onPressed: repo == null || _busy ? null : _import,
-                icon: _busy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.upload_file, size: 18),
-                label: const Text('导入')),
+            // child 参数放忙碌/空闲图标（builder 重建时复用），按钮本体在
+            // builder 内构建（onPressed 需闭包捕获 controller）。
+            MenuAnchor(
+              menuChildren: [
+                MenuItemButton(
+                    onPressed: repo == null || _busy ? null : _importFile,
+                    child: const Text('导入文件（图片/PDF）')),
+                MenuItemButton(
+                    onPressed: repo == null || _busy ? null : _importFolder,
+                    child: const Text('导入文件夹（多图合成多页）')),
+              ],
+              builder: (ctx, controller, child) => FilledButton.icon(
+                onPressed: () =>
+                    controller.isOpen ? controller.close() : controller.open(),
+                icon: child,
+                label: const Text('导入'),
+              ),
+              child: _busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.upload_file, size: 18),
+            ),
           ]),
           const SizedBox(height: 16),
           if (repo == null || scores == null)

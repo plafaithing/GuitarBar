@@ -57,6 +57,72 @@ class ScoreRepository {
     }
   }
 
+  /// 自然排序比较：数字段按数值、文本段按字典序（大小写不敏感）。
+  /// 用于多图文件名排序（谱例-2 应在谱例-10 前）。
+  static int naturalCompare(String a, String b) {
+    var i = 0, j = 0;
+    while (i < a.length && j < b.length) {
+      final ca = a[i], cb = b[j];
+      final da = _isDigit(ca), db = _isDigit(cb);
+      if (da && db) {
+        var si = i;
+        while (i < a.length && _isDigit(a[i])) {
+          i++;
+        }
+        var sj = j;
+        while (j < b.length && _isDigit(b[j])) {
+          j++;
+        }
+        final na = int.parse(a.substring(si, i));
+        final nb = int.parse(b.substring(sj, j));
+        final c = na.compareTo(nb);
+        if (c != 0) return c;
+      } else {
+        final c = ca.toLowerCase().compareTo(cb.toLowerCase());
+        if (c != 0) return c;
+        i++;
+        j++;
+      }
+    }
+    return (a.length - i).compareTo(b.length - j);
+  }
+
+  static bool _isDigit(String c) =>
+      c.codeUnitAt(0) >= 0x30 && c.codeUnitAt(0) <= 0x39;
+
+  /// 导入图片文件夹：多张图片按给定顺序合成一份多页曲谱。
+  /// 页图即规范化源（原谱留在用户文件夹，不拷贝）；sourcePath 留空标记
+  /// "无单一原谱文件"。
+  Future<Score> importImages(
+      {required String title, required List<File> images}) async {
+    const imageExts = ['png', 'jpg', 'jpeg', 'webp'];
+    if (images.isEmpty) {
+      throw ArgumentError('图片列表为空');
+    }
+    for (final f in images) {
+      final ext = p.extension(f.path).replaceFirst('.', '').toLowerCase();
+      if (!imageExts.contains(ext)) {
+        throw ArgumentError('不支持的曲谱文件类型: .$ext');
+      }
+    }
+    final id = await _db.into(_db.scores).insert(ScoresCompanion.insert(
+        title: title, sourceType: 'image', sourcePath: ''));
+    try {
+      final pages = <Uint8List>[];
+      for (final f in images) {
+        pages.add(await normalizeImage(await f.readAsBytes()));
+      }
+      await files.savePagePngs(id, pages);
+      return await (_db.select(_db.scores)..where((s) => s.id.equals(id)))
+          .getSingle();
+    } catch (_) {
+      // 与 importScore 同款：失败不留半成品。
+      await (_db.delete(_db.scores)..where((s) => s.id.equals(id))).go();
+      await files.delete(id);
+      rethrow;
+    }
+  }
+
   Future<void> deleteScore(int id) async {
     await (_db.delete(_db.scores)..where((s) => s.id.equals(id))).go();
     await files.delete(id);
