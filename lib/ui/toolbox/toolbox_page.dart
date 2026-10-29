@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../scores/scores_page.dart';
 import '../theme.dart';
 import 'chord_page.dart';
 import 'fretboard_page.dart';
@@ -38,6 +39,8 @@ class ToolboxPage extends StatelessWidget {
             const FretboardPage()),
         tool(Icons.av_timer_outlined, '节拍器', '细分拍 · Tap 点速',
             const MetronomePage()),
+        tool(Icons.library_music_outlined, '曲谱库',
+            '图片/PDF 归档 · AI 识谱 · 自动演奏', const ScoresPage()),
       ]),
     );
   }

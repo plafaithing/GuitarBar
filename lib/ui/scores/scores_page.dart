@@ -1,0 +1,189 @@
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
+import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
+
+import '../../core/score/score_files.dart';
+import '../../core/score/score_repository.dart';
+import '../../data/database.dart';
+import '../theme.dart';
+import 'score_detail_page.dart';
+
+/// 曲谱库：源文件仓库（导入即归档即查看），识谱/演奏是叠加增强。
+class ScoresPage extends StatefulWidget {
+  const ScoresPage({super.key, this.repoFactory});
+  // widget 测试注入用；null = 走默认 path_provider 路径。
+  final ScoreRepository Function()? repoFactory;
+
+  @override
+  State<ScoresPage> createState() => _ScoresPageState();
+}
+
+class _ScoresPageState extends State<ScoresPage> {
+  ScoreRepository? _repo;
+  List<Score>? _scores;
+  // 页数缓存：列表行显示用，_reload 时算一次（避免每行每帧同步 IO）。
+  Map<int, int>? _pageCounts;
+
+  @override
+  void initState() {
+    super.initState();
+    _initRepo();
+  }
+
+  Future<void> _initRepo() async {
+    try {
+      // repoFactory 注入时不走 path_provider（测试环境无插件，会抛异常）。
+      final factory = widget.repoFactory;
+      final ScoreRepository repo;
+      if (factory != null) {
+        repo = factory();
+      } else {
+        final dir = await getApplicationSupportDirectory();
+        if (!mounted) return;
+        repo = ScoreRepository(context.read<AppDatabase>(),
+            ScoreFiles(Directory(p.join(dir.path, 'scores'))));
+      }
+      if (!mounted) return;
+      setState(() => _repo = repo);
+      await _reload();
+    } catch (_) {
+      // 测试环境无 path_provider 插件：停在加载态。
+    }
+  }
+
+  Future<void> _reload() async {
+    final repo = _repo;
+    if (repo == null) return;
+    final list = await repo.listScores();
+    final counts = <int, int>{
+      for (final s in list) s.id: repo.files.pagePngs(s.id).length,
+    };
+    if (mounted) {
+      setState(() {
+        _scores = list;
+        _pageCounts = counts;
+      });
+    }
+  }
+
+  Future<void> _import() async {
+    final repo = _repo;
+    if (repo == null) return;
+    final file = await openFile(acceptedTypeGroups: [
+      const XTypeGroup(
+          label: '乐谱文件', extensions: ['pdf', 'png', 'jpg', 'jpeg', 'webp']),
+    ]);
+    if (file == null || !mounted) return;
+    final name = file.name.replaceFirst(RegExp(r'\.[^.]+$'), '');
+    final title = await _askTitle(name);
+    if (title == null || title.trim().isEmpty || !mounted) return;
+    try {
+      await repo.importScore(title: title.trim(), source: File(file.path));
+      await _reload();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('导入失败：$e')));
+      }
+    }
+  }
+
+  Future<String?> _askTitle(String initial) => showDialog<String>(
+        context: context,
+        builder: (ctx) {
+          final ctrl = TextEditingController(text: initial);
+          return AlertDialog(
+            title: const Text('导入曲谱'),
+            content: TextField(
+              controller: ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: '曲名'),
+            ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+              TextButton(
+                  onPressed: () => Navigator.pop(ctx, ctrl.text),
+                  child: const Text('导入')),
+            ],
+          );
+        },
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final scores = _scores;
+    final repo = _repo;
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text('曲谱库', style: Theme.of(context).textTheme.titleLarge),
+          const Spacer(),
+          FilledButton.icon(
+              onPressed: repo == null ? null : _import,
+              icon: const Icon(Icons.upload_file, size: 18),
+              label: const Text('导入')),
+        ]),
+        const SizedBox(height: 16),
+        if (repo == null || scores == null)
+          const Center(child: Padding(
+              padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
+        else if (scores.isEmpty)
+          Expanded(
+            child: Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.library_music_outlined, size: 48, color: p.muted),
+                const SizedBox(height: 12),
+                Text('还没有曲谱，点右上角导入图片或 PDF',
+                    style: TextStyle(fontSize: 14, color: p.muted)),
+              ]),
+            ),
+          )
+        else
+          Expanded(
+            child: ListView.builder(
+              itemCount: scores.length,
+              itemBuilder: (ctx, i) {
+                final s = scores[i];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: p.panel,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: p.border),
+                  ),
+                  child: ListTile(
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                    title: Text(s.title,
+                        style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: p.ink)),
+                    subtitle: Text(
+                        '${s.sourceType == 'pdf' ? 'PDF' : '图片'} · '
+                        '${_pageCounts?[s.id] ?? 0} 页 · '
+                        '${s.irJson == null ? '未识谱' : '已识谱'}',
+                        style: TextStyle(fontSize: 12, color: p.muted)),
+                    trailing:
+                        Icon(Icons.chevron_right, size: 20, color: p.muted),
+                    onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) =>
+                                ScoreDetailPage(scoreId: s.id))),
+                  ),
+                );
+              },
+            ),
+          ),
+      ]),
+    );
+  }
+}
