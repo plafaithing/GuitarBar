@@ -146,7 +146,8 @@ Tabtify（tabtify.com）在做同一条管线：PDF/照片 → AI 可编辑 tab 
 - **drift 新表 `scores`**：id、title、sourceType（image/pdf/gp5/musicxml/midi）、
   tempo、tuning、irJson（TEXT）、sourcePath（原谱文件相对路径，可空）、
   createdAt、updatedAt
-- **原谱文件**：应用文档目录 `scores/<id>/` 下存原图或 PDF 逐页 PNG
+- **原谱文件**：应用支持目录 `scores/<id>/` 下存原图或 PDF 逐页 PNG
+  （与 SQLite 同目录——2026-10-29 审查定案：备份通道与数据文件同根，不用文档目录）
 - **导出/导入**：二期备份格式升级为 **zip**（manifest.json + 曲谱 IR + 原谱文件）；
   一期纯 JSON 备份保持不动（无曲谱时 zip 退化为 manifest + JSON，双向兼容不强行做）
 
