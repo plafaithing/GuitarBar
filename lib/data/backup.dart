@@ -4,6 +4,12 @@ import 'package:drift/drift.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:guitarbar/data/database.dart';
 
+// 识谱模型配置不入备份：含明文 apiKey，备份文件常被分享/上传，
+// 与"key 本地存储不上传"的设计意图相悖；恢复后到模型配置页重新填写。
+// 字面量与 VisionModelStore.settingsKey 的一致性由 test/backup_test.dart 钉住
+// （本文件不 import core/vision，避免 data→core 反向依赖）。
+const _excludedSettingKeys = {'visionModels'};
+
 Future<Map<String, dynamic>> exportToJson(AppDatabase db) async {
   final sessions = await db.select(db.practiceSessions).get();
   final presets = await db.select(db.tuningPresets).get();
@@ -23,7 +29,10 @@ Future<Map<String, dynamic>> exportToJson(AppDatabase db) async {
       for (final p in presets)
         {'name': p.name, 'notes': p.notes, 'createdAt': p.createdAt.millisecondsSinceEpoch}
     ],
-    'settings': {for (final s in settings) s.key: s.value},
+    'settings': {
+      for (final s in settings)
+        if (!_excludedSettingKeys.contains(s.key)) s.key: s.value,
+    },
   };
 }
 

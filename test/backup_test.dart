@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:guitarbar/core/vision/vision_model.dart';
 import 'package:guitarbar/data/backup.dart';
 import 'package:guitarbar/data/database.dart';
 
@@ -33,5 +36,22 @@ void main() {
     expect(row.endedAt, DateTime(2026, 10, 25, 9, 30));
     expect((await db.select(db.tuningPresets).get()).single.notes, 'D2,A2,D3,G3,B3,E4');
     expect((await db.select(db.settings).get()).single.value, '435');
+  });
+
+  test('导出排除识谱模型 key（apiKey 不入备份）', () async {
+    await db.into(db.settings).insertOnConflictUpdate(SettingsCompanion.insert(
+        key: VisionModelStore.settingsKey,
+        value: jsonEncode([
+          {'id': 'a', 'apiKey': 'secret-key'}
+        ])));
+    await db.into(db.settings)
+        .insertOnConflictUpdate(SettingsCompanion.insert(key: 'a4', value: '435'));
+
+    final json = await exportToJson(db);
+    final settings = json['settings'] as Map;
+    expect(settings.containsKey('visionModels'), isFalse);
+    expect(settings.containsKey('a4'), isTrue);
+    // 钉住 backup.dart 里 'visionModels' 字面量与 VisionModelStore.settingsKey 不漂移
+    expect({VisionModelStore.settingsKey}, {'visionModels'});
   });
 }

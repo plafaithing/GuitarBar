@@ -43,6 +43,14 @@ void main() {
     expect(await store.activeOf(await store.load()), isNull);
   });
 
+  test('load 坏数据按空处理', () async {
+    final store = VisionModelStore(db);
+    await db.into(db.settings).insertOnConflictUpdate(
+        SettingsCompanion.insert(
+            key: VisionModelStore.settingsKey, value: 'not json'));
+    expect(await store.load(), isEmpty);
+  });
+
   test('JSON 行格式稳定（settings 表单 key）', () async {
     final store = VisionModelStore(db);
     await store.saveAll([VisionModelConfig(

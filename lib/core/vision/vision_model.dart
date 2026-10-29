@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import '../../data/database.dart';
 
 /// 一套识谱模型配置（OpenAI 兼容协议）。厂商只作为预置模板出现，
@@ -72,7 +74,8 @@ class VisionModelStore {
       return [
         for (final e in list) VisionModelConfig.fromJson(e as Map<String, dynamic>)
       ];
-    } catch (_) {
+    } catch (e) {
+      debugPrint('识谱模型配置损坏，已按空处理：$e');
       return const []; // 坏数据按空处理，页面可重建
     }
   }
