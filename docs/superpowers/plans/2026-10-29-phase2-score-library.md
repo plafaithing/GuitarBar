@@ -2192,6 +2192,12 @@ Expected: FAIL
 
 - [ ] **Step 3: 实现** `lib/core/vision/score_recognizer.dart`
 
+> **空 measures 页契约（2026-10-29 Task 9 质量审查裁决）**：`parsePage` 对
+> `{"measures":[]}` 返回空列表且无失败信号（合法——用户谱库有视奏顺序图页）。
+> Task 10 编排侧处理：某页（含重试后）结果 `r.measures.isEmpty` 时，把该页记入
+> `unrecognizedPages` 但**不插 failed 占位小节**（页级可见、不污染小节编号）。
+> 与"重试仍失败"路径（插占位小节+记页）区分开。
+
 ```dart
 import 'dart:io';
 
