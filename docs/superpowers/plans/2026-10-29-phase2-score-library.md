@@ -2262,7 +2262,7 @@ class ScoreRecognizer {
 }
 ```
 
-注意：ScriptedClient 测试实现 `implements VisionClient` 即可（只需 complete 一个方法，无其它成员）。
+注意：ScriptedClient 测试实现 `implements VisionClient` 时需补齐完整接口（Task 7 审查修复后接口含三成员）：`complete`、`@override Duration get timeout => Duration.zero;`、`@override void close() {}`。
 
 - [ ] **Step 4: 跑测试确认通过**
 
