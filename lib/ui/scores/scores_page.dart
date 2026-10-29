@@ -27,6 +27,8 @@ class _ScoresPageState extends State<ScoresPage> {
   List<Score>? _scores;
   // 页数缓存：列表行显示用，_reload 时算一次（避免每行每帧同步 IO）。
   Map<int, int>? _pageCounts;
+  // 导入进行中：禁用导入按钮，防大 PDF 转图期间重复导入。
+  bool _busy = false;
 
   @override
   void initState() {
@@ -72,7 +74,7 @@ class _ScoresPageState extends State<ScoresPage> {
 
   Future<void> _import() async {
     final repo = _repo;
-    if (repo == null) return;
+    if (repo == null || _busy) return;
     final file = await openFile(acceptedTypeGroups: [
       const XTypeGroup(
           label: '乐谱文件', extensions: ['pdf', 'png', 'jpg', 'jpeg', 'webp']),
@@ -81,6 +83,7 @@ class _ScoresPageState extends State<ScoresPage> {
     final name = file.name.replaceFirst(RegExp(r'\.[^.]+$'), '');
     final title = await _askTitle(name);
     if (title == null || title.trim().isEmpty || !mounted) return;
+    setState(() => _busy = true);
     try {
       await repo.importScore(title: title.trim(), source: File(file.path));
       await _reload();
@@ -89,6 +92,8 @@ class _ScoresPageState extends State<ScoresPage> {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('导入失败：$e')));
       }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -119,71 +124,84 @@ class _ScoresPageState extends State<ScoresPage> {
     final p = context.palette;
     final scores = _scores;
     final repo = _repo;
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Text('曲谱库', style: Theme.of(context).textTheme.titleLarge),
-          const Spacer(),
-          FilledButton.icon(
-              onPressed: repo == null ? null : _import,
-              icon: const Icon(Icons.upload_file, size: 18),
-              label: const Text('导入')),
+    return Scaffold(
+      backgroundColor: p.ground,
+      appBar: AppBar(title: const Text('曲谱库')),
+      body: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Spacer(),
+            FilledButton.icon(
+                onPressed: repo == null || _busy ? null : _import,
+                icon: _busy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.upload_file, size: 18),
+                label: const Text('导入')),
+          ]),
+          const SizedBox(height: 16),
+          if (repo == null || scores == null)
+            const Center(child: Padding(
+                padding: EdgeInsets.all(40),
+                child: CircularProgressIndicator()))
+          else if (scores.isEmpty)
+            Expanded(
+              child: Center(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.library_music_outlined, size: 48, color: p.muted),
+                  const SizedBox(height: 12),
+                  Text('还没有曲谱，点右上角导入图片或 PDF',
+                      style: TextStyle(fontSize: 14, color: p.muted)),
+                ]),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.builder(
+                itemCount: scores.length,
+                itemBuilder: (ctx, i) {
+                  final s = scores[i];
+                  // Material 行容器：ListTile 需 Material 祖先（波纹），
+                  // 且不透明底色必须走 Material.color，否则触发
+                  // "ListTile background color may be invisible" 断言。
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Material(
+                      color: p.panel,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(color: p.border)),
+                      child: ListTile(
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                        title: Text(s.title,
+                            style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                                color: p.ink)),
+                        subtitle: Text(
+                            '${s.sourceType == 'pdf' ? 'PDF' : '图片'} · '
+                            '${_pageCounts?[s.id] ?? 0} 页 · '
+                            '${s.irJson == null ? '未识谱' : '已识谱'}',
+                            style: TextStyle(fontSize: 12, color: p.muted)),
+                        trailing: Icon(Icons.chevron_right,
+                            size: 20, color: p.muted),
+                        onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    ScoreDetailPage(scoreId: s.id))),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
         ]),
-        const SizedBox(height: 16),
-        if (repo == null || scores == null)
-          const Center(child: Padding(
-              padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
-        else if (scores.isEmpty)
-          Expanded(
-            child: Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.library_music_outlined, size: 48, color: p.muted),
-                const SizedBox(height: 12),
-                Text('还没有曲谱，点右上角导入图片或 PDF',
-                    style: TextStyle(fontSize: 14, color: p.muted)),
-              ]),
-            ),
-          )
-        else
-          Expanded(
-            child: ListView.builder(
-              itemCount: scores.length,
-              itemBuilder: (ctx, i) {
-                final s = scores[i];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  decoration: BoxDecoration(
-                    color: p.panel,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: p.border),
-                  ),
-                  child: ListTile(
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                    title: Text(s.title,
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                            color: p.ink)),
-                    subtitle: Text(
-                        '${s.sourceType == 'pdf' ? 'PDF' : '图片'} · '
-                        '${_pageCounts?[s.id] ?? 0} 页 · '
-                        '${s.irJson == null ? '未识谱' : '已识谱'}',
-                        style: TextStyle(fontSize: 12, color: p.muted)),
-                    trailing:
-                        Icon(Icons.chevron_right, size: 20, color: p.muted),
-                    onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) =>
-                                ScoreDetailPage(scoreId: s.id))),
-                  ),
-                );
-              },
-            ),
-          ),
-      ]),
+      ),
     );
   }
 }

@@ -8,8 +8,7 @@ import '../../core/score/score_files.dart';
 import '../theme.dart';
 import 'source_viewer.dart';
 
-/// 曲谱详情：未识谱 = 纯查看器（一等使用方式）；谱面区由后续任务填充。
-/// 宽屏：谱面 + 原图并排；窄屏：先只出查看器（谱面 Tab 由 Task 14 加入）。
+/// 曲谱详情：未识谱 = 纯查看器（一等使用方式）；谱面区由 Task 12-14 填充。
 class ScoreDetailPage extends StatefulWidget {
   const ScoreDetailPage({super.key, required this.scoreId});
   final int scoreId;
@@ -43,9 +42,13 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     return Scaffold(
       backgroundColor: p.ground,
       appBar: AppBar(title: const Text('曲谱')),
-      body: pages == null
-          ? const Center(child: CircularProgressIndicator())
-          : SourceViewer(pagePngs: pages),
+      body: Column(children: [
+        if (pages == null)
+          const Expanded(
+              child: Center(child: CircularProgressIndicator()))
+        else
+          Expanded(child: SourceViewer(pagePngs: pages)),
+      ]),
     );
   }
 }
