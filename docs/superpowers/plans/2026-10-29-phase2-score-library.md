@@ -2756,7 +2756,7 @@ class _TabPainter extends CustomPainter {
 }
 ```
 
-实现纪律：`withOpacity` 调用为 package:flutter material 侧合法 API（`Color.withOpacity`）；若工程 lint 提示弃用则改 `withValues(alpha:)`。播放头跨行定位用 rows 反查（不假设小节宽恒定）。
+实现纪律：`withOpacity` 调用为 package:flutter material 侧合法 API（`Color.withOpacity`）；若工程 lint 提示弃用则改 `withValues(alpha:)`。播放头跨行定位用 rows 反查（不假设小节宽恒定）。`shouldRepaint` 的 `old.ir != ir` 依赖 Task 5 的 `==` identical 短路（播放中 `_ir` 实例不变；编辑后是新实例，一次性 O(树) 比较可接受）——Task 5 审查修复已落地该短路，两者需同批生效。
 
 - [ ] **Step 6: 分析与静态验证**
 
@@ -3161,6 +3161,26 @@ void main() {
     expect(r.pcm.any((v) => v != 0), isTrue);
     expect(r.pcm.any((v) => v < -32768 || v > 32767), isFalse);
   });
+
+  test('弦号映射：string 1（最细）比 string 6（最粗）频率高一个量级', () {
+    // 过零率近似频率：E4≈330Hz（0.1s 内约 66 次过零），E2≈82Hz（约 16 次）。
+    // 锁住 2026-10-29 修正的 tunings[6 - n.string] 映射（镜像颠倒会此断言失败）。
+    int zc(Int16List pcm) {
+      var n = 0;
+      for (var i = 1; i < 4410 && i < pcm.length; i++) {
+        if ((pcm[i - 1] < 0) != (pcm[i] < 0)) n++;
+      }
+      return n;
+    }
+
+    final hi = renderScore(irWith([
+      const NoteIr(beat: 0, duration: 1, string: 1, fret: 0, technique: null, confidence: null),
+    ]));
+    final lo = renderScore(irWith([
+      const NoteIr(beat: 0, duration: 1, string: 6, fret: 0, technique: null, confidence: null),
+    ]));
+    expect(zc(hi.pcm), greaterThan(zc(lo.pcm) * 2));
+  });
 }
 ```
 
@@ -3212,7 +3232,9 @@ RenderedScore renderScore(ScoreIr ir,
     for (final m in t.measures) {
       if (m.failed) continue;
       for (final n in m.notes) {
-        final freq = Note(tunings[n.string - 1].midi + n.fret).frequency(a4);
+        // 弦号映射：NoteIr.string 1=最细高音弦，tuning 低→高 index 0=6弦，
+        // 故 string 1 → tunings[5]（2026-10-29 质量审查修正，原稿写反）。
+        final freq = Note(tunings[6 - n.string].midi + n.fret).frequency(a4);
         final pcm = pluck(freq,
             sampleRate: sampleRate,
             seconds: n.technique == 'x' ? 0.3 : tailSeconds);
