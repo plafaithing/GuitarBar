@@ -1373,6 +1373,10 @@ git commit -m "feat: 识谱模型配置存储（多套配置单套启用，二�
 
 ### Task 7: VisionClient（OpenAI 兼容 vision 请求）
 
+> **执行修正备案（2026-10-29 质量审查）**：本任务原稿缺请求超时（挂起即死锁，实现已加
+> 可注入 timeout 默认 120s）、`res.body` latin1 乱码（已改 utf8.decode(bodyBytes)）、
+> HTTP 错误体未截断（已截 200 字符）。后续引用本任务代码时以实现终态为准。
+
 **Files:**
 - Create: `lib/core/vision/vision_client.dart`
 - Modify: `pubspec.yaml`（加 `http: ^1.2.0`）
