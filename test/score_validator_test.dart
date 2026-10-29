@@ -70,6 +70,23 @@ void main() {
     expect(r.measures.map((m) => m.index), [10, 11]);
   });
 
+  test('外层数组包对象也能解析（_extractJson 剥掉根数组的副产物，pin 住）', () {
+    final r = parsePage(
+        '[{"measures":[{"index":0,"confidence":0.9,"notes":[]}]}]',
+        indexOffset: 0);
+    expect(r.measures.length, 1);
+    expect(r.failedCount, 0);
+  });
+
+  test('截断 JSON → FormatException（8192 token 截断的页级失败模式）', () {
+    expect(
+        () => parsePage(
+            '{"measures":[{"index":0,"confidence":0.9,"notes":'
+            '[{"beat":0,"duration":1,"string":1,"fret":3,"technique":null}',
+            indexOffset: 0),
+        throwsFormatException);
+  });
+
   test('完全没有 JSON → FormatException（页级失败）', () {
     expect(() => parsePage('我不知道', indexOffset: 0), throwsFormatException);
   });

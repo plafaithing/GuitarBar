@@ -9,6 +9,7 @@ const tabSystemPrompt =
     '"notes":[{"beat":<小节内拍位置,从0起>,"duration":<时值,单位拍>,'
     '"string":<1到6,1=最细高音弦>,"fret":<0到24,0=空弦>,'
     '"technique":null或"h","p","s","b","x","H"之一}]}]}。'
+    'beat 与 duration 均以四分音符为一拍，X/8 等拍号也不例外。'
     '3.六线谱直接读弦与品；双轨谱以五线谱定节奏、六线谱定弦品，两者对照取交集；'
     '五线谱单轨时按给定调弦就近映射到弦与品。'
     '4.谱面 <12> <16> 之类角括号数字是自然泛音：fret 填角括号内品数、'
@@ -24,7 +25,7 @@ String tabUserPrompt({
   required int page,
   required int total,
 }) =>
-    '调弦（从6弦到1弦，低到高）：${tuning.reversed.join(', ')}。'
+    '调弦（从6弦到1弦，低到高）：${tuning.join(', ')}。'
     '变调夹：第 $capo 品（capo=0 表示无；谱面品位数字按夹后计）。'
     '拍号：$timeSignature（每小节 ${timeSignature.split('/')[0]} 拍）。'
     '本页为第 ${page + 1}/$total 页。';
