@@ -283,22 +283,13 @@ class GuitarBarTheme {
         ),
       ),
       dividerTheme: DividerThemeData(color: p.border, thickness: 1, space: 1),
-      // 下拉菜单样式（作用于 M3 DropdownMenu 组件；传统 DropdownButton 的
-      // 菜单不受此主题控制，由组件自身 dropdownColor/elevation/borderRadius
-      // 落地同款视觉——见节拍器页）。浮层允许轻阴影（设计系统菜单浮层例外）。
-      dropdownMenuTheme: DropdownMenuThemeData(
-        menuStyle: MenuStyle(
-          backgroundColor: WidgetStatePropertyAll(p.surface),
-          elevation: const WidgetStatePropertyAll(2),
-          shadowColor: WidgetStatePropertyAll(p.ink.withValues(alpha: 0.12)),
-          surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
-          shape: WidgetStatePropertyAll(RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-              side: BorderSide(color: p.border))),
-          padding: const WidgetStatePropertyAll(
-              EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
-        ),
-      ),
+      // 菜单浮层样式：M3 DropdownMenu（dropdownMenuTheme）与 MenuAnchor
+      //（menuTheme，曲谱库导入菜单）共用 [_menuStyle] 一份视觉；传统
+      // DropdownButton 的菜单不受这两个主题控制，由组件自身
+      // dropdownColor/elevation/borderRadius 落地同款视觉——见节拍器页。
+      // 浮层允许轻阴影（设计系统菜单浮层例外）。
+      menuTheme: MenuThemeData(style: _menuStyle(p)),
+      dropdownMenuTheme: DropdownMenuThemeData(menuStyle: _menuStyle(p)),
       // 全 app 开关统一：选中 = positive 绿轨 + 白 thumb（调音器「自动」
       // 与个人中心「调试模式」同款；未选轨道用 controlBorder 中性）。
       switchTheme: SwitchThemeData(
@@ -312,4 +303,18 @@ class GuitarBarTheme {
       extensions: [GuitarBarPaletteExtension(p)],
     );
   }
+
+  /// 菜单浮层共享样式：DropdownMenu 与 MenuAnchor（MenuItemButton 菜单）
+  /// 同一份视觉，收敛一处防两份主题复制粘贴漂移。
+  static MenuStyle _menuStyle(GuitarBarPalette p) => MenuStyle(
+        backgroundColor: WidgetStatePropertyAll(p.surface),
+        elevation: const WidgetStatePropertyAll(2),
+        shadowColor: WidgetStatePropertyAll(p.ink.withValues(alpha: 0.12)),
+        surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+        shape: WidgetStatePropertyAll(RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: BorderSide(color: p.border))),
+        padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+      );
 }
