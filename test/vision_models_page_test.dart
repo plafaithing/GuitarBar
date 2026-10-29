@@ -41,4 +41,35 @@ void main() {
         .getSingle();
     expect((jsonDecode(raw.value) as List).first['active'], isTrue);
   });
+
+  testWidgets('弹窗保存按钮：必填三项非空才可点', (tester) async {
+    final db = AppDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    await tester.pumpWidget(MultiProvider(providers: [
+      Provider<AppDatabase>.value(value: db),
+    ], child: MaterialApp(
+        theme: GuitarBarTheme.light(), home: const VisionModelsPage())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('新建'));
+    await tester.pumpAndSettle();
+
+    onPressed() => tester
+        .widget<FilledButton>(find.widgetWithText(FilledButton, '保存'))
+        .onPressed;
+
+    // 智谱模板预填地址/模型名但缺 Key → 禁用。
+    expect(onPressed(), isNull);
+    // 三项全清空 → 仍禁用。
+    await tester.enterText(find.byType(TextField).at(1), '');
+    await tester.enterText(find.byType(TextField).at(2), '');
+    await tester.enterText(find.byType(TextField).at(3), '');
+    await tester.pump();
+    expect(onPressed(), isNull);
+    // 填齐三项 → 可点。
+    await tester.enterText(find.byType(TextField).at(1), 'https://u');
+    await tester.enterText(find.byType(TextField).at(2), 'k');
+    await tester.enterText(find.byType(TextField).at(3), 'glm-4v-flash');
+    await tester.pump();
+    expect(onPressed(), isNotNull);
+  });
 }

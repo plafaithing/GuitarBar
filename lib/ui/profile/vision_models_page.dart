@@ -20,6 +20,8 @@ class VisionModelsPage extends StatefulWidget {
 class _VisionModelsPageState extends State<VisionModelsPage> {
   late final VisionModelStore _store;
   List<VisionModelConfig>? _configs;
+  // 正在测试连接的配置 id（null = 无；只锁该卡按钮，其余卡可各自独立测试）。
+  String? _testingId;
 
   @override
   void initState() {
@@ -60,15 +62,23 @@ class _VisionModelsPageState extends State<VisionModelsPage> {
     final configs = _configs;
     return Scaffold(
       backgroundColor: p.ground,
-      appBar: AppBar(title: const Text('识谱模型')),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _edit(null),
-        child: const Icon(Icons.add),
+      // 新建放右上角（零阴影）：FAB 自带 6dp 阴影，违反设计语言"静止零阴影"。
+      appBar: AppBar(
+        title: const Text('识谱模型'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: FilledButton.icon(
+                onPressed: () => _edit(null),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('新建')),
+          ),
+        ],
       ),
       body: configs == null
           ? const Center(child: CircularProgressIndicator())
           : configs.isEmpty
-              ? Center(child: Text('还没有配置，点 + 新建（内置智谱模板）',
+              ? Center(child: Text('还没有配置，点右上角新建（内置智谱模板）',
                   style: TextStyle(color: p.muted)))
               : ListView.builder(
                   padding: const EdgeInsets.all(24),
@@ -95,9 +105,18 @@ class _VisionModelsPageState extends State<VisionModelsPage> {
                           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                             IconButton(
                                 tooltip: '测试连接',
-                                icon: Icon(Icons.network_check,
-                                    size: 20, color: p.muted),
-                                onPressed: () => _testConnection(c)),
+                                // in-flight：该卡测试中转圈且禁点（其余卡不受影响）。
+                                icon: _testingId == c.id
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2))
+                                    : Icon(Icons.network_check,
+                                        size: 20, color: p.muted),
+                                onPressed: _testingId == c.id
+                                    ? null
+                                    : () => _testConnection(c)),
                             IconButton(
                                 tooltip: '编辑',
                                 icon: Icon(Icons.edit_outlined,
@@ -107,10 +126,7 @@ class _VisionModelsPageState extends State<VisionModelsPage> {
                                 tooltip: '删除',
                                 icon: Icon(Icons.delete_outline,
                                     size: 20, color: p.muted),
-                                onPressed: () async {
-                                  final list = [...configs]..removeAt(i);
-                                  await _persist(list);
-                                }),
+                                onPressed: () => _confirmDelete(c, i)),
                           ]),
                           onTap: () async {
                             // 点卡片 = 启用该套（saveAll 内收口 active 唯一）。
@@ -129,6 +145,7 @@ class _VisionModelsPageState extends State<VisionModelsPage> {
 
   Future<void> _testConnection(VisionModelConfig c) async {
     final messenger = ScaffoldMessenger.of(context);
+    setState(() => _testingId = c.id);
     // 1×1 白 PNG：验证连通与返回格式，不花识别级 token。
     const png = [
       137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1,
@@ -136,14 +153,42 @@ class _VisionModelsPageState extends State<VisionModelsPage> {
       120, 156, 99, 250, 207, 192, 80, 15, 0, 4, 133, 2, 89, 137, 77, 217, 0,
       0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
     ];
+    // 短超时：测连接不该干等识别级 120s。超时由 VisionClient 转
+    // VisionException，catch (e) 已覆盖，无需特判 TimeoutException。
+    final client = VisionClient(timeout: const Duration(seconds: 15));
     try {
-      await VisionClient().complete(
+      await client.complete(
           baseUrl: c.baseUrl, apiKey: c.apiKey, model: c.model,
           prompt: 'ping', png: Uint8List.fromList(png));
       messenger.showSnackBar(const SnackBar(content: Text('连接成功')));
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('失败：$e')));
+    } finally {
+      client.close();
+      if (mounted) setState(() => _testingId = null);
     }
+  }
+
+  /// 删除前确认（防误触丢 key），确认后才执行删除。
+  Future<void> _confirmDelete(VisionModelConfig c, int i) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除配置'),
+        content: Text('确定删除「${c.name}」？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('删除')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final list = [...?_configs]..removeAt(i);
+    await _persist(list);
   }
 }
 
@@ -212,8 +257,11 @@ class _ConfigDialogState extends State<_ConfigDialog> {
                   ? null
                   : () => Navigator.pop(
                       context,
+                      // 名称留空则用模型名兜底，列表不出现空标题。
                       widget.config.copyWith(
-                          name: _name.text.trim(),
+                          name: _name.text.trim().isEmpty
+                              ? _model.text.trim()
+                              : _name.text.trim(),
                           baseUrl: _baseUrl.text.trim(),
                           apiKey: _apiKey.text.trim(),
                           model: _model.text.trim())),
