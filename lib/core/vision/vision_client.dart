@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -13,8 +14,16 @@ class VisionException implements Exception {
 }
 
 class VisionClient {
-  VisionClient({http.Client? client}) : _client = client ?? http.Client();
+  VisionClient({http.Client? client,
+      this.timeout = const Duration(seconds: 120)})
+      : _client = client ?? http.Client();
   final http.Client _client;
+
+  /// 单次请求超时；http 包无默认超时，须显式兜底。
+  final Duration timeout;
+
+  /// 请求结束后由调用方视需要释放底层连接。
+  void close() => _client.close();
 
   Future<String> complete({
     required String baseUrl,
@@ -28,7 +37,13 @@ class VisionClient {
     final b = baseUrl.endsWith('/')
         ? baseUrl.substring(0, baseUrl.length - 1)
         : baseUrl;
-    final uri = Uri.parse('$b/chat/completions');
+    // baseUrl 是用户手输，解析失败同样落进 VisionException，不裸抛 FormatException。
+    final Uri uri;
+    try {
+      uri = Uri.parse('$b/chat/completions');
+    } on FormatException catch (e) {
+      throw VisionException('baseUrl 无效：$e');
+    }
     final body = jsonEncode({
       'model': model,
       'temperature': 0.1,
@@ -53,15 +68,27 @@ class VisionClient {
             'Authorization': 'Bearer $apiKey',
             'Content-Type': 'application/json',
           },
-          body: body);
-    } catch (e) {
+          body: body).timeout(timeout);
+    } on TimeoutException catch (_) {
+      // 不兜底的话服务端不回包时 Future 永不完成，调用方永久卡死。
+      throw VisionException(
+          '请求超时（${timeout.inSeconds} 秒），请检查网络或稍后重试');
+    } on Exception catch (e) {
+      // 只接 Exception：编程错误（Error）保持响亮，不吞。
       throw VisionException('网络请求失败：$e');
     }
+    // http 的 res.body 无 charset 时按 latin1 解码，中文错误体会乱码；
+    // 显式按 utf8 解码，allowMalformed 容忍坏字节不抛。
+    final bodyText = utf8.decode(res.bodyBytes, allowMalformed: true);
     if (res.statusCode != 200) {
-      throw VisionException('HTTP ${res.statusCode}：${res.body}');
+      throw VisionException('HTTP ${res.statusCode}：${_truncate(bodyText)}');
     }
-    return _extractContent(res.body);
+    return _extractContent(bodyText);
   }
+
+  /// 错误消息里的响应体截 200 字符，防网关/Cloudflare HTML 大页塞满提示。
+  String _truncate(String s) =>
+      s.length <= 200 ? s : '${s.substring(0, 200)}…';
 
   /// 从响应体取 choices[0].message.content。
   /// 外部响应结构不可信：任何结构异常都归入"响应缺少 content"，不裸抛 TypeError。

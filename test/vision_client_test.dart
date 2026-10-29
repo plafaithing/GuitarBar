@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -56,5 +57,51 @@ void main() {
             model: cfg.model, prompt: 'p',
             png: Uint8List.fromList([1])),
         throwsA(isA<VisionException>()));
+  });
+
+  test('坏 JSON → VisionException', () async {
+    final c = VisionClient(
+        client: MockClient((req) async => http.Response('not json', 200)));
+    expect(
+        () => c.complete(baseUrl: cfg.baseUrl, apiKey: cfg.apiKey,
+            model: cfg.model, prompt: 'p',
+            png: Uint8List.fromList([1])),
+        throwsA(isA<VisionException>()));
+  });
+
+  test('无尾斜杠 baseUrl 拼接同样正确', () async {
+    http.Request? captured;
+    final client = MockClient((req) async {
+      captured = req;
+      return http.Response(
+          jsonEncode({
+            'choices': [
+              {'message': {'content': 'ok'}}
+            ]
+          }),
+          200);
+    });
+    final c = VisionClient(client: client);
+    final out = await c.complete(
+        baseUrl: 'https://api.example.com/v4', apiKey: cfg.apiKey,
+        model: cfg.model, prompt: 'p', png: Uint8List.fromList([1]));
+    expect(out, 'ok');
+    expect(captured!.url.toString(),
+        'https://api.example.com/v4/chat/completions');
+  });
+
+  test('超时 → VisionException 且消息含"超时"', () async {
+    final c = VisionClient(
+        client: MockClient((req) async {
+          await Completer<void>().future; // 永不完成，模拟服务端不回包
+          return http.Response('', 200);
+        }),
+        timeout: const Duration(milliseconds: 50));
+    expect(
+        () => c.complete(baseUrl: cfg.baseUrl, apiKey: cfg.apiKey,
+            model: cfg.model, prompt: 'p',
+            png: Uint8List.fromList([1])),
+        throwsA(isA<VisionException>()
+            .having((e) => e.message, 'message', contains('超时'))));
   });
 }
