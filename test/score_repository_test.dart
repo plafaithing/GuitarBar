@@ -19,6 +19,14 @@ class FakeRasterizer implements PdfRasterizer {
       [Uint8List.fromList([1]), Uint8List.fromList([2])];
 }
 
+/// PdfRasterizer 的测试替身：renderPages 直接抛错（触发导入失败清理路径）。
+class ThrowingRasterizer implements PdfRasterizer {
+  @override
+  final double dpi = 200;
+  @override
+  Future<List<Uint8List>> renderPages(File pdf) async => throw StateError('boom');
+}
+
 /// 生成合法 1×1 PNG 字节（normalizeImage 需要可解码图片）。
 Uint8List tinyPng() {
   final img = imgpkg.Image(width: 1, height: 1);
@@ -72,5 +80,17 @@ void main() {
   test('不支持的扩展名抛 ArgumentError', () async {
     final f = File('${tmp.path}/c.txt')..writeAsBytesSync([1]);
     expect(() => repo.importScore(title: 'x', source: f), throwsArgumentError);
+  });
+
+  test('导入失败：行与文件双清理', () async {
+    final failing =
+        ScoreRepository(db, ScoreFiles(tmp), rasterizer: ThrowingRasterizer());
+    final pdf = File('${tmp.path}/boom.pdf')..writeAsBytesSync([1, 2, 3]);
+    await expectLater(
+        failing.importScore(title: '坏', source: pdf), throwsStateError);
+    // 行已删：库里查无此曲谱。
+    expect(await failing.listScores(), isEmpty);
+    // 文件已清：base 下无任何曲谱目录（boom.pdf 是用户源文件，不属于清理范围）。
+    expect(tmp.listSync().whereType<Directory>(), isEmpty);
   });
 }
