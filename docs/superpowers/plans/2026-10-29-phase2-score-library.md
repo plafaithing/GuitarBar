@@ -539,6 +539,13 @@ git commit -m "feat: PDF 转图与曲谱导入仓储（二期 M1）"
 
 ### Task 4: 曲谱库页 + 工具箱入口 + 纯查看器
 
+> **执行修正备案（2026-10-29 质量审查实证）**：本任务 Step 1 的页面代码原稿缺
+> Scaffold/Material 壳（MaterialPageRoute push 下列表态 ListTile 必崩、无返回键），
+> 行结构 `Container(color) > ListTile` 触发 SDK 断言——实现时已按兄弟页同款
+> Scaffold+AppBar+Material(color, shape) 行修复。后续任务勿照抄原稿壳结构。
+> 另：SourceViewer 的 pageController 参数实现时省略（Task 14 确认不需要）；
+> 详情页/列表页 `<support>/scores` 路径手写重复，Task 11 收口时抽共享构造。
+
 **Files:**
 - Create: `lib/ui/scores/scores_page.dart`
 - Create: `lib/ui/scores/score_detail_page.dart`
