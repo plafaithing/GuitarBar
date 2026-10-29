@@ -59,12 +59,13 @@ class ScoreIr {
   @override
   bool operator ==(Object other) =>
       other is ScoreIr &&
-      jsonEncode(other.toJson()) == jsonEncode(toJson());
+      (identical(this, other) || jsonEncode(other.toJson()) == jsonEncode(toJson()));
 
   @override
   int get hashCode => jsonEncode(toJson()).hashCode;
 }
 
+/// 曲轨。相等语义由 ScoreIr 的 JSON 编码比较覆盖整棵树，本类不单独实现 ==。
 class TrackIr {
   const TrackIr({required this.name, required this.measures});
   final String name;
@@ -115,7 +116,7 @@ class MeasureIr {
   @override
   bool operator ==(Object other) =>
       other is MeasureIr &&
-      jsonEncode(other.toJson()) == jsonEncode(toJson());
+      (identical(this, other) || jsonEncode(other.toJson()) == jsonEncode(toJson()));
 
   @override
   int get hashCode => jsonEncode(toJson()).hashCode;
@@ -169,7 +170,7 @@ class NoteIr {
   @override
   bool operator ==(Object other) =>
       other is NoteIr &&
-      jsonEncode(other.toJson()) == jsonEncode(toJson());
+      (identical(this, other) || jsonEncode(other.toJson()) == jsonEncode(toJson()));
 
   @override
   int get hashCode => jsonEncode(toJson()).hashCode;
