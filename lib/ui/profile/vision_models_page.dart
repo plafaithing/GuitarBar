@@ -20,8 +20,8 @@ class VisionModelsPage extends StatefulWidget {
 class _VisionModelsPageState extends State<VisionModelsPage> {
   late final VisionModelStore _store;
   List<VisionModelConfig>? _configs;
-  // 正在测试连接的配置 id（null = 无；只锁该卡按钮，其余卡可各自独立测试）。
-  String? _testingId;
+  // 正在测试连接的配置 id 集合：多卡可并发测试，各自锁定/复位互不影响。
+  final Set<String> _testing = {};
 
   @override
   void initState() {
@@ -106,7 +106,7 @@ class _VisionModelsPageState extends State<VisionModelsPage> {
                             IconButton(
                                 tooltip: '测试连接',
                                 // in-flight：该卡测试中转圈且禁点（其余卡不受影响）。
-                                icon: _testingId == c.id
+                                icon: _testing.contains(c.id)
                                     ? const SizedBox(
                                         width: 16,
                                         height: 16,
@@ -114,7 +114,7 @@ class _VisionModelsPageState extends State<VisionModelsPage> {
                                             strokeWidth: 2))
                                     : Icon(Icons.network_check,
                                         size: 20, color: p.muted),
-                                onPressed: _testingId == c.id
+                                onPressed: _testing.contains(c.id)
                                     ? null
                                     : () => _testConnection(c)),
                             IconButton(
@@ -145,7 +145,7 @@ class _VisionModelsPageState extends State<VisionModelsPage> {
 
   Future<void> _testConnection(VisionModelConfig c) async {
     final messenger = ScaffoldMessenger.of(context);
-    setState(() => _testingId = c.id);
+    setState(() => _testing.add(c.id));
     // 1×1 白 PNG：验证连通与返回格式，不花识别级 token。
     const png = [
       137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1,
@@ -165,7 +165,7 @@ class _VisionModelsPageState extends State<VisionModelsPage> {
       messenger.showSnackBar(SnackBar(content: Text('失败：$e')));
     } finally {
       client.close();
-      if (mounted) setState(() => _testingId = null);
+      if (mounted) setState(() => _testing.remove(c.id));
     }
   }
 
