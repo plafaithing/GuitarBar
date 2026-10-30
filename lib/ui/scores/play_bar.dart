@@ -23,13 +23,18 @@ class PlayBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
-    return Container(
-      decoration: BoxDecoration(
-        color: p.panel,
-        border: Border(top: BorderSide(color: p.border)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(children: [
+    // 固定一行高（2026-10-31 走查修复：bottomSheet 槽的宽松约束下
+    // Container 会被拉满可用高度盖住谱面——Scaffold 实测三形态复现；
+    // IconButton 48 + padding 16 = 64）。
+    return SizedBox(
+      height: 64,
+      child: Container(
+        decoration: BoxDecoration(
+          color: p.panel,
+          border: Border(top: BorderSide(color: p.border)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(children: [
         IconButton(
             onPressed: busy ? null : onToggle,
             icon: busy
@@ -54,7 +59,8 @@ class PlayBar extends StatelessWidget {
               color: p.muted,
               fontFeatures: const [FontFeature.tabularFigures()]),
         ),
-      ]),
+        ]),
+      ),
     );
   }
 }
