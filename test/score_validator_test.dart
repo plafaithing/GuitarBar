@@ -2,6 +2,29 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:guitarbar/core/vision/score_validator.dart';
 
 void main() {
+  test('近拍同弦去重：保留带技法者（"写两遍"防线）', () {
+    final r = parsePage(
+        '{"measures":[{"index":0,"confidence":0.9,"notes":['
+        '{"beat":1.0,"duration":0.5,"string":2,"fret":12,"technique":null},'
+        '{"beat":1.02,"duration":0.5,"string":2,"fret":12,"technique":"H"},'
+        '{"beat":1.0,"duration":0.5,"string":1,"fret":0,"technique":null}]}]}',
+        indexOffset: 0);
+    final notes = r.measures.single.notes;
+    expect(notes.length, 2, reason: '同弦近拍双音去重为一，跨弦保留');
+    expect(notes.first.technique, 'H', reason: '带技法者胜出');
+    expect(notes.first.string, 2);
+    expect(notes.last.string, 1);
+  });
+
+  test('完全同拍同弦（双音和弦写法）同样去重', () {
+    final r = parsePage(
+        '{"measures":[{"index":0,"confidence":0.9,"notes":['
+        '{"beat":0,"duration":1,"string":3,"fret":5,"technique":null},'
+        '{"beat":0,"duration":1,"string":3,"fret":5,"technique":null}]}]}',
+        indexOffset: 0);
+    expect(r.measures.single.notes.length, 1);
+  });
+
   test('干净 JSON 直接解析', () {
     final r = parsePage(
         '{"measures":[{"index":0,"confidence":0.9,"notes":'

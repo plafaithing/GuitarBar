@@ -80,7 +80,8 @@ void main() {
     ));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('调弦 E2 - A2 - D3 - G3 - B3 - E4 · Capo 3品 · 90 BPM'),
+    // 标准调弦命中内置预设名 Standard（_tuningLabel 预设匹配）。
+    expect(find.text('调弦 Standard · Capo 3品 · 90 BPM'),
         findsOneWidget);
   });
 }

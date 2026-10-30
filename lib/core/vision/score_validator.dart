@@ -69,9 +69,27 @@ MeasureIr _measure(dynamic raw, int index) {
   } else {
     ok = false;
   }
-  return ok
-      ? MeasureIr(index: index, confidence: conf, failed: false, notes: notes)
-      : MeasureIr(index: index, confidence: 0, failed: true, notes: const []);
+  if (!ok) {
+    return MeasureIr(index: index, confidence: 0, failed: true, notes: const []);
+  }
+  // 近拍同弦去重（2026-10-31 走查反馈"写两遍"）：模型会对同一音输出
+  // 近拍双 note（beat 差 ≤ 0.05，一带技法一不带），渲染层错位叠加成两份
+  // 文字。保留带技法的（信息更全）；都不带保留首个。和弦同拍跨弦不受影响。
+  final deduped = <NoteIr>[];
+  for (final n in notes) {
+    final dup = deduped.any((d) =>
+        d.string == n.string && (d.beat - n.beat).abs() <= 0.05);
+    if (!dup) {
+      deduped.add(n);
+    } else {
+      final i = deduped.indexWhere((d) =>
+          d.string == n.string && (d.beat - n.beat).abs() <= 0.05);
+      if (n.technique != null && deduped[i].technique == null) {
+        deduped[i] = n; // 带技法者替换裸音
+      }
+    }
+  }
+  return MeasureIr(index: index, confidence: conf, failed: false, notes: deduped);
 }
 
 NoteIr? _note(dynamic raw) {

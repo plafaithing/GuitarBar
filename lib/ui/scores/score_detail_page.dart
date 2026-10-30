@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../audio/score_player.dart';
 import '../../audio/score_renderer.dart';
 import '../../audio/sound_engine.dart';
+import '../../core/music/builtin_tunings.dart';
 import '../../core/score/score_ir.dart';
 import '../../core/score/score_repository.dart';
 import '../../core/vision/score_recognizer.dart';
@@ -252,6 +253,29 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     }
   }
 
+  /// 信息条调弦文案：IR 调弦与 20 组内置预设比对（音名集合），命中显示
+  /// 预设名（如"标准调弦 Standard"），未命中显示音名（走查反馈：识别
+  /// 出的调弦若在预设库中应标注）。
+  String _tuningLabel(ScoreIr ir) {
+    final names = [for (final s in ir.tuning) s.toUpperCase()];
+    for (final preset in builtinTunings) {
+      final presetNames = [
+        for (final n in preset.strings) n.name.toUpperCase()
+      ];
+      if (names.length == presetNames.length) {
+        var same = true;
+        for (var i = 0; i < names.length; i++) {
+          if (names[i] != presetNames[i]) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return '调弦 ${preset.name}';
+      }
+    }
+    return '调弦 ${ir.tuning.join(' - ')}';
+  }
+
   /// 播放/暂停切换（走查反馈 ①）：未播放 → 渲染播放；在播 → 暂停
   /// （soloud 冻结在暂停点）；暂停中 → 从暂停点继续。
   Future<void> _togglePlay() async {
@@ -392,7 +416,7 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                         // 左缩进 16 与谱面 TabLayout.leftPad 对齐。
                         padding: const EdgeInsets.only(left: 16, bottom: 8),
                         child: Text(
-                            '调弦 ${_ir!.tuning.join(' - ')}'
+                            '${_tuningLabel(_ir!)}'
                             '${_ir!.capo > 0 ? ' · Capo ${_ir!.capo}品' : ''}'
                             ' · ${_ir!.tempo.round()} BPM',
                             style: TextStyle(
