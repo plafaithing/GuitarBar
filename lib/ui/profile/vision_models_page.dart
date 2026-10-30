@@ -50,9 +50,14 @@ class _VisionModelsPageState extends State<VisionModelsPage> {
     if (result == null || !mounted) return;
     final list = [...?_configs];
     if (existing == null) {
-      list.add(result);
+      // 新建即当前无任何启用配置时自动启用（2026-10-30 走查反馈：用户漏点
+      // 卡片启用导致识谱报"未配置"）。
+      final noneActive = list.every((c) => !c.active);
+      list.add(noneActive ? result.copyWith(active: true) : result);
     } else {
-      list[list.indexWhere((c) => c.id == existing.id)] = result;
+      // 编辑保留原启用态。
+      list[list.indexWhere((c) => c.id == existing.id)] =
+          result.copyWith(active: existing.active);
     }
     await _persist(list);
   }

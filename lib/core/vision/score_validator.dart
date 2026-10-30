@@ -5,9 +5,14 @@ import '../score/score_ir.dart';
 const _techniques = {'h', 'p', 's', 'b', 'x', 'H'};
 
 class PageParseResult {
-  const PageParseResult({required this.measures, required this.failedCount});
+  const PageParseResult(
+      {required this.measures, required this.failedCount, this.capo = 0});
   final List<MeasureIr> measures;
   final int failedCount; // 本页被判 failed 的小节数
+
+  /// 谱面标注的变调夹品数（模型从谱面文字读出；0 = 无标注）。
+  /// 坏值（非 num/越界）按 0，不让一个字段废掉整页。
+  final int capo;
 }
 
 /// 视觉模型响应 → IR 小节（零成本机器防线，设计文档 §5.2）。
@@ -19,6 +24,8 @@ PageParseResult parsePage(String raw, {required int indexOffset}) {
   if (data is! Map<String, dynamic> || data['measures'] is! List) {
     throw const FormatException('响应缺少 measures 数组');
   }
+  final capoRaw = data['capo'];
+  final capo = capoRaw is num ? capoRaw.toInt().clamp(0, 7) : 0;
   final measures = <MeasureIr>[];
   var failed = 0;
   final rawMeasures = data['measures'] as List;
@@ -27,7 +34,8 @@ PageParseResult parsePage(String raw, {required int indexOffset}) {
     if (m.failed) failed++;
     measures.add(m);
   }
-  return PageParseResult(measures: measures, failedCount: failed);
+  return PageParseResult(
+      measures: measures, failedCount: failed, capo: capo);
 }
 
 String _extractJson(String raw) {

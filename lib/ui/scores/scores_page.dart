@@ -233,8 +233,20 @@ class _ScoresPageState extends State<ScoresPage> {
                             '${_pageCounts?[s.id] ?? 0} 页 · '
                             '${s.irJson == null ? '未识谱' : '已识谱'}',
                             style: TextStyle(fontSize: 12, color: p.muted)),
-                        trailing: Icon(Icons.chevron_right,
-                            size: 20, color: p.muted),
+                        // 行尾菜单（2026-10-30 用户反馈补删除）：
+                        // 桌面惯例三点菜单，删除带确认防误删整份谱。
+                        trailing: PopupMenuButton<String>(
+                          tooltip: '更多',
+                          icon: Icon(Icons.more_horiz,
+                              size: 20, color: p.muted),
+                          itemBuilder: (ctx) => [
+                            const PopupMenuItem(
+                                value: 'delete', child: Text('删除')),
+                          ],
+                          onSelected: (v) {
+                            if (v == 'delete') _confirmDelete(s);
+                          },
+                        ),
                         onTap: () async {
                           await Navigator.push(
                               context,
@@ -252,5 +264,37 @@ class _ScoresPageState extends State<ScoresPage> {
         ]),
       ),
     );
+  }
+
+  /// 删除确认（对齐识谱模型配置页的确认模式）→ 行+文件+页图全清。
+  Future<void> _confirmDelete(Score s) async {
+    final repo = _repo;
+    if (repo == null || !mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除曲谱'),
+        content: Text(
+            '确定删除「${s.title}」？原谱文件与识谱结果将一并删除，不可恢复。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('删除')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await repo.deleteScore(s.id);
+      await _reload();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('删除失败：$e')));
+      }
+    }
   }
 }

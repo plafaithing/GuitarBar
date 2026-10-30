@@ -209,7 +209,15 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
             onPage: (done, total) {
               if (mounted) setState(() => _progress = '第 ${done + 1}/$total 页');
             },
-            cancelled: () => _cancelRequested);
+            cancelled: () => _cancelRequested,
+            // 谱面标注的 capo 覆盖手动兜底值（2026-10-30 用户反馈：
+            // 指弹谱的变调夹品数谱面印着，应由模型识别而非用户手填）。
+            onCapoRecognized: (sheetCapo) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('已按谱面标注设置变调夹：第 $sheetCapo 品')));
+              }
+            });
         await _repo!.updateRecognition(widget.scoreId,
             irJson: jsonEncode(ir.toJson()), tuning: ir.tuning.join(','));
         await _reload();
@@ -308,7 +316,7 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                           fontFeatures: [FontFeature.tabularFigures()])),
                 ]),
                 Row(children: [
-                  const Text('变调夹'),
+                  const Text('变调夹兜底'),
                   IconButton(
                       onPressed: () =>
                           setLocal(() => capo = (capo - 1).clamp(0, 7)),
@@ -322,6 +330,10 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                       icon: const Icon(Icons.add_circle_outline)),
                 ]),
                 Text('调弦：标准 E-A-D-G-B-E（v1 固定）',
+                    style: TextStyle(
+                        fontSize: 12, color: ctx.palette.muted)),
+                const SizedBox(height: 4),
+                Text('变调夹优先按谱面标注自动识别，此处仅兜底',
                     style: TextStyle(
                         fontSize: 12, color: ctx.palette.muted)),
               ]),

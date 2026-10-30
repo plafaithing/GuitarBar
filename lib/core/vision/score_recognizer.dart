@@ -35,10 +35,17 @@ class ScoreRecognizer {
     required int capo,
     void Function(int done, int total)? onPage,
     bool Function()? cancelled,
+    void Function(int recognizedCapo)? onCapoRecognized,
   }) async {
     final measures = <MeasureIr>[];
     final failedPages = <int>[];
     var offset = 0;
+
+    // capo 语义（2026-10-30 用户反馈定案）：谱面标注优先——模型从谱面读出的
+    // 品数覆盖手动参数；手动值仅作无标注时的兜底。多页取最大（标注通常一致，
+    // 取最大可吸收个别页漏识）。
+    var effectiveCapo = capo;
+    var capoFromSheet = false;
 
     for (var i = 0; i < pagePngs.length; i++) {
       // 取消抛异常而非返回半成品 IR：保住库里已有识别结果不被残缺 IR 覆盖。
@@ -54,6 +61,7 @@ class ScoreRecognizer {
           prompt: prompt, png: png);
 
       List<MeasureIr>? pageMeasures; // null = 异常路径全败
+      int? pageCapo;
       try {
         var r = parsePage(await once(), indexOffset: offset);
         if (r.measures.isEmpty) {
@@ -61,10 +69,12 @@ class ScoreRecognizer {
           r = parsePage(await once(), indexOffset: offset);
         }
         pageMeasures = r.measures;
+        pageCapo = r.capo;
       } catch (_) {
         try {
           final r = parsePage(await once(), indexOffset: offset); // 重试 1 次
           pageMeasures = r.measures;
+          pageCapo = r.capo;
         } catch (_) {
           pageMeasures = null;
         }
@@ -81,6 +91,18 @@ class ScoreRecognizer {
         measures.addAll(pageMeasures);
         offset += pageMeasures.length;
       }
+
+      // 谱面标注覆盖手动 capo（成功页才采信；失败页的 capo 不可靠）。
+      if (pageMeasures != null && pageMeasures.isNotEmpty && pageCapo != null) {
+        if (!capoFromSheet && pageCapo > 0) {
+          capoFromSheet = true;
+          effectiveCapo = pageCapo;
+          onCapoRecognized?.call(pageCapo);
+        } else if (capoFromSheet && pageCapo > effectiveCapo) {
+          effectiveCapo = pageCapo;
+          onCapoRecognized?.call(pageCapo);
+        }
+      }
     }
 
     return ScoreIr(
@@ -89,7 +111,7 @@ class ScoreRecognizer {
       tempo: tempo,
       timeSignature: timeSignature,
       tuning: tuning,
-      capo: capo,
+      capo: effectiveCapo,
       tracks: [TrackIr(name: '主旋律', measures: measures)],
       unrecognizedPages: failedPages,
     );

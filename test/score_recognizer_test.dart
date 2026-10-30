@@ -45,12 +45,14 @@ const cfg = VisionModelConfig(
     model: 'm', active: true);
 
 Future<ScoreIr> run(ScriptedClient c, List<File> pages,
-        {bool Function()? cancelled, void Function(int, int)? onPage}) async =>
+        {bool Function()? cancelled, void Function(int, int)? onPage,
+        int capo = 0,
+        void Function(int)? onCapo}) async =>
     ScoreRecognizer(c).recognize(
     title: 'T', pagePngs: pages, cfg: cfg, tempo: 90,
     tuning: const ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'],
-    timeSignature: '4/4', capo: 0,
-    cancelled: cancelled, onPage: onPage);
+    timeSignature: '4/4', capo: capo,
+    cancelled: cancelled, onPage: onPage, onCapoRecognized: onCapo);
 
 void main() {
   late Directory tmp;
@@ -69,6 +71,30 @@ void main() {
     expect(ir.tempo, 90);
     expect(ir.capo, 0);
     expect(ir.tuning, const ['E2', 'A2', 'D3', 'G3', 'B3', 'E4']);
+  });
+
+  test('capo 谱面标注覆盖手动兜底值', () async {
+    final client = ScriptedClient([
+      '{"capo":2,"measures":[{"index":0,"confidence":0.9,"notes":'
+          '[{"beat":0,"duration":1,"string":1,"fret":3,"technique":null}]}]}',
+    ]);
+    final recognized = <int>[];
+    final ir = await run(client, [tmpPage(tmp, 'a.png')],
+        capo: 0, onCapo: recognized.add);
+    expect(ir.capo, 2); // 模型读出的谱面标注覆盖手动 0
+    expect(recognized, [2]); // 回调触发（UI 提示用）
+  });
+
+  test('capo 无标注时保留手动兜底值', () async {
+    final client = ScriptedClient([
+      '{"measures":[{"index":0,"confidence":0.9,"notes":'
+          '[{"beat":0,"duration":1,"string":1,"fret":3,"technique":null}]}]}',
+    ]);
+    final recognized = <int>[];
+    final ir = await run(client, [tmpPage(tmp, 'a.png')],
+        capo: 3, onCapo: recognized.add);
+    expect(ir.capo, 3); // 谱面无标注 → 手动值兜底
+    expect(recognized, isEmpty);
   });
 
   test('单页异常重试 1 次后成功', () async {

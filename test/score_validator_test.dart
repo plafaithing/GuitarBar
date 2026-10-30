@@ -10,6 +10,23 @@ void main() {
     expect(r.measures.single.index, 5);
     expect(r.measures.single.notes.single.fret, 3);
     expect(r.failedCount, 0);
+    expect(r.capo, 0); // 无 capo 字段按 0
+  });
+
+  test('capo 字段：谱面标注读取，坏值按 0', () {
+    final r = parsePage(
+        '{"capo":2,"measures":[{"index":0,"confidence":0.9,"notes":'
+        '[{"beat":0,"duration":1,"string":1,"fret":3,"technique":null}]}]}',
+        indexOffset: 0);
+    expect(r.capo, 2);
+    final bad = parsePage(
+        '{"capo":"x","measures":[{"index":0,"confidence":0.9,"notes":'
+        '[{"beat":0,"duration":1,"string":1,"fret":3,"technique":null}]}]}',
+        indexOffset: 0);
+    expect(bad.capo, 0); // 非 num 不废整页
+    final clamped = parsePage(
+        '{"capo":99,"measures":[]}', indexOffset: 0);
+    expect(clamped.capo, 7); // 越界夹到 0-7
   });
 
   test('剥 Markdown 围栏', () {
