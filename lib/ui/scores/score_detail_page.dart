@@ -2,11 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/score/score_files.dart';
 import '../../core/score/score_ir.dart';
 import '../../core/score/score_repository.dart';
 import '../../core/vision/score_recognizer.dart';
@@ -51,12 +48,9 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
       if (factory != null) {
         repo = factory();
       } else {
-        // 与 ScoresPage 同一路径约定：<support>/scores/<id>/ 的页图。
-        // 经 ScoreFiles 读（不用手写目录遍历）。
-        final dir = await getApplicationSupportDirectory();
         if (!mounted) return;
-        repo = ScoreRepository(context.read<AppDatabase>(),
-            ScoreFiles(Directory(p.join(dir.path, 'scores'))));
+        final db = context.read<AppDatabase>();
+        repo = await ScoreRepository.createDefault(db);
       }
       if (!mounted) return;
       setState(() => _repo = repo);
@@ -233,7 +227,10 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                         style: TextStyle(fontSize: 14, color: p.muted)))),
             IconButton(
                 tooltip: '取消识谱',
-                onPressed: () => _cancelRequested = true,
+                onPressed: () => setState(() {
+                      _cancelRequested = true;
+                      _progress = '取消中…当前页结束后生效';
+                    }),
                 icon: const Icon(Icons.cancel_outlined)),
           ] else
             IconButton(

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../../data/database.dart';
 import 'image_normalize.dart';
@@ -16,6 +17,13 @@ class ScoreRepository {
   final AppDatabase _db;
   final ScoreFiles files;
   final PdfRasterizer rasterizer;
+
+  /// 默认路径工厂：`<support>/scores` 为曲谱根（与 SQLite 同目录）。
+  static Future<ScoreRepository> createDefault(AppDatabase db) async {
+    final dir = await getApplicationSupportDirectory();
+    return ScoreRepository(
+        db, ScoreFiles(Directory(p.join(dir.path, 'scores'))));
+  }
 
   /// 支持的曲谱图片扩展名（小写、无点）：repository 校验与 UI 文件夹过滤共用。
   static const imageExts = ['png', 'jpg', 'jpeg', 'webp'];

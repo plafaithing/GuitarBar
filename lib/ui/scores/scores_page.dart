@@ -3,10 +3,8 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/score/score_files.dart';
 import '../../core/score/score_repository.dart';
 import '../../data/database.dart';
 import '../theme.dart';
@@ -44,10 +42,9 @@ class _ScoresPageState extends State<ScoresPage> {
       if (factory != null) {
         repo = factory();
       } else {
-        final dir = await getApplicationSupportDirectory();
         if (!mounted) return;
-        repo = ScoreRepository(context.read<AppDatabase>(),
-            ScoreFiles(Directory(p.join(dir.path, 'scores'))));
+        final db = context.read<AppDatabase>();
+        repo = await ScoreRepository.createDefault(db);
       }
       if (!mounted) return;
       setState(() => _repo = repo);
@@ -238,11 +235,14 @@ class _ScoresPageState extends State<ScoresPage> {
                             style: TextStyle(fontSize: 12, color: p.muted)),
                         trailing: Icon(Icons.chevron_right,
                             size: 20, color: p.muted),
-                        onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) =>
-                                    ScoreDetailPage(scoreId: s.id))),
+                        onTap: () async {
+                          await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      ScoreDetailPage(scoreId: s.id)));
+                          if (mounted) _reload();
+                        },
                       ),
                     ),
                   );
