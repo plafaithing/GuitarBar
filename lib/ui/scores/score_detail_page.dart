@@ -250,12 +250,18 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     }
   }
 
-  /// 播放/停止切换：播 = 渲染整曲 PCM → loadPcm → play。
+  /// 播放/暂停切换（走查反馈 ①）：未播放 → 渲染播放；在播 → 暂停
+  /// （soloud 冻结在暂停点）；暂停中 → 从暂停点继续。
   Future<void> _togglePlay() async {
     final ir = _ir;
     if (ir == null || _rendering) return;
+    if (_player.paused) {
+      _player.resume();
+      if (mounted) setState(() {});
+      return;
+    }
     if (_player.playing) {
-      await _player.stop();
+      _player.pause();
       if (mounted) setState(() {});
       return;
     }
@@ -285,6 +291,12 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     } finally {
       if (mounted) setState(() => _rendering = false);
     }
+  }
+
+  /// 停止按钮：归零回开头（暂停只是冻结位置，停止才是归零）。
+  Future<void> _stopPlay() async {
+    await _player.stop();
+    if (mounted) setState(() {});
   }
 
   /// 四元组（曲速/调弦/拍号/变调夹）。调弦 v1 固定标准调弦，
@@ -399,6 +411,8 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                               ? (_player.positionSeconds.value /
                                   (60.0 / _ir!.tempo))
                               : null,
+                          // 播放时谱面自动滚动跟随（走查反馈 ②）。
+                          followPlayhead: true,
                           // 识别中禁编辑：回调置空，避免编辑写入被识谱回写覆盖。
                           onNoteTap: _recognizing ? null : _editNote,
                           onFailedTap: _recognizing ? null : _clearMeasure,
@@ -429,17 +443,19 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
               );
             }),
       // 播放控制条：已识谱才显示；进度由 position notifier 50ms 驱动，
-      // playing 态经 setState 切换（_togglePlay）。
+      // playing/paused 态经 setState 切换（_togglePlay/_stopPlay）。
       bottomSheet: (_ir == null)
           ? null
           : ListenableBuilder(
               listenable: _player.positionSeconds,
               builder: (ctx, _) => PlayBar(
                   playing: _player.playing,
+                  paused: _player.paused,
                   positionSeconds: _player.positionSeconds.value,
                   durationSeconds: _player.durationSeconds,
                   busy: _rendering,
-                  onToggle: _togglePlay),
+                  onToggle: _togglePlay,
+                  onStop: _stopPlay),
             ),
     );
   }

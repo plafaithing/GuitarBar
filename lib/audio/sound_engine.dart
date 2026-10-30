@@ -58,4 +58,10 @@ class SoundEngine {
   /// 50ms tick 用它区分"播放中/曲终"，替代位置启发式。
   bool getIsValidVoiceHandle(SoundHandle h) =>
       SoLoud.instance.getIsValidVoiceHandle(h);
+
+  /// 暂停/恢复句柄（第 9 个成员，照冻结接口追加先例）。soloud 语义：
+  /// true=暂停（position 冻结在暂停点，句柄仍有效）、false=从暂停点继续。
+  /// flutter_soloud 5.2.1 签名：void setPause(SoundHandle, bool)。
+  void setPause(SoundHandle h, bool paused) =>
+      SoLoud.instance.setPause(h, paused);
 }

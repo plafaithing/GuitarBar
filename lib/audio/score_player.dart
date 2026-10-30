@@ -26,6 +26,27 @@ class ScorePlayer {
   final ValueNotifier<double> positionSeconds = ValueNotifier(0);
   bool get playing => _handle != null;
 
+  /// 暂停中（playing 仍为 true：句柄活着，soloud 冻结在暂停点）。
+  bool _paused = false;
+  bool get paused => _paused;
+
+  /// 暂停：soloud setPause(true)，50ms 轮询继续但 position 冻结在暂停点。
+  /// 暂停态的句柄不会自然失效（voice 未销毁），曲终检测不受影响。
+  void pause() {
+    final h = _handle;
+    if (h == null || _paused) return;
+    _sound.setPause(h, true);
+    _paused = true;
+  }
+
+  /// 恢复：从暂停点继续播。
+  void resume() {
+    final h = _handle;
+    if (h == null || !_paused) return;
+    _sound.setPause(h, false);
+    _paused = false;
+  }
+
   Future<void> load(RenderedScore r) async {
     await stop();
     _src = await _sound.loadPcm(r.pcm);
@@ -70,6 +91,7 @@ class ScorePlayer {
     _timer = null;
     final h = _handle;
     _handle = null;
+    _paused = false; // 停止/曲终即清暂停态，否则下次 start 后 UI 误显示恢复键
     positionSeconds.value = 0;
     final s = _src;
     _src = null;

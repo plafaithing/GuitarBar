@@ -7,7 +7,7 @@ import 'package:guitarbar/audio/score_renderer.dart';
 import 'package:guitarbar/audio/sound_engine.dart';
 
 /// SoundEngine 假体：统计调用并可控状态，不触 soloud。
-/// implements 门面需覆写全部 8 个成员。
+/// implements 门面需覆写全部 9 个成员。
 class FakeEngine implements SoundEngine {
   FakeEngine({this.validHandle = true});
 
@@ -16,6 +16,9 @@ class FakeEngine implements SoundEngine {
 
   /// position 返回值（tick 轮询读取）。
   Duration positionValue = Duration.zero;
+
+  /// setPause 最后一次写入值（pause/resume 接线断言用）。
+  bool pausedValue = false;
 
   /// loadPcm 抛错开关（验证失败不留脏时长）。
   bool throwOnLoad = false;
@@ -52,6 +55,9 @@ class FakeEngine implements SoundEngine {
 
   @override
   bool getIsValidVoiceHandle(SoundHandle h) => validHandle;
+
+  @override
+  void setPause(SoundHandle h, bool paused) => pausedValue = paused;
 
   @override
   Future<void> init() async {}
@@ -134,5 +140,64 @@ void main() {
     player.onTick();
     expect(engine.stopCount, 0);
     expect(player.playing, isFalse);
+  });
+
+  test('pause/resume：setPause 接线 + 状态翻转；轮询继续但 position 冻结',
+      () async {
+    final engine = FakeEngine();
+    final player = ScorePlayer(engine);
+    await player.load(_score(10));
+    await player.start();
+    engine.positionValue = const Duration(seconds: 4);
+    player.onTick();
+    player.pause();
+    expect(player.paused, isTrue);
+    expect(player.playing, isTrue); // 暂停≠停止：句柄仍活着
+    expect(engine.pausedValue, isTrue);
+    // 暂停中 soloud position 冻结：fake 固定返回 4s，tick 继续读同值。
+    player.onTick();
+    expect(player.positionSeconds.value, 4.0);
+    player.resume();
+    expect(player.paused, isFalse);
+    expect(engine.pausedValue, isFalse);
+    expect(player.playing, isTrue);
+    await player.stop();
+  });
+
+  test('pause/resume 空操作守卫：未播放/重复调用不触引擎', () async {
+    final engine = FakeEngine();
+    final player = ScorePlayer(engine);
+    player.pause(); // 未播放：早退
+    expect(engine.pausedValue, isFalse);
+    expect(player.paused, isFalse);
+    player.resume(); // 未暂停：早退
+    expect(engine.pausedValue, isFalse);
+    await player.load(_score(10));
+    await player.start();
+    player.pause();
+    player.pause(); // 已暂停：早退（引擎只见一次 true）
+    expect(engine.pausedValue, isTrue);
+    player.resume();
+    player.resume(); // 未暂停：早退（引擎只见一次 false）
+    expect(engine.pausedValue, isFalse);
+    await player.stop();
+  });
+
+  test('stop 清暂停态：pause → stop → 重新 load/start 后 paused 为假',
+      () async {
+    final engine = FakeEngine();
+    final player = ScorePlayer(engine);
+    await player.load(_score(10));
+    await player.start();
+    player.pause();
+    expect(player.paused, isTrue);
+    await player.stop();
+    expect(player.paused, isFalse);
+    expect(player.playing, isFalse);
+    await player.load(_score(10));
+    await player.start();
+    expect(player.playing, isTrue);
+    expect(player.paused, isFalse); // 旧暂停态不得泄漏到新一轮播放
+    await player.stop();
   });
 }
