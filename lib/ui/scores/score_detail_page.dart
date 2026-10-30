@@ -11,7 +11,9 @@ import '../../core/vision/vision_client.dart';
 import '../../core/vision/vision_model.dart';
 import '../../data/database.dart';
 import '../theme.dart';
+import 'note_edit_sheet.dart';
 import 'source_viewer.dart';
+import 'tab_view.dart';
 
 /// 曲谱详情：未识谱 = 纯查看器（一等使用方式）；谱面区由 Task 12-14 填充。
 class ScoreDetailPage extends StatefulWidget {
@@ -82,6 +84,26 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
         _pages = pages;
       });
     }
+  }
+
+  /// 音符点选编辑：弹层确认后回写 IR（confidence=1 人工确认）并刷新。
+  Future<void> _editNote(int m, int i, NoteIr n) async {
+    final ir = _ir;
+    if (ir == null || _repo == null) return;
+    final result = await showNoteEditSheet(context, n);
+    if (result == null || !mounted) return;
+    final next = applyNoteEdit(ir, m, i, result);
+    await _repo!.updateIrJson(widget.scoreId, jsonEncode(next.toJson()));
+    await _reload();
+  }
+
+  /// failed 小节点击：重建为空小节，进入可编辑状态。
+  Future<void> _clearMeasure(int m) async {
+    final ir = _ir;
+    if (ir == null || _repo == null) return;
+    final next = applyMeasureClear(ir, m);
+    await _repo!.updateIrJson(widget.scoreId, jsonEncode(next.toJson()));
+    await _reload();
   }
 
   Future<void> _recognize() async {
@@ -243,9 +265,11 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
       body: (_pages == null)
           ? const Center(child: CircularProgressIndicator())
           : (_ir != null)
-              ? Center(
-                  child: Text('已识谱 · 谱面视图建设中（下一里程碑）',
-                      style: TextStyle(color: p.muted)))
+              ? TabView(
+                  ir: _ir!,
+                  onNoteTap: _editNote,
+                  onFailedTap: _clearMeasure,
+                )
               : SourceViewer(pagePngs: _pages!),
     );
   }

@@ -24,8 +24,9 @@ class TabView extends StatelessWidget {
       final w = box.maxWidth;
       // GestureDetector 放滚动区内：hit test 链自动换算，localPosition 即内容
       // 坐标，滚动后命中不错位；tap 与垂直 drag 分属不同轴互不干扰。
-      // behavior=opaque：CustomPaint 无 child 且 painter 不做 hitTest，
-      // deferToChild 会吃不到 tap，这里让整个内容区可点。
+      // behavior=opaque 冗余但更防御（RenderCustomPaint.hitTestSelf 对未重写
+      // hitTest 的 painter 本就返回 true，deferToChild 已可命中；opaque 兜底
+      // 覆盖 painter 未来重写 hitTest 的情况）。
       return SingleChildScrollView(
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
