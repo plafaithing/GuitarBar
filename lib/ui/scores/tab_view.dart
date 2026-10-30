@@ -22,9 +22,14 @@ class TabView extends StatelessWidget {
     return LayoutBuilder(builder: (ctx, box) {
       final layout = TabLayout(ir);
       final w = box.maxWidth;
-      return GestureDetector(
-        onTapUp: (d) => _hitTest(d.localPosition, w),
-        child: SingleChildScrollView(
+      // GestureDetector 放滚动区内：hit test 链自动换算，localPosition 即内容
+      // 坐标，滚动后命中不错位；tap 与垂直 drag 分属不同轴互不干扰。
+      // behavior=opaque：CustomPaint 无 child 且 painter 不做 hitTest，
+      // deferToChild 会吃不到 tap，这里让整个内容区可点。
+      return SingleChildScrollView(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (d) => _hitTest(d.localPosition, w),
           child: SizedBox(
             width: w,
             height: layout.sizeFor(w).height,
@@ -198,5 +203,8 @@ class _TabPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _TabPainter old) =>
-      old.playheadBeat != playheadBeat || !identical(old.ir, ir);
+      old.playheadBeat != playheadBeat ||
+      // 明暗切换重绘：palette 为 const 单例、7 色同源，代理比较 stringLine 足够。
+      old.stringLine != stringLine ||
+      !identical(old.ir, ir);
 }
