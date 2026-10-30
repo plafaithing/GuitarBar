@@ -48,6 +48,9 @@ dependencies:
   image: ^4.3.0
   pdfrx: ^2.5.0
   http: ^1.2.0
+  # GTP (.gpx/.gp) 导入：GP7 zip 容器 + gpif XML 解析（原为传递依赖，版本与 lock 一致）
+  archive: ^4.5.2
+  xml: ^6.6.1
 
 dev_dependencies:
   flutter_test:
