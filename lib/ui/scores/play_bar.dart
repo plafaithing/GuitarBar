@@ -40,7 +40,8 @@ class PlayBar extends StatelessWidget {
       height: 64,
       child: Container(
         decoration: BoxDecoration(
-          color: p.panel,
+          // 半透明（2026-10-31 用户反馈：播放条不过分遮挡曲谱，50% 透明度）。
+          color: p.panel.withValues(alpha: 0.5),
           border: Border(top: BorderSide(color: p.border)),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
