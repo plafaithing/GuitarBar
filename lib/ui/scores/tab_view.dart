@@ -61,8 +61,14 @@ class TabView extends StatelessWidget {
       }
       final row = layout.locate(m.index, maxWidth).$1;
       if (m.failed) {
-        onFailedTap?.call(m.index);
-        return;
+        // 行纵向校验：多行布局下同列不同行 x 相同，必须限定 dy 在本行弦区。
+        final rowTop = layout.stringY(1, row);
+        final rowBottom = layout.stringY(6, row);
+        if (local.dy >= rowTop - 8 && local.dy <= rowBottom + 8) {
+          onFailedTap?.call(m.index);
+          return;
+        }
+        continue;
       }
       for (var i = 0; i < m.notes.length; i++) {
         final n = m.notes[i];
@@ -174,9 +180,11 @@ class _TabPainter extends CustomPainter {
             Paint()..color = playhead..strokeWidth = 2);
       }
     }
-    // 图例（低置信度底色示意）。
-    canvas.drawRect(const Rect.fromLTWH(0, 0, 10, 10), Paint()..color = confBg);
-    _text(canvas, '低置信度', Offset(14, 5),
+    // 图例（低置信度底色示意）：画布右上角，避开第 1 小节号；
+    // 右缘与弦线右端（size.width - leftPad）对齐。
+    canvas.drawRect(
+        Rect.fromLTWH(size.width - 70, 6, 10, 10), Paint()..color = confBg);
+    _text(canvas, '低置信度', Offset(size.width - 36, 11),
         TextStyle(fontSize: 10, color: pageNum));
   }
 
