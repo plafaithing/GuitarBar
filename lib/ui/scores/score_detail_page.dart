@@ -220,6 +220,15 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                     content: Text('已按谱面标注设置变调夹：第 $sheetCapo 品')));
               }
+            },
+            // 谱面标注的调弦覆盖兜底标准调弦（指弹谱常为特殊调弦，v1 固定
+            // 标准调弦会导致放音音高整体错位）。
+            onTuningRecognized: (sheetTuning) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content:
+                        Text('已按谱面标注设置调弦：${sheetTuning.join(' - ')}')));
+              }
             });
         await _repo!.updateRecognition(widget.scoreId,
             irJson: jsonEncode(ir.toJson()), tuning: ir.tuning.join(','));
@@ -327,7 +336,8 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
 
   /// 三元组（曲速/调弦/拍号）。变调夹不手动输入（2026-10-31 走查反馈：
   /// "要不就识别直接显示，要不就不要我输"）——识别值由模型从谱面标注
-  /// 报告；调弦 v1 固定标准调弦，自定义调弦联动留 M5+。
+  /// 报告；调弦同款：手选值固定标准调弦只作兜底，谱面标注（指弹谱特殊
+  /// 调弦）优先识别，自定义调弦联动留 M5+。
   Future<(double, List<String>, String)?> _askRecognizeParams() =>
       showDialog<(double, List<String>, String)>(
         context: context,
@@ -353,7 +363,7 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                       style: const TextStyle(
                           fontFeatures: [FontFeature.tabularFigures()])),
                 ]),
-                Text('调弦：标准 E-A-D-G-B-E（v1 固定）',
+                Text('调弦兜底：标准 E-A-D-G-B-E（谱面标注的调弦优先识别）',
                     style: TextStyle(
                         fontSize: 12, color: ctx.palette.muted)),
               ]),

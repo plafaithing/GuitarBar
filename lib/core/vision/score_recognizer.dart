@@ -36,6 +36,7 @@ class ScoreRecognizer {
     void Function(int done, int total)? onPage,
     bool Function()? cancelled,
     void Function(int recognizedCapo)? onCapoRecognized,
+    void Function(List<String> tuning)? onTuningRecognized,
   }) async {
     final measures = <MeasureIr>[];
     final failedPages = <int>[];
@@ -47,6 +48,11 @@ class ScoreRecognizer {
     // 通常一致，取最大可吸收个别页漏识）。
     var effectiveCapo = capo;
     var capoFromSheet = false;
+
+    // 调弦语义（对齐 capo）：恒由模型从谱面标注识别，参数 tuning 作兜底
+    // （UI 传标准调弦）。null = 尚未识别到，仍用兜底；指弹谱全曲统一调弦，
+    // 取第一个成功页识别到的即可信，多页不一致不覆盖。
+    List<String>? effectiveTuning;
 
     for (var i = 0; i < pagePngs.length; i++) {
       // 取消抛异常而非返回半成品 IR：保住库里已有识别结果不被残缺 IR 覆盖。
@@ -63,6 +69,7 @@ class ScoreRecognizer {
 
       List<MeasureIr>? pageMeasures; // null = 异常路径全败
       int? pageCapo;
+      List<String>? pageTuning;
       try {
         var r = parsePage(await once(), indexOffset: offset);
         if (r.measures.isEmpty) {
@@ -71,11 +78,13 @@ class ScoreRecognizer {
         }
         pageMeasures = r.measures;
         pageCapo = r.capo;
+        pageTuning = r.tuning;
       } catch (_) {
         try {
           final r = parsePage(await once(), indexOffset: offset); // 重试 1 次
           pageMeasures = r.measures;
           pageCapo = r.capo;
+          pageTuning = r.tuning;
         } catch (_) {
           pageMeasures = null;
         }
@@ -104,6 +113,15 @@ class ScoreRecognizer {
           onCapoRecognized?.call(pageCapo);
         }
       }
+
+      // 谱面标注调弦覆盖兜底（同 capo：成功页才采信；第一个非 null 即可信）。
+      if (pageMeasures != null &&
+          pageMeasures.isNotEmpty &&
+          effectiveTuning == null &&
+          pageTuning != null) {
+        effectiveTuning = pageTuning;
+        onTuningRecognized?.call(pageTuning);
+      }
     }
 
     return ScoreIr(
@@ -111,7 +129,7 @@ class ScoreRecognizer {
       title: title,
       tempo: tempo,
       timeSignature: timeSignature,
-      tuning: tuning,
+      tuning: effectiveTuning ?? tuning, // 谱面标注优先，参数兜底
       capo: effectiveCapo,
       tracks: [TrackIr(name: '主旋律', measures: measures)],
       unrecognizedPages: failedPages,

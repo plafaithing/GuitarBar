@@ -52,6 +52,44 @@ void main() {
     expect(clamped.capo, 7); // 越界夹到 0-7
   });
 
+  test('tuning 字段：合法 6 音名解析，大小写规范为 Note.name 形式', () {
+    final r = parsePage(
+        '{"tuning":["d2","a2","D3","g3","a3","D4"],'
+        '"measures":[{"index":0,"confidence":0.9,"notes":[]}]}',
+        indexOffset: 0);
+    expect(r.tuning, ['D2', 'A2', 'D3', 'G3', 'A3', 'D4']);
+  });
+
+  test('tuning 字段：缺省/null → null（谱面无标注语义）', () {
+    final r = parsePage(
+        '{"measures":[{"index":0,"confidence":0.9,"notes":[]}]}',
+        indexOffset: 0);
+    expect(r.tuning, isNull);
+    final explicit = parsePage(
+        '{"tuning":null,"measures":[{"index":0,"confidence":0.9,"notes":[]}]}',
+        indexOffset: 0);
+    expect(explicit.tuning, isNull);
+  });
+
+  test('tuning 字段：长度非 6 或坏音名 → null（一个字段废不掉整页）', () {
+    final short = parsePage(
+        '{"tuning":["E2","A2","D3","G3","B3"],'
+        '"measures":[{"index":0,"confidence":0.9,"notes":[]}]}',
+        indexOffset: 0);
+    expect(short.tuning, isNull);
+    final badNote = parsePage(
+        '{"tuning":["E2","A2","D3","X9","B3","E4"],'
+        '"measures":[{"index":0,"confidence":0.9,"notes":[]}]}',
+        indexOffset: 0);
+    expect(badNote.tuning, isNull);
+    final measures = parsePage(
+        '{"tuning":["E2","A2","D3","X9","B3","E4"],'
+        '"measures":[{"index":0,"confidence":0.9,"notes":'
+        '[{"beat":0,"duration":1,"string":1,"fret":3,"technique":null}]}]}',
+        indexOffset: 0);
+    expect(measures.measures.single.failed, isFalse, reason: '坏调弦不废整页');
+  });
+
   test('剥 Markdown 围栏', () {
     final r = parsePage('```json\n{"measures":[{"index":0,"confidence":0.8,'
         '"notes":[]}]}\n```', indexOffset: 0);

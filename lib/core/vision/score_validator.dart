@@ -1,18 +1,26 @@
 import 'dart:convert';
 
+import '../music/note.dart';
 import '../score/score_ir.dart';
 
 const _techniques = {'h', 'p', 's', 'b', 'x', 'H'};
 
 class PageParseResult {
   const PageParseResult(
-      {required this.measures, required this.failedCount, this.capo = 0});
+      {required this.measures,
+      required this.failedCount,
+      this.capo = 0,
+      this.tuning});
   final List<MeasureIr> measures;
   final int failedCount; // 本页被判 failed 的小节数
 
   /// 谱面标注的变调夹品数（模型从谱面文字读出；0 = 无标注）。
   /// 坏值（非 num/越界）按 0，不让一个字段废掉整页。
   final int capo;
+
+  /// 谱面标注的调弦（6 个音名，6弦→1弦低到高；null = 谱面无标注）。
+  /// 坏值（长度非 6 / 坏音名）按 null，一个字段废不掉整页（对齐 capo 容错）。
+  final List<String>? tuning;
 }
 
 /// 视觉模型响应 → IR 小节（零成本机器防线，设计文档 §5.2）。
@@ -26,6 +34,7 @@ PageParseResult parsePage(String raw, {required int indexOffset}) {
   }
   final capoRaw = data['capo'];
   final capo = capoRaw is num ? capoRaw.toInt().clamp(0, 7) : 0;
+  final tuning = _tuning(data['tuning']);
   final measures = <MeasureIr>[];
   var failed = 0;
   final rawMeasures = data['measures'] as List;
@@ -35,7 +44,21 @@ PageParseResult parsePage(String raw, {required int indexOffset}) {
     measures.add(m);
   }
   return PageParseResult(
-      measures: measures, failedCount: failed, capo: capo);
+      measures: measures, failedCount: failed, capo: capo, tuning: tuning);
+}
+
+/// 调弦字段校验：List 且长度 6、每个元素 Note.parse 成功才采信；
+/// 用 Note.parse(s).name 规范大小写（'e2' → 'E2'）。
+/// 缺省/长度不符/坏音名 → null（谱面无标注语义，兜底参数接管）。
+List<String>? _tuning(dynamic raw) {
+  if (raw is! List || raw.length != 6) return null;
+  try {
+    return [for (final s in raw) Note.parse(s as String).name];
+  } on ArgumentError {
+    return null;
+  } on TypeError {
+    return null; // 元素非 String（模型输出数字等）同样不采信
+  }
 }
 
 String _extractJson(String raw) {

@@ -47,12 +47,14 @@ const cfg = VisionModelConfig(
 Future<ScoreIr> run(ScriptedClient c, List<File> pages,
         {bool Function()? cancelled, void Function(int, int)? onPage,
         int capo = 0,
-        void Function(int)? onCapo}) async =>
+        void Function(int)? onCapo,
+        void Function(List<String>)? onTuning}) async =>
     ScoreRecognizer(c).recognize(
     title: 'T', pagePngs: pages, cfg: cfg, tempo: 90,
     tuning: const ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'],
     timeSignature: '4/4', capo: capo,
-    cancelled: cancelled, onPage: onPage, onCapoRecognized: onCapo);
+    cancelled: cancelled, onPage: onPage, onCapoRecognized: onCapo,
+    onTuningRecognized: onTuning);
 
 void main() {
   late Directory tmp;
@@ -95,6 +97,47 @@ void main() {
         capo: 3, onCapo: recognized.add);
     expect(ir.capo, 3); // 谱面无标注 → 手动值兜底
     expect(recognized, isEmpty);
+  });
+
+  test('tuning 谱面标注覆盖兜底标准调弦，回调触发', () async {
+    final client = ScriptedClient([
+      '{"tuning":["D2","A2","D3","G3","A3","D4"],'
+          '"measures":[{"index":0,"confidence":0.9,"notes":'
+          '[{"beat":0,"duration":1,"string":1,"fret":3,"technique":null}]}]}',
+    ]);
+    final recognized = <List<String>>[];
+    final ir = await run(client, [tmpPage(tmp, 'a.png')],
+        onTuning: recognized.add);
+    expect(ir.tuning, const ['D2', 'A2', 'D3', 'G3', 'A3', 'D4']);
+    expect(recognized, hasLength(1));
+    expect(recognized.single, const ['D2', 'A2', 'D3', 'G3', 'A3', 'D4']);
+  });
+
+  test('tuning 无标注保留兜底标准调弦，回调不触发', () async {
+    final client = ScriptedClient([
+      '{"measures":[{"index":0,"confidence":0.9,"notes":'
+          '[{"beat":0,"duration":1,"string":1,"fret":3,"technique":null}]}]}',
+    ]);
+    final recognized = <List<String>>[];
+    final ir = await run(client, [tmpPage(tmp, 'a.png')],
+        onTuning: recognized.add);
+    expect(ir.tuning, const ['E2', 'A2', 'D3', 'G3', 'B3', 'E4']);
+    expect(recognized, isEmpty);
+  });
+
+  test('tuning 多页不一致取第一个识别到的（全曲统一调弦，首见即采信）', () async {
+    final client = ScriptedClient([
+      '{"tuning":["D2","A2","D3","G3","A3","D4"],'
+          '"measures":[{"index":0,"confidence":0.9,"notes":[]}]}',
+      '{"tuning":["E2","A2","D3","G3","B3","E4"],'
+          '"measures":[{"index":0,"confidence":0.9,"notes":[]}]}',
+    ]);
+    final recognized = <List<String>>[];
+    final ir = await run(client,
+        [tmpPage(tmp, 'a.png'), tmpPage(tmp, 'b.png')],
+        onTuning: recognized.add);
+    expect(ir.tuning, const ['D2', 'A2', 'D3', 'G3', 'A3', 'D4']);
+    expect(recognized, hasLength(1), reason: '只回调一次，不随页反复提示');
   });
 
   test('单页异常重试 1 次后成功', () async {
