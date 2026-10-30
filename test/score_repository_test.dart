@@ -111,4 +111,17 @@ void main() {
             images: [File('${d.path}/notes.txt')..writeAsBytesSync([1])]),
         throwsArgumentError);
   });
+
+  test('导入图片失败：行与文件双清理', () async {
+    // 合法扩展名 + 坏字节：normalizeImage 抛 FormatException 触发清理路径。
+    final good = File('${tmp.path}/good.jpg')..writeAsBytesSync(tinyPng());
+    final bad = File('${tmp.path}/bad.jpg')..writeAsBytesSync([1, 2, 3]);
+    await expectLater(
+        repo.importImages(title: '坏', images: [good, bad]),
+        throwsFormatException);
+    // 行已删：库里查无此曲谱。
+    expect(await repo.listScores(), isEmpty);
+    // 文件已清：base 下无任何曲谱目录。
+    expect(tmp.listSync().whereType<Directory>(), isEmpty);
+  });
 }

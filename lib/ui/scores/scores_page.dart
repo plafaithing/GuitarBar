@@ -102,11 +102,10 @@ class _ScoresPageState extends State<ScoresPage> {
     if (repo == null || _busy) return;
     final dirPath = await getDirectoryPath();
     if (dirPath == null || !mounted) return;
-    const imageExts = ['png', 'jpg', 'jpeg', 'webp'];
     final images = Directory(dirPath)
         .listSync()
         .whereType<File>()
-        .where((f) => imageExts
+        .where((f) => ScoreRepository.imageExts
             .contains(p.extension(f.path).replaceFirst('.', '').toLowerCase()))
         .toList()
       ..sort((a, b) => ScoreRepository.naturalCompare(

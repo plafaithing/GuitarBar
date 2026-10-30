@@ -17,6 +17,9 @@ class ScoreRepository {
   final ScoreFiles files;
   final PdfRasterizer rasterizer;
 
+  /// 支持的曲谱图片扩展名（小写、无点）：repository 校验与 UI 文件夹过滤共用。
+  static const imageExts = ['png', 'jpg', 'jpeg', 'webp'];
+
   // createdAt 默认值是秒级 CURRENT_TIMESTAMP，同秒导入需按 id 倒序稳定裁决。
   Future<List<Score>> listScores() =>
       (_db.select(_db.scores)
@@ -30,7 +33,6 @@ class ScoreRepository {
   Future<Score> importScore({required String title, required File source}) async {
     final ext = p.extension(source.path).replaceFirst('.', '').toLowerCase();
     final isPdf = ext == 'pdf';
-    const imageExts = ['png', 'jpg', 'jpeg', 'webp'];
     if (!isPdf && !imageExts.contains(ext)) {
       throw ArgumentError('不支持的曲谱文件类型: .$ext');
     }
@@ -73,9 +75,20 @@ class ScoreRepository {
         while (j < b.length && _isDigit(b[j])) {
           j++;
         }
-        final na = int.parse(a.substring(si, i));
-        final nb = int.parse(b.substring(sj, j));
-        final c = na.compareTo(nb);
+        // 不用 int.parse：20+ 位数字段会抛 FormatException 且调用方（UI 排序）
+        // 无兜底。等价方案：去前导零后先比长度、再逐位字典序——无前导零的
+        // 等长数字串字典序即数值序；去零时至少保留一位（'007'=='7'）。
+        String strip(String s, int from, int to) {
+          var start = from;
+          while (start < to - 1 && s.codeUnitAt(start) == 0x30) {
+            start++;
+          }
+          return s.substring(start, to);
+        }
+        final ra = strip(a, si, i), rb = strip(b, sj, j);
+        final c = ra.length != rb.length
+            ? ra.length.compareTo(rb.length)
+            : ra.compareTo(rb);
         if (c != 0) return c;
       } else {
         final c = ca.toLowerCase().compareTo(cb.toLowerCase());
@@ -93,9 +106,9 @@ class ScoreRepository {
   /// 导入图片文件夹：多张图片按给定顺序合成一份多页曲谱。
   /// 页图即规范化源（原谱留在用户文件夹，不拷贝）；sourcePath 留空标记
   /// "无单一原谱文件"。
+  /// 规模边界：全部页图先入内存再落盘，50+ 张大文件夹留待边规范化边写。
   Future<Score> importImages(
       {required String title, required List<File> images}) async {
-    const imageExts = ['png', 'jpg', 'jpeg', 'webp'];
     if (images.isEmpty) {
       throw ArgumentError('图片列表为空');
     }
