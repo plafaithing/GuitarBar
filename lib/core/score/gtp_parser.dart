@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -193,7 +194,8 @@ ScoreIr parseGpif(String xml) {
         throw FormatException('gpif 引用了不存在的 voice id $voiceId');
       }
       // 多声部各自从 0 拍起计时（第二声部与主声部同时开始）。
-      _readVoice(voice, beatsById, rhythmsById, notesById, tieOrigins, notes);
+      _readVoice(
+          voice, beatsById, rhythmsById, notesById, tieOrigins, capo, notes);
     }
     measures.add(
         MeasureIr(index: measureIndex++, confidence: 0, failed: false, notes: notes));
@@ -262,12 +264,16 @@ double _readTempo(XmlDocument doc) {
 /// 一次攻击，槽位时位照常推进；空拍是显式空引用（或 "-1" 占位），不是静音。
 /// 仅 `<Tie destination="true">` 续接端不出音，其时值累加到 tie 起点
 /// （alphaTab untilTieEnd 语义），起点按 (弦,品) 由 [tieOrigins] 定位。
+/// [capo]：gpif fret 是绝对品格（从枕位起算，alphaTab 发声不加 capo），
+/// 输出统一为夹后品（fret - capo，与 AI 通道谱面印刷数字同语义，
+/// 发声由 renderScore 统一 +capo 恰补一次）；tie 配对仍用 gpif 原始品。
 void _readVoice(
   XmlElement voice,
   Map<String, XmlElement> beatsById,
   Map<String, XmlElement> rhythmsById,
   Map<String, XmlElement> notesById,
   Map<(int, int), (List<NoteIr>, int)> tieOrigins,
+  int capo,
   List<NoteIr> out,
 ) {
   var beatPos = 0.0;
@@ -301,7 +307,10 @@ void _readVoice(
         // GuitarBar IR string 1 = 最细高音弦，两体系"1"相反，故 IR = 6 - gp。
         // 原公式 gp+1 造成谱面上下镜像 + 播放弦音高 E2↔E4 反转。
         string: 6 - gpString,
-        fret: fret,
+        // 品语义换算（capo 统一，2026-10-31 走查）：gpif fret 绝对品 →
+        // 夹后品（fret - capo）。负数 = 按弦在夹位之前（capo 后该段弦不
+        // 参与振动，记谱罕见/不可弹），clamp 0 按夹后空弦处理。
+        fret: math.max(0, fret - capo),
         technique: _technique(noteEl),
       ));
       tieOrigins[(gpString, fret)] = (out, out.length - 1);

@@ -254,6 +254,34 @@ void main() {
       expect(parseGpif(xml).capo, 2);
     });
 
+    test('capo 品语义：gpif 绝对品 → IR 夹后品；低于夹位 clamp 0', () {
+      // gpif fret 是绝对品格（alphaTab 发声不加 capo）；IR 统一夹后品：
+      // 9-2=7；1-2=-1 → 按弦在夹位之前（不可弹），clamp 0 按夹后空弦。
+      const xml = '''<GPIF>
+        <MasterTrack><Tracks>0</Tracks></MasterTrack>
+        <Tracks><Track id="0"><Name><![CDATA[T]]></Name>
+          <Properties><Property name="CapoFret"><Fret>2</Fret></Property></Properties>
+        </Track></Tracks>
+        <MasterBars><MasterBar><Time>4/4</Time><Bars>0</Bars></MasterBar></MasterBars>
+        <Bars><Bar id="0"><Voices>0</Voices></Bar></Bars>
+        <Voices><Voice id="0"><Beats>0 1</Beats></Voice></Voices>
+        <Beats>
+          <Beat id="0"><Rhythm ref="0"/><Notes>0</Notes></Beat>
+          <Beat id="1"><Rhythm ref="0"/><Notes>1</Notes></Beat>
+        </Beats>
+        <Notes>
+          <Note id="0"><Properties><Property name="String"><String>3</String></Property><Property name="Fret"><Fret>9</Fret></Property></Properties></Note>
+          <Note id="1"><Properties><Property name="String"><String>4</String></Property><Property name="Fret"><Fret>1</Fret></Property></Properties></Note>
+        </Notes>
+        <Rhythms><Rhythm id="0"><NoteValue>Quarter</NoteValue></Rhythm></Rhythms>
+      </GPIF>''';
+      final ir = parseGpif(xml);
+      expect(ir.capo, 2);
+      final notes = ir.tracks.single.measures.single.notes;
+      expect(notes[0].fret, 7); // 绝对 9 → 夹后 7
+      expect(notes[1].fret, 0); // 绝对 1 低于夹位 2 → clamp 0
+    });
+
     test('每个引用独立出音；origin 标记且前槽同弦同品仍出音', () {
       // b0: note0 (3,0)；b1: note1 (3,0) 带 origin="true"（前槽同弦同品 → 仍出音，
       // 不得按续接吞掉）；b1 重复引用 = 独立攻击（gp6 逐引用复用）。

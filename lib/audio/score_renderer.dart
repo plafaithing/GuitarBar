@@ -58,8 +58,11 @@ RenderedScore renderScore(ScoreIr ir,
           final n = group[k];
           renderedAny = true;
           // 弦号映射：NoteIr.string 1=最细高音弦，tuning 低→高 index 0=6弦，
-          // 故 string 1 → tunings[5]（E4）。发声 pitch = tuning + capo +
-          // fret（capo 是演奏时参数不回写音符，设计 §7.3）。
+          // 故 string 1 → tunings[5]（E4）。
+          // 品语义（2026-10-31 走查统一）：IR.fret 两通道统一为夹后品
+          // （gpx 导入已 fret-capo 转换；AI 通道谱面印刷数字本就按夹后计），
+          // 发声 = tuning + capo + 夹后品——capo 恰补一次：双补（gpx 旧病，
+          // 音高多 capo 度）或零补（夹后曲整体低 capo 度）都不对。
           final freq = Note(tunings[6 - n.string].midi + ir.capo + n.fret)
               .frequency(a4);
           final pcm = pluck(freq,

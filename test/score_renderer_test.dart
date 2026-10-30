@@ -60,9 +60,12 @@ void main() {
     expect(r.seconds, closeTo(6.2, 0.1));
   });
 
-  test('capo：capo 2 + fret 0 与 capo 0 + fret 2 发音一致', () {
-    // sounding pitch = tuning + capo + fret（设计 §7.3）：
-    // 两者 midi 相同 → 同频率，pluck 固定种子 → PCM 逐样本一致。
+  test('capo 语义统一（IR.fret=夹后品）：同音 + capo 恰补一次', () {
+    // 2026-10-31 走查：IR.fret 两通道统一为夹后品（gpx 导入 fret-capo 转换；
+    // AI 通道谱面印刷数字本就按夹后计），发声 = tuning + capo + 夹后品。
+    // 两条断言合起来唯一锁定该公式：
+    // - 同音断言杀双补（若再加一次 capo：capo2/fret0 → tuning+4 ≠ tuning+2）；
+    // - 异音断言杀零补（若不加 capo：capo2/fret0 与 capo0/fret0 同为空弦音）。
     final a = renderScore(irWith([
       const NoteIr(beat: 0, duration: 1, string: 1, fret: 0,
           technique: null, confidence: null),
@@ -71,8 +74,15 @@ void main() {
       const NoteIr(beat: 0, duration: 1, string: 1, fret: 2,
           technique: null, confidence: null),
     ]));
+    // 夹后语义：capo 2 夹后空弦 ≡ 无夹按 2 品（同 midi → 同频同波形）。
     expect(a.pcm, b.pcm);
     expect(a.pcm.any((v) => v != 0), isTrue);
+    final c = renderScore(irWith([
+      const NoteIr(beat: 0, duration: 1, string: 1, fret: 0,
+          technique: null, confidence: null),
+    ]));
+    // capo 参与发声：夹 2 品后的空弦音 ≠ 真空弦音。
+    expect(a.pcm, isNot(c.pcm));
   });
 
   test('failed 小节跳过渲染（违约夹具：failed 且带 notes）', () {

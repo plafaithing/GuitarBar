@@ -41,9 +41,10 @@ class ScoreRecognizer {
     final failedPages = <int>[];
     var offset = 0;
 
-    // capo 语义（2026-10-30 用户反馈定案）：谱面标注优先——模型从谱面读出的
-    // 品数覆盖手动参数；手动值仅作无标注时的兜底。多页取最大（标注通常一致，
-    // 取最大可吸收个别页漏识）。
+    // capo 语义（2026-10-31 走查统一）：恒由模型从谱面标注识别，手动兜底
+    // 参数已从 UI 移除（调用方传 0）——手动值进 prompt 会诱导模型回显叠加
+    // （押品数双补）。参数保留作 IR capo 字段的兜底位。多页取最大（标注
+    // 通常一致，取最大可吸收个别页漏识）。
     var effectiveCapo = capo;
     var capoFromSheet = false;
 
@@ -54,7 +55,7 @@ class ScoreRecognizer {
       // readAsBytes 在 try 外：本地文件错误不属模型调用失败，不走重试/占位，直接上抛。
       final png = await pagePngs[i].readAsBytes();
       final prompt = '$tabSystemPrompt\n\n'
-          '${tabUserPrompt(tuning: tuning, timeSignature: timeSignature, capo: capo, page: i, total: pagePngs.length)}';
+          '${tabUserPrompt(tuning: tuning, timeSignature: timeSignature, page: i, total: pagePngs.length)}';
 
       Future<String> once() => _client.complete(
           baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model,

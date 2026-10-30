@@ -1,6 +1,7 @@
 /// 识谱提示（设计文档 §5.2/§5.4）：v1 硬指标 = 音符+节奏；技法 best-effort。
-/// 2026-10-29 真实谱面校准：技法枚举含 H（自然泛音，谱面角括号 <12> 记号）；
-/// prompt 携带调弦与变调夹（用户谱全带自定义调弦+capo）。
+/// 2026-10-29 真实谱面校准：技法枚举含 H（自然泛音，谱面角括号 <12> 记号）。
+/// 2026-10-31 走查（capo 语义统一）：不再传用户手填 capo 值——手动值会诱导
+/// 模型回显叠加（押品数双补）；变调夹只由模型从谱面标注识别并进 capo 字段。
 const tabSystemPrompt =
     '你是乐谱数字化引擎。输入是一页吉他谱图片（六线谱、标准五线谱+六线谱双轨、'
     '或数字谱风格的六线谱）。把本页全部音乐内容转为 JSON，严格遵守：'
@@ -24,11 +25,10 @@ const tabSystemPrompt =
 String tabUserPrompt({
   required List<String> tuning,
   required String timeSignature,
-  required int capo,
   required int page,
   required int total,
 }) =>
     '调弦（从6弦到1弦，低到高）：${tuning.join(', ')}。'
-    '变调夹：第 $capo 品（capo=0 表示无；谱面品位数字按夹后计）。'
+    '变调夹：从谱面标注识别并在 JSON capo 字段报告，无标注填 0。'
     '拍号：$timeSignature（每小节 ${timeSignature.split('/')[0]} 拍）。'
     '本页为第 ${page + 1}/$total 页。';

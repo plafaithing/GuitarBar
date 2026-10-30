@@ -205,7 +205,9 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
             tempo: params.$1,
             tuning: params.$2,
             timeSignature: params.$3,
-            capo: params.$4,
+            // capo 恒 0（2026-10-31 走查）：不再手动输入——手动值进 prompt
+            // 会诱导模型回显叠加；识别值只从谱面标注来（SnackBar 展示）。
+            capo: 0,
             onPage: (done, total) {
               if (mounted) setState(() => _progress = '第 ${done + 1}/$total 页');
             },
@@ -299,14 +301,14 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     if (mounted) setState(() {});
   }
 
-  /// 四元组（曲速/调弦/拍号/变调夹）。调弦 v1 固定标准调弦，
-  /// 自定义调弦联动留 M5+（谱面调弦以导入源为准的方案届时评估）。
-  Future<(double, List<String>, String, int)?> _askRecognizeParams() =>
-      showDialog<(double, List<String>, String, int)>(
+  /// 三元组（曲速/调弦/拍号）。变调夹不手动输入（2026-10-31 走查反馈：
+  /// "要不就识别直接显示，要不就不要我输"）——识别值由模型从谱面标注
+  /// 报告；调弦 v1 固定标准调弦，自定义调弦联动留 M5+。
+  Future<(double, List<String>, String)?> _askRecognizeParams() =>
+      showDialog<(double, List<String>, String)>(
         context: context,
         builder: (ctx) {
           double tempo = 90;
-          int capo = 0;
           const tuning = ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'];
           return StatefulBuilder(
             builder: (ctx, setLocal) => AlertDialog(
@@ -327,25 +329,7 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                       style: const TextStyle(
                           fontFeatures: [FontFeature.tabularFigures()])),
                 ]),
-                Row(children: [
-                  const Text('变调夹兜底'),
-                  IconButton(
-                      onPressed: () =>
-                          setLocal(() => capo = (capo - 1).clamp(0, 7)),
-                      icon: const Icon(Icons.remove_circle_outline)),
-                  Text('$capo',
-                      style: const TextStyle(
-                          fontFeatures: [FontFeature.tabularFigures()])),
-                  IconButton(
-                      onPressed: () =>
-                          setLocal(() => capo = (capo + 1).clamp(0, 7)),
-                      icon: const Icon(Icons.add_circle_outline)),
-                ]),
                 Text('调弦：标准 E-A-D-G-B-E（v1 固定）',
-                    style: TextStyle(
-                        fontSize: 12, color: ctx.palette.muted)),
-                const SizedBox(height: 4),
-                Text('变调夹优先按谱面标注自动识别，此处仅兜底',
                     style: TextStyle(
                         fontSize: 12, color: ctx.palette.muted)),
               ]),
@@ -355,7 +339,7 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                     child: const Text('取消')),
                 FilledButton(
                     onPressed: () =>
-                        Navigator.pop(ctx, (tempo, tuning, '4/4', capo)),
+                        Navigator.pop(ctx, (tempo, tuning, '4/4')),
                     child: const Text('开始识谱')),
               ],
             ),
