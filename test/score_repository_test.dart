@@ -1,7 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:drift/drift.dart' hide isNull;
+import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:guitarbar/core/score/pdf_raster.dart';
@@ -123,5 +124,41 @@ void main() {
     expect(await repo.listScores(), isEmpty);
     // 文件已清：base 下无任何曲谱目录。
     expect(tmp.listSync().whereType<Directory>(), isEmpty);
+  });
+
+  test('导入坏 gpx：FormatException 触发行与文件双清理', () async {
+    // 非法字节存成 .gpx：parseGpxBytes 抛 FormatException 触发既有 catch
+    // 双清理（坏 gpx 也走 saveSourceImage 归档，目录须一并清掉）。
+    final f = File('${tmp.path}/bad.gpx')..writeAsBytesSync([1, 2, 3, 4]);
+    await expectLater(
+        repo.importScore(title: '坏', source: f), throwsFormatException);
+    // 行已删：库里查无此曲谱。
+    expect(await repo.listScores(), isEmpty);
+    // 文件已清：base 下无任何曲谱目录。
+    expect(tmp.listSync().whereType<Directory>(), isEmpty);
+  });
+
+  test('导入真实 gpx：解析入库已识谱 + 原文件归档', () async {
+    // 好路径用真实文件守卫（与 gtp_parser_test 同款 skip 模式）：
+    // 合成最小 gpx fixture 太重，确定性解析已由 gtp_parser_test 覆盖。
+    final src = File(r'D:\Guitar\月下之恋.gpx');
+    if (!src.existsSync()) {
+      markTestSkipped('真实 gpx 文件不存在');
+      return;
+    }
+    final row = await repo.importScore(title: '月下の恋', source: src);
+    expect(row.sourceType, 'gtp');
+    // 解析即入库：irJson 非空且含 62 小节（与 gtp_parser_test 对账一致）。
+    expect(row.irJson, isNotNull);
+    final ir = jsonDecode(row.irJson!) as Map<String, dynamic>;
+    expect(((ir['tracks'] as List).first as Map<String, dynamic>)['measures'],
+        hasLength(62));
+    expect(row.tuning, 'E2,A2,D3,G3,B3,E4');
+    // 无页图：GTP 行不生成 page-*.png。
+    expect(repo.files.pagePngs(row.id), isEmpty);
+    // 原文件归档：scores/<id>/source.gpx 落盘。
+    final archived = repo.files.sourceFile(row.id, row.sourcePath);
+    expect(archived.existsSync(), isTrue);
+    expect(row.sourcePath, endsWith('source.gpx'));
   });
 }

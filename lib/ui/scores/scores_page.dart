@@ -74,7 +74,8 @@ class _ScoresPageState extends State<ScoresPage> {
     if (repo == null || _busy) return;
     final file = await openFile(acceptedTypeGroups: [
       const XTypeGroup(
-          label: '乐谱文件', extensions: ['pdf', 'png', 'jpg', 'jpeg', 'webp']),
+          label: '乐谱文件（GTP/PDF/图片）',
+          extensions: ['gpx', 'pdf', 'png', 'jpg', 'jpeg', 'webp']),
     ]);
     if (file == null || !mounted) return;
     final name = file.name.replaceFirst(RegExp(r'\.[^.]+$'), '');
@@ -228,10 +229,11 @@ class _ScoresPageState extends State<ScoresPage> {
                                 fontSize: 16,
                                 fontWeight: FontWeight.w500,
                                 color: p.ink)),
+                        // GTP 导入无页图概念（谱面即数据），徽标不显示页数段。
                         subtitle: Text(
-                            '${s.sourceType == 'pdf' ? 'PDF' : '图片'} · '
-                            '${_pageCounts?[s.id] ?? 0} 页 · '
-                            '${s.irJson == null ? '未识谱' : '已识谱'}',
+                            '${s.sourceType == 'pdf' ? 'PDF' : s.sourceType == 'gtp' ? 'GTP' : '图片'}'
+                            '${s.sourceType == 'gtp' ? '' : ' · ${_pageCounts?[s.id] ?? 0} 页'}'
+                            ' · ${s.irJson == null ? '未识谱' : '已识谱'}',
                             style: TextStyle(fontSize: 12, color: p.muted)),
                         // 行尾菜单（2026-10-30 用户反馈补删除）：
                         // 桌面惯例三点菜单，删除带确认防误删整份谱。

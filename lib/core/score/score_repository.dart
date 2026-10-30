@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
@@ -5,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../data/database.dart';
+import 'gtp_parser.dart';
 import 'image_normalize.dart';
 import 'pdf_raster.dart';
 import 'score_files.dart';
@@ -46,14 +48,29 @@ class ScoreRepository {
   Future<Score> importScore({required String title, required File source}) async {
     final ext = p.extension(source.path).replaceFirst('.', '').toLowerCase();
     final isPdf = ext == 'pdf';
-    if (!isPdf && !imageExts.contains(ext)) {
+    final isGtp = ext == 'gpx';
+    if (!isPdf && !isGtp && !imageExts.contains(ext)) {
       throw ArgumentError('不支持的曲谱文件类型: .$ext');
     }
     final id = await _db.into(_db.scores).insert(ScoresCompanion.insert(
-        title: title, sourceType: isPdf ? 'pdf' : 'image', sourcePath: ''));
+        title: title,
+        sourceType: isPdf ? 'pdf' : isGtp ? 'gtp' : 'image',
+        sourcePath: ''));
     try {
       final saved = await files.saveSourceImage(id, source, ext);
       final rel = 'scores/$id/${p.basename(saved.path)}';
+      if (isGtp) {
+        // GTP 精确导入（设计 §13.3）：解析即入库，confidence 全 null
+        // （确定性数据无 AI 置信度）；无页图（谱面就是数据本身）。
+        final ir = parseGpxBytes(await source.readAsBytes());
+        await (_db.update(_db.scores)..where((s) => s.id.equals(id))).write(
+            ScoresCompanion(
+                irJson: Value(jsonEncode(ir.toJson())),
+                tuning: Value(ir.tuning.join(',')),
+                sourcePath: Value(rel)));
+        return await (_db.select(_db.scores)..where((s) => s.id.equals(id)))
+            .getSingle();
+      }
       await (_db.update(_db.scores)..where((s) => s.id.equals(id)))
           .write(ScoresCompanion(sourcePath: Value(rel)));
       if (isPdf) {
