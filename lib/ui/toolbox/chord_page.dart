@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../audio/sound_engine.dart';
 import '../../audio/synth.dart';
+import '../../core/music/chord_catalog.dart';
 import '../../core/music/chord_parser.dart';
 import '../../core/music/fingering.dart';
 import '../../state/tuning_state.dart';
@@ -27,6 +28,12 @@ class _ChordPageState extends State<ChordPage> {
   late TuningState _tuning;
   String? _lastTuningId;
 
+  // 浏览模式（设计 §13.1）：分类 → 子类 → 根音三层点选，选根音即出指法。
+  bool _browseMode = false;
+  String _categoryName = '三和弦';
+  String _suffix = ''; // 当前子类后缀（默认大三）。
+  int? _rootPc; // 选定根音；null = 未选。
+
   @override
   void initState() {
     super.initState();
@@ -44,7 +51,12 @@ class _ChordPageState extends State<ChordPage> {
   void _onTuningChanged() {
     if (_tuning.current.id == _lastTuningId) return;
     _lastTuningId = _tuning.current.id;
-    _search();
+    // 浏览模式有选定根音走目录查询；输入模式查过（有结果或错误）才重查。
+    if (_browseMode && _rootPc != null) {
+      _query(browseChord(_rootPc!, _suffix));
+    } else if (_voicings.isNotEmpty || _error != null) {
+      _search();
+    }
   }
 
   /// 调弦入口：弹出预设选择浮层（与调音器共享全局预设语义）。
@@ -85,18 +97,56 @@ class _ChordPageState extends State<ChordPage> {
     super.dispose();
   }
 
-  void _search() {
+  /// 公共查询：ParsedChord → 指法（输入解析与浏览枚举两条路汇于此）。
+  void _query(ParsedChord c) {
     final state = context.read<TuningState>();
+    _voicings = FingeringGenerator(state.current.strings)
+        .generate(rootPc: c.rootPc, toneClasses: chordToneClasses(c));
+    _error = null;
+    setState(() {});
+  }
+
+  void _search() {
     try {
-      final c = parseChord(_input.text);
-      _voicings = FingeringGenerator(state.current.strings)
-          .generate(rootPc: c.rootPc, toneClasses: chordToneClasses(c));
-      _error = null;
+      // 输入模式专属：字符串解析失败要回显错误；浏览路径 suffix 来自
+      // 目录恒有效，不经此 try/catch。
+      _query(parseChord(_input.text));
     } on ArgumentError catch (e) {
       _voicings = [];
       _error = e.message?.toString() ?? '解析失败';
+      setState(() {});
     }
-    setState(() {});
+  }
+
+  // ---- 浏览模式（设计 §13.1）：三层 chips 点选，选定即查询 ----
+
+  void _browseSelect(int rootPc) {
+    setState(() => _rootPc = rootPc);
+    // 名字写回输入框，切回输入模式沿用。
+    _input.text = chordDisplayName(rootPc, _suffix);
+    _query(browseChord(rootPc, _suffix));
+  }
+
+  void _selectSubtype(String suffix) {
+    setState(() => _suffix = suffix);
+    final root = _rootPc;
+    if (root != null) {
+      _input.text = chordDisplayName(root, suffix);
+      _query(browseChord(root, suffix));
+    }
+  }
+
+  void _selectCategory(String name) {
+    setState(() {
+      _categoryName = name;
+      // 换大类默认选其第一个子类。
+      _suffix = chordCategories
+          .firstWhere((c) => c.name == name)
+          .subtypes
+          .first
+          .suffix;
+    });
+    if (_rootPc != null) _selectSubtype(_suffix);
   }
 
   Future<void> _play(ChordVoicing v, PlayMode mode) async {
@@ -110,6 +160,51 @@ class _ChordPageState extends State<ChordPage> {
         .then((_) => SoundEngine.I.disposeSource(src)));
   }
 
+  /// 浏览面板：分类 / 子类 / 根音三行 Wrap，点选即查（结果区复用输入模式）。
+  List<Widget> _browsePanel(GuitarBarPalette p) {
+    final category =
+        chordCategories.firstWhere((c) => c.name == _categoryName);
+    return [
+      Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            for (final cat in chordCategories)
+              ChoiceChip(
+                  label: Text(cat.name),
+                  selected: cat.name == _categoryName,
+                  onSelected: (_) => _selectCategory(cat.name)),
+          ]),
+      const SizedBox(height: 8),
+      Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            for (final sub in category.subtypes)
+              ChoiceChip(
+                  label: Text(sub.name),
+                  selected: sub.suffix == _suffix,
+                  onSelected: (_) => _selectSubtype(sub.suffix)),
+          ]),
+      const SizedBox(height: 8),
+      Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: [
+            for (final e in rootNames.entries)
+              ChoiceChip(
+                  label: Text(e.key),
+                  selected: _rootPc == e.value,
+                  onSelected: (_) => _browseSelect(e.value)),
+          ]),
+      const SizedBox(height: 4),
+      if (_rootPc == null)
+        Text('选定根音后显示指法',
+            style: TextStyle(fontSize: 12, color: p.muted)),
+      const SizedBox(height: 8),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -119,19 +214,18 @@ class _ChordPageState extends State<ChordPage> {
       body: Padding(
       padding: const EdgeInsets.all(24),
       child: Column(children: [
+        // 模式切换：输入（乐手）/ 浏览（新手查阅，设计 §13.1）。
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(value: false, label: Text('输入')),
+            ButtonSegment(value: true, label: Text('浏览')),
+          ],
+          selected: {_browseMode},
+          onSelectionChanged: (s) => setState(() => _browseMode = s.first),
+        ),
+        const SizedBox(height: 12),
+        // 调弦入口：两模式共用，tap 打开预设浮层（全局预设，与调音器共享）。
         Row(children: [
-          Expanded(
-            child: TextField(
-              controller: _input,
-              decoration: const InputDecoration(
-                  labelText: '输入和弦名（如 Am7、F#m7b5）'),
-              onSubmitted: (_) => _search(),
-            ),
-          ),
-          const SizedBox(width: 8),
-          FilledButton(onPressed: _search, child: const Text('查询')),
-          const SizedBox(width: 8),
-          // 调弦入口：tap 打开预设浮层（全局预设，与调音器共享）。
           IconButton(
               onPressed: _showTuningSheet,
               tooltip: '切换调弦预设',
@@ -139,6 +233,20 @@ class _ChordPageState extends State<ChordPage> {
           Text(state.current.name,
               style: TextStyle(fontSize: 12, color: palette.muted)),
         ]),
+        if (!_browseMode)
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _input,
+                decoration: const InputDecoration(
+                    labelText: '输入和弦名（如 Am7、F#m7b5）'),
+                onSubmitted: (_) => _search(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton(onPressed: _search, child: const Text('查询')),
+          ]),
+        if (_browseMode) ..._browsePanel(palette),
         if (_error != null)
           Padding(
               padding: const EdgeInsets.all(8),
