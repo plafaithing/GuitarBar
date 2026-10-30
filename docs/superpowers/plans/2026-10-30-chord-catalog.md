@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 和弦库加"浏览"模式——分类树（三和弦/七和弦/挂留/加音扩展 → 17 种子类）× 根音 12 选枚举点选，直接出指法（复用一期生成引擎与试听）。
+**Goal:** 和弦库加"浏览"模式——分类树（三和弦/七和弦/挂留/加音扩展 → 16 种子类）× 根音 12 选枚举点选，直接出指法（复用一期生成引擎与试听）。
 
-**Architecture:** 数据层 ChordCatalog（纯常量，从 chord_parser 的 `_qualities` 17 种组织为分类树，枚举直接产 ParsedChord 不经字符串解析）；UI 层 chord_page 加输入/浏览双模式（SegmentedButton 切换），浏览选定即查询复用既有 `_search` 结果区。设计依据：设计文档 §13.1（2026-10-30 用户提出并确认）。
+**Architecture:** 数据层 ChordCatalog（纯常量，从 chord_parser 的 `_qualities` 16 种组织为分类树，枚举直接产 ParsedChord 不经字符串解析）；UI 层 chord_page 加输入/浏览双模式（SegmentedButton 切换），浏览选定即查询复用既有 `_search` 结果区。设计依据：设计文档 §13.1（2026-10-30 用户提出并确认）。
 
 **Tech Stack:** 纯 Flutter/Dart，零新依赖；复用 `parseChord`/`chordToneClasses`/`FingeringGenerator`/`_ChordPainter`/四试听/调弦联动。
 
 **关键复用接口（实现者必读）:**
 
-- `parseChord('Am7') → ParsedChord(rootPc, intervals)`（`lib/core/music/chord_parser.dart`——`_qualities` 表含全部 17 种）
+- `parseChord('Am7') → ParsedChord(rootPc, intervals)`（`lib/core/music/chord_parser.dart`——`_qualities` 表含全部 16 种）
 - `chordToneClasses(c) → Set<int>`、`FingeringGenerator(strings).generate(rootPc:, toneClasses:) → List<ChordVoicing>`（`lib/core/music/fingering.dart`）
 - `lib/ui/toolbox/chord_page.dart`：`_search()`（解析→生成→setState）、`_voicings` 结果区（指法图卡片+四试听按钮）、`_onTuningChanged` 调弦联动自动重查、`_input` 控制器
 - 设计语言：context.palette.*、ChoiceChip、SegmentedButton（外观三选已有先例 profile_page）、Wrap
@@ -31,7 +31,7 @@ import 'package:guitarbar/core/music/chord_catalog.dart';
 import 'package:guitarbar/core/music/chord_parser.dart';
 
 void main() {
-  test('四大分类覆盖全部 17 种子类、无重复', () {
+  test('四大分类覆盖全部 16 种子类、无重复', () {
     final all = <String>{};
     for (final cat in chordCategories) {
       for (final sub in cat.subtypes) {
@@ -40,7 +40,7 @@ void main() {
         all.add(sub.suffix);
       }
     }
-    expect(all.length, 17);
+    expect(all.length, 16);
     expect(chordCategories.length, 4);
     expect(chordCategories.map((c) => c.name),
         ['三和弦', '七和弦', '挂留和弦', '加音与扩展']);
@@ -169,7 +169,7 @@ Expected: PASS；全量 + analyze。
 
 ```
 git add lib/core/music/chord_catalog.dart test/chord_catalog_test.dart
-git commit -m "feat: 和弦分类浏览目录（17 种四分类交叉验证，13.1）"
+git commit -m "feat: 和弦分类浏览目录（16 种四分类交叉验证，13.1）"
 ```
 
 ---
