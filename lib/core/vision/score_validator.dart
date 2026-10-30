@@ -68,25 +68,27 @@ MeasureIr _measure(dynamic raw, int index) {
 
 NoteIr? _note(dynamic raw) {
   if (raw is! Map<String, dynamic>) return null;
-  final beat = (raw['beat'] as num?)?.toDouble();
-  final duration = (raw['duration'] as num?)?.toDouble();
-  final string = (raw['string'] as num?)?.toInt();
-  final fret = (raw['fret'] as num?)?.toInt();
+  final beat = raw['beat'];
+  final duration = raw['duration'];
+  final string = raw['string'];
+  final fret = raw['fret'];
   final technique = raw['technique'];
-  if (beat == null || beat < 0) return null;
-  if (duration == null || duration <= 0) return null;
-  if (string == null || string < 1 || string > 6) return null;
-  if (fret == null || fret < 0 || fret > 24) return null;
+  // 防御式（同 confidenceOf 的 is num 模式）：非 num（如字符串化数字 "0"）
+  // 按该音不合法处理 → 整小节 failed，不抛 TypeError 被编排层吞成整页失败。
+  if (beat is! num || beat < 0) return null;
+  if (duration is! num || duration <= 0) return null;
+  if (string is! num || string < 1 || string > 6) return null;
+  if (fret is! num || fret < 0 || fret > 24) return null;
   if (technique != null &&
       (technique is! String || !_techniques.contains(technique))) {
     return null;
   }
   final conf = raw['confidence'];
   return NoteIr(
-      beat: beat,
-      duration: duration,
-      string: string,
-      fret: fret,
+      beat: beat.toDouble(),
+      duration: duration.toDouble(),
+      string: string.toInt(),
+      fret: fret.toInt(),
       technique: technique as String?,
       confidence: conf is num ? conf.toDouble().clamp(0.0, 1.0).toDouble() : null);
 }

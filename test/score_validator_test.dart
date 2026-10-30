@@ -53,6 +53,16 @@ void main() {
     expect(r.measures.single.failed, isTrue);
   });
 
+  test('字符串化数字（"beat":"0"）→ 该音不合法整小节 failed，不抛 TypeError', () {
+    final r = parsePage(
+        '{"measures":[{"index":0,"confidence":0.9,"notes":'
+        '[{"beat":"0","duration":1,"string":1,"fret":3,"technique":null}]}]}',
+        indexOffset: 0);
+    expect(r.measures.single.failed, isTrue);
+    expect(r.measures.single.notes, isEmpty);
+    expect(r.failedCount, 1);
+  });
+
   test('confidence 缺省 0.5，越界夹到 [0,1]', () {
     final r = parsePage(
         '{"measures":[{"notes":[{"beat":0,"duration":1,"string":1,'
