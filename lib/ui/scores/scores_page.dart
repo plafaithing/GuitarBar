@@ -170,7 +170,7 @@ class _ScoresPageState extends State<ScoresPage> {
               menuChildren: [
                 MenuItemButton(
                     onPressed: repo == null || _busy ? null : _importFile,
-                    child: const Text('导入文件（图片/PDF）')),
+                    child: const Text('导入文件（gpx/PDF/图片）')),
                 MenuItemButton(
                     onPressed: repo == null || _busy ? null : _importFolder,
                     child: const Text('导入文件夹（多图合成多页）')),
