@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../audio/score_player.dart';
+import '../../audio/score_renderer.dart';
+import '../../audio/sound_engine.dart';
 import '../../core/score/score_ir.dart';
 import '../../core/score/score_repository.dart';
 import '../../core/vision/score_recognizer.dart';
@@ -12,6 +16,7 @@ import '../../core/vision/vision_model.dart';
 import '../../data/database.dart';
 import '../theme.dart';
 import 'note_edit_sheet.dart';
+import 'play_bar.dart';
 import 'source_viewer.dart';
 import 'tab_view.dart';
 
@@ -36,11 +41,19 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
   String? _progress; // '第 X/N 页'
   bool _cancelRequested = false;
   bool _writing = false; // 回写串行守卫：防连点两次，第二次基于旧 _ir 覆盖第一次编辑
+  ScorePlayer? _player;
+  bool _rendering = false; // 渲染忙碌（0.3-1s 真实谱）
 
   @override
   void initState() {
     super.initState();
     _initRepo();
+  }
+
+  @override
+  void dispose() {
+    unawaited(_player?.stop());
+    super.dispose();
   }
 
   Future<void> _initRepo() async {
@@ -210,6 +223,41 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     }
   }
 
+  /// 播放/停止切换：播 = 渲染整曲 PCM → loadPcm → play。
+  Future<void> _togglePlay() async {
+    final ir = _ir;
+    if (ir == null || _rendering) return;
+    final player = _player ??= ScorePlayer(SoundEngine.I);
+    if (player.playing) {
+      await player.stop();
+      if (mounted) setState(() {});
+      return;
+    }
+    setState(() => _rendering = true);
+    try {
+      // 渲染在主 isolate 直接做（0.3-1s）：忙碌态由 _rendering 承担；
+      // M5 变速重渲染时再 Isolate.run（Task 15 备案）。
+      final rendered = renderScore(ir);
+      if (rendered.seconds == 0) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('这份谱还没有可演奏的音符')));
+        }
+        return;
+      }
+      await player.load(rendered);
+      await player.start();
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('播放失败：$e')));
+      }
+    } finally {
+      if (mounted) setState(() => _rendering = false);
+    }
+  }
+
   /// 四元组（曲速/调弦/拍号/变调夹）。调弦 v1 固定标准调弦，
   /// 自定义调弦联动留 M5+（谱面调弦以导入源为准的方案届时评估）。
   Future<(double, List<String>, String, int)?> _askRecognizeParams() =>
@@ -308,11 +356,21 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                   ? Center(
                       child: Text('尚未识谱——点右上角 AI 识谱',
                           style: TextStyle(color: p.muted)))
-                  : TabView(
-                      ir: _ir!,
-                      // 识别中禁编辑：回调置空，避免编辑写入被识谱回写覆盖。
-                      onNoteTap: _recognizing ? null : _editNote,
-                      onFailedTap: _recognizing ? null : _clearMeasure,
+                  : ListenableBuilder(
+                      // 播放头 50ms 刷新（position notifier 驱动）。
+                      listenable:
+                          _player?.positionSeconds ?? ValueNotifier(0.0),
+                      builder: (ctx, _) => TabView(
+                          ir: _ir!,
+                          // v1 播放头 tempo 来源：_ir.tempo（M5 变速后改用渲染时值）。
+                          playheadBeat: _player?.playing == true
+                              ? (_player!.positionSeconds.value /
+                                  (60.0 / _ir!.tempo))
+                              : null,
+                          // 识别中禁编辑：回调置空，避免编辑写入被识谱回写覆盖。
+                          onNoteTap: _recognizing ? null : _editNote,
+                          onFailedTap: _recognizing ? null : _clearMeasure,
+                        ),
                     );
               if (wide) {
                 // 宽屏：谱面 + 原图并排（识谱对照的原位工作流，设计 §8）。
@@ -338,6 +396,19 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                 ]),
               );
             }),
+      // 播放控制条：已识谱才显示；进度由 position notifier 50ms 驱动，
+      // playing 态经 setState 切换（_togglePlay）。
+      bottomSheet: (_ir == null)
+          ? null
+          : ListenableBuilder(
+              listenable: _player?.positionSeconds ?? ValueNotifier(0.0),
+              builder: (ctx, _) => PlayBar(
+                  playing: _player?.playing ?? false,
+                  positionSeconds: _player?.positionSeconds.value ?? 0,
+                  durationSeconds: _player?.durationSeconds ?? 0,
+                  busy: _rendering,
+                  onToggle: _togglePlay),
+            ),
     );
   }
 }
