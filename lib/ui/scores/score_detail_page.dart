@@ -301,14 +301,43 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
       ),
       body: (_pages == null)
           ? const Center(child: CircularProgressIndicator())
-          : (_ir != null)
-              ? TabView(
-                  ir: _ir!,
-                  // 识别中禁编辑：回调置空，避免编辑写入被识谱回写覆盖。
-                  onNoteTap: _recognizing ? null : _editNote,
-                  onFailedTap: _recognizing ? null : _clearMeasure,
-                )
-              : SourceViewer(pagePngs: _pages!),
+          : LayoutBuilder(builder: (ctx, box) {
+              final wide = box.maxWidth >= 900; // 与 root.dart 宽窄阈值一致
+              final viewer = SourceViewer(pagePngs: _pages!);
+              final tabArea = (_ir == null)
+                  ? Center(
+                      child: Text('尚未识谱——点右上角 AI 识谱',
+                          style: TextStyle(color: p.muted)))
+                  : TabView(
+                      ir: _ir!,
+                      // 识别中禁编辑：回调置空，避免编辑写入被识谱回写覆盖。
+                      onNoteTap: _recognizing ? null : _editNote,
+                      onFailedTap: _recognizing ? null : _clearMeasure,
+                    );
+              if (wide) {
+                // 宽屏：谱面 + 原图并排（识谱对照的原位工作流，设计 §8）。
+                return Row(children: [
+                  Expanded(child: tabArea),
+                  SizedBox(width: 360, child: viewer),
+                ]);
+              }
+              // 窄屏：未识谱只出查看器；已识谱 Tab 切换（谱面/原图）。
+              if (_ir == null) return viewer;
+              return DefaultTabController(
+                length: 2,
+                child: Column(children: [
+                  TabBar(
+                    tabs: const [Tab(text: '谱面'), Tab(text: '原图')],
+                    labelColor: p.ink,
+                    unselectedLabelColor: p.muted,
+                    indicatorColor: p.dataHue,
+                  ),
+                  Expanded(
+                    child: TabBarView(children: [tabArea, viewer]),
+                  ),
+                ]),
+              );
+            }),
     );
   }
 }
