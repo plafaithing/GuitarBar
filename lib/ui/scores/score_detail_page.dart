@@ -41,18 +41,25 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
   String? _progress; // '第 X/N 页'
   bool _cancelRequested = false;
   bool _writing = false; // 回写串行守卫：防连点两次，第二次基于旧 _ir 覆盖第一次编辑
-  ScorePlayer? _player;
+  late final ScorePlayer _player;
   bool _rendering = false; // 渲染忙碌（0.3-1s 真实谱）
 
   @override
   void initState() {
     super.initState();
+    // 构造不触引擎（loadPcm/play 才会），initState 初始化安全。
+    _player = ScorePlayer(SoundEngine.I, onEnded: _onPlayEnded);
     _initRepo();
+  }
+
+  /// 曲终自动停止：tick 已同步清理播放态，这里只刷新按钮/进度。
+  void _onPlayEnded() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    unawaited(_player?.stop());
+    unawaited(_player.stop());
     super.dispose();
   }
 
@@ -92,6 +99,12 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     }
     final pages = repo.files.pagePngs(widget.scoreId);
     if (mounted) {
+      // 播放中 _ir 被替换（编辑/重识谱回写）：立即停播——旧 PCM 对不上
+      // 新 IR 的拍位（tempo 可能变）。stop 同步段先清句柄，下方 setState
+      // 时按钮已回到播放态。
+      if (_player.playing && !identical(_ir, ir)) {
+        unawaited(_player.stop());
+      }
       setState(() {
         _row = row;
         _ir = ir;
@@ -227,13 +240,15 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
   Future<void> _togglePlay() async {
     final ir = _ir;
     if (ir == null || _rendering) return;
-    final player = _player ??= ScorePlayer(SoundEngine.I);
-    if (player.playing) {
-      await player.stop();
+    if (_player.playing) {
+      await _player.stop();
       if (mounted) setState(() {});
       return;
     }
     setState(() => _rendering = true);
+    // 同步渲染会阻塞主 isolate（0.3-1s）：先让 busy 帧（spinner）上屏
+    // 再渲染，否则 spinner 与播放态同帧出现、忙碌反馈形同虚设。
+    await WidgetsBinding.instance.endOfFrame;
     try {
       // 渲染在主 isolate 直接做（0.3-1s）：忙碌态由 _rendering 承担；
       // M5 变速重渲染时再 Isolate.run（Task 15 备案）。
@@ -245,8 +260,8 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
         }
         return;
       }
-      await player.load(rendered);
-      await player.start();
+      await _player.load(rendered);
+      await _player.start();
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
@@ -358,13 +373,12 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                           style: TextStyle(color: p.muted)))
                   : ListenableBuilder(
                       // 播放头 50ms 刷新（position notifier 驱动）。
-                      listenable:
-                          _player?.positionSeconds ?? ValueNotifier(0.0),
+                      listenable: _player.positionSeconds,
                       builder: (ctx, _) => TabView(
                           ir: _ir!,
                           // v1 播放头 tempo 来源：_ir.tempo（M5 变速后改用渲染时值）。
-                          playheadBeat: _player?.playing == true
-                              ? (_player!.positionSeconds.value /
+                          playheadBeat: _player.playing
+                              ? (_player.positionSeconds.value /
                                   (60.0 / _ir!.tempo))
                               : null,
                           // 识别中禁编辑：回调置空，避免编辑写入被识谱回写覆盖。
@@ -401,11 +415,11 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
       bottomSheet: (_ir == null)
           ? null
           : ListenableBuilder(
-              listenable: _player?.positionSeconds ?? ValueNotifier(0.0),
+              listenable: _player.positionSeconds,
               builder: (ctx, _) => PlayBar(
-                  playing: _player?.playing ?? false,
-                  positionSeconds: _player?.positionSeconds.value ?? 0,
-                  durationSeconds: _player?.durationSeconds ?? 0,
+                  playing: _player.playing,
+                  positionSeconds: _player.positionSeconds.value,
+                  durationSeconds: _player.durationSeconds,
                   busy: _rendering,
                   onToggle: _togglePlay),
             ),

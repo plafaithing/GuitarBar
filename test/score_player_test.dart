@@ -1,0 +1,138 @@
+import 'dart:typed_data';
+
+import 'package:flutter_soloud/flutter_soloud.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:guitarbar/audio/score_player.dart';
+import 'package:guitarbar/audio/score_renderer.dart';
+import 'package:guitarbar/audio/sound_engine.dart';
+
+/// SoundEngine 假体：统计调用并可控状态，不触 soloud。
+/// implements 门面需覆写全部 8 个成员。
+class FakeEngine implements SoundEngine {
+  FakeEngine({this.validHandle = true});
+
+  /// getIsValidVoiceHandle 返回值（false = 句柄失效 = 曲终）。
+  bool validHandle;
+
+  /// position 返回值（tick 轮询读取）。
+  Duration positionValue = Duration.zero;
+
+  /// loadPcm 抛错开关（验证失败不留脏时长）。
+  bool throwOnLoad = false;
+
+  int loadCount = 0,
+      playCount = 0,
+      stopCount = 0,
+      disposeCount = 0;
+
+  @override
+  Future<AudioSource> loadPcm(Int16List samples) async {
+    loadCount++;
+    if (throwOnLoad) throw Exception('load failed');
+    // AudioSource/SoundHash 构造为 @internal：测试替身必须构造，
+    // 局部 ignore（仅本文件）。
+    // ignore: invalid_use_of_internal_member
+    return AudioSource(const SoundHash(1));
+  }
+
+  @override
+  SoundHandle play(AudioSource src, {bool loop = false}) {
+    playCount++;
+    return const SoundHandle(1);
+  }
+
+  @override
+  Duration position(SoundHandle h) => positionValue;
+
+  @override
+  Future<void> stop(SoundHandle h) async => stopCount++;
+
+  @override
+  Future<void> disposeSource(AudioSource src) async => disposeCount++;
+
+  @override
+  bool getIsValidVoiceHandle(SoundHandle h) => validHandle;
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<void> shutdown() async {}
+}
+
+RenderedScore _score(double seconds) => RenderedScore(
+    pcm: Int16List(0), sampleRate: 44100, seconds: seconds);
+
+void main() {
+  test('load→start→tick 推进 position，超长 clamp 到时长', () async {
+    final engine = FakeEngine();
+    final player = ScorePlayer(engine);
+    await player.load(_score(12.5));
+    expect(player.durationSeconds, 12.5);
+    expect(engine.loadCount, 1);
+    await player.start();
+    expect(player.playing, isTrue);
+    expect(engine.playCount, 1);
+    engine.positionValue = const Duration(seconds: 5);
+    player.onTick();
+    expect(player.positionSeconds.value, 5.0);
+    engine.positionValue = const Duration(seconds: 30);
+    player.onTick();
+    expect(player.positionSeconds.value, 12.5);
+    await player.stop(); // 取消 Timer（测试收尾无 pending timer）
+  });
+
+  test('stop：playing 归假、position 归零、句柄被释放；可重新 load 再播（置序回归）',
+      () async {
+    final engine = FakeEngine();
+    final player = ScorePlayer(engine);
+    await player.load(_score(10));
+    await player.start();
+    await player.stop();
+    expect(player.playing, isFalse);
+    expect(player.positionSeconds.value, 0);
+    expect(engine.stopCount, 1);
+    expect(engine.disposeCount, 1);
+    // stop 后再 load→start 成功 = 置序正确（句柄/音源真的被清了）。
+    await player.load(_score(8));
+    await player.start();
+    expect(player.playing, isTrue);
+    expect(engine.playCount, 2);
+    await player.stop();
+    expect(engine.stopCount, 2);
+  });
+
+  test('曲终：tick 检测句柄失效 → 自动停止并触发 onEnded', () async {
+    final engine = FakeEngine(validHandle: false);
+    var ended = 0;
+    final player = ScorePlayer(engine, onEnded: () => ended++);
+    await player.load(_score(10));
+    await player.start();
+    player.onTick();
+    expect(ended, 1);
+    expect(player.playing, isFalse);
+    expect(player.positionSeconds.value, 0);
+    expect(engine.stopCount, 1);
+    // 曲终释放是 fire-and-forget（timer 回调不走 await 链）：
+    // disposeSource 在下一个 microtask，排空事件循环后再断言。
+    await pumpEventQueue();
+    expect(engine.disposeCount, 1);
+  });
+
+  test('loadPcm 失败：durationSeconds 不被污染', () async {
+    final engine = FakeEngine()..throwOnLoad = true;
+    final player = ScorePlayer(engine);
+    await expectLater(player.load(_score(10)), throwsA(anything));
+    expect(player.durationSeconds, 0);
+    expect(player.playing, isFalse);
+  });
+
+  test('未播放时 stop/tick 是空操作', () async {
+    final engine = FakeEngine();
+    final player = ScorePlayer(engine);
+    await player.stop();
+    player.onTick();
+    expect(engine.stopCount, 0);
+    expect(player.playing, isFalse);
+  });
+}

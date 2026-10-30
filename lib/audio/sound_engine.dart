@@ -52,4 +52,10 @@ class SoundEngine {
       SoLoud.instance.deinit();
     } catch (_) {}
   }
+
+  /// 曲终检测：句柄是否仍挂在活动声音上（自然播完即失效）。
+  /// 冻结接口的追加（门面第 8 个成员，先例见 shutdown）：ScorePlayer 的
+  /// 50ms tick 用它区分"播放中/曲终"，替代位置启发式。
+  bool getIsValidVoiceHandle(SoundHandle h) =>
+      SoLoud.instance.getIsValidVoiceHandle(h);
 }
