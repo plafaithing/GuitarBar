@@ -8,7 +8,8 @@ import 'package:guitarbar/core/vision/vision_client.dart';
 import 'package:guitarbar/core/vision/vision_model.dart';
 
 /// VisionClient 测试替身：按脚本逐次返回（String 成功 / VisionException 失败）。
-/// Task 7 审查修复后 VisionClient 接口含 timeout 与 close，须一并实现。
+/// Task 7 审查修复后 VisionClient 接口含 timeout 与 close，须一并实现；
+/// 2026-10-30 走查修复又加了 maxTokens，同理由 implements 契约带出。
 class ScriptedClient implements VisionClient {
   ScriptedClient(this.responses);
   final List<Object> responses; // String 成功 / VisionException 失败
@@ -16,6 +17,9 @@ class ScriptedClient implements VisionClient {
 
   @override
   Duration get timeout => Duration.zero;
+
+  @override
+  int get maxTokens => 1024;
 
   @override
   void close() {}

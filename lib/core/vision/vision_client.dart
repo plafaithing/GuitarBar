@@ -15,12 +15,18 @@ class VisionException implements Exception {
 
 class VisionClient {
   VisionClient({http.Client? client,
-      this.timeout = const Duration(seconds: 120)})
+      this.timeout = const Duration(seconds: 120),
+      this.maxTokens = 1024})
       : _client = client ?? http.Client();
   final http.Client _client;
 
   /// 单次请求超时；http 包无默认超时，须显式兜底。
   final Duration timeout;
+
+  /// 输出 token 上限。默认 1024 取各端点最小公分母（2026-10-30 用户实测：
+  /// glm-4v-flash 上限即 1024，传 8192 直接 HTTP 400 code 1210）。
+  /// 整页识谱输出大——换用上限更高的模型（如 glm-4.5v）时可在构造处调大。
+  final int maxTokens;
 
   /// 请求结束后由调用方视需要释放底层连接。
   void close() => _client.close();
@@ -47,7 +53,7 @@ class VisionClient {
     final body = jsonEncode({
       'model': model,
       'temperature': 0.1,
-      'max_tokens': 8192,
+      'max_tokens': maxTokens,
       'messages': [
         {
           'role': 'user',
