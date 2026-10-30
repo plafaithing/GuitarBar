@@ -3301,7 +3301,12 @@ git commit -m "feat: IR→PCM 渲染器（采样精确时间线/闷音/混音限
 
 - [ ] **Step 1: 实现 ScorePlayer** `lib/audio/score_player.dart`
 
-> **执行修正备案（2026-10-30 Task 15 质量审查）**：计划原稿的 `stop()` 有置序 bug——
+> **执行修正备案（2026-10-30 Task 16 质量审查）**：M4 修复三项（忙碌帧 endOfFrame
+> 上屏/曲终 voice 失效自动停+onEnded/换谱 identical 停播守卫）落地后，M5+ 遗留
+> 两项渲染优化备案：① 播放头从 CustomPaint 拆独立 overlay painter（曲谱本体
+> 不随 50ms tick 全量重绘，收益大于 TextPainter 缓存）② TextPainter 按字符串
+> 缓存（约 15 行）；另重播缓存 `identical(_ir)` → RenderedScore（约 6 行，
+> 重播延迟 ~1s → ~50ms）。M5 变速重渲染一并做。
 > `_handle = null` 先于 `final h = _handle`，h 恒 null → stop/disposeSource 永不执行
 > （点停止声音不停）。实现时先取 `final h = _handle;` 再置空。另：真实谱渲染
 > 实测 ~0.3-1s（60 小节 JIT 953ms）非"毫秒级"——M4 播放时用 _progress 式忙碌
