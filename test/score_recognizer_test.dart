@@ -37,11 +37,13 @@ const cfg = VisionModelConfig(
     id: 'a', name: 'x', baseUrl: 'https://u', apiKey: 'k',
     model: 'm', active: true);
 
-Future<ScoreIr> run(ScriptedClient c, List<File> pages) async =>
+Future<ScoreIr> run(ScriptedClient c, List<File> pages,
+        {bool Function()? cancelled, void Function(int, int)? onPage}) async =>
     ScoreRecognizer(c).recognize(
     title: 'T', pagePngs: pages, cfg: cfg, tempo: 90,
     tuning: const ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'],
-    timeSignature: '4/4', capo: 0);
+    timeSignature: '4/4', capo: 0,
+    cancelled: cancelled, onPage: onPage);
 
 void main() {
   late Directory tmp;
@@ -100,5 +102,33 @@ void main() {
     expect(ir.tracks.single.measures.length, 1);
     expect(ir.tracks.single.measures.single.index, 0); // 不被空页污染
     expect(ir.tracks.single.measures.single.failed, isFalse);
+  });
+
+  test('取消：循环顶部抛 RecognizeCancelled，未发起任何调用', () async {
+    final client = ScriptedClient([
+      '{"measures":[{"index":0,"confidence":0.9,"notes":[]}]}',
+      '{"measures":[{"index":0,"confidence":0.9,"notes":[]}]}',
+    ]);
+    await expectLater(
+        run(client, [tmpPage(tmp, 'a.png'), tmpPage(tmp, 'b.png')],
+            cancelled: () => true),
+        throwsA(isA<RecognizeCancelled>()));
+    expect(client.callCount, 0);
+  });
+
+  test('交叉路径：首次空→重试异常→catch 内翻案成功；onPage 处理前回调', () async {
+    final client = ScriptedClient([
+      '{"measures":[]}',
+      const VisionException('boom'),
+      '{"measures":[{"index":0,"confidence":0.9,"notes":[]}]}',
+    ]);
+    final onPageCalls = <(int, int)>[];
+    final ir = await run(client, [tmpPage(tmp, 'a.png')],
+        onPage: (done, total) => onPageCalls.add((done, total)));
+    expect(ir.tracks.single.measures.length, 1);
+    expect(ir.tracks.single.measures.single.failed, isFalse);
+    expect(ir.unrecognizedPages, isEmpty);
+    expect(client.callCount, 3);
+    expect(onPageCalls, [(0, 1)]); // 单页场景：处理该页前回调一次
   });
 }
