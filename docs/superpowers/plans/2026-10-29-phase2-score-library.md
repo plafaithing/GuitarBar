@@ -3288,6 +3288,12 @@ git commit -m "feat: IR→PCM 渲染器（采样精确时间线/闷音/混音限
 
 ### Task 16: ScorePlayer 与播放控制条（M4 收口）
 
+> **执行备忘（2026-10-30 Task 12 质量审查）**：接线播放头时一并做两项渲染性能
+> 优化并实测帧耗时——① paint 内用行循环列号直算 x（消掉 measureX/locate 链路
+> 每小节每音符重复重算 rowsFor，约 3 行）② TextPainter 按字符串缓存跨帧复用
+> （约 15 行，identical(ir) 已是失效开关）。M3 静态场景两项均可接受，播放 50ms
+> 刷新时叠加才成问题。另：Task 14 图例行与 TabView 内置图例二选一。
+
 **Files:**
 - Create: `lib/audio/score_player.dart`
 - Create: `lib/ui/scores/play_bar.dart`

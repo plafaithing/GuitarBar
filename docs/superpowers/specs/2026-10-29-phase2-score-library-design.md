@@ -210,7 +210,8 @@ buffer 区间参数、多轨就是分 buffer 混音。代价是改谱后需重�
   配置存 settings 表（JSON），key 本地存储不上传
 
 设计语言沿用 achromatic-ledger：谱面线/字用 ink/muted，音符与置信度标记用 dataHue，
-低置信度标记为 dataHue 低透明度，播放头用 positive 绿。
+低置信度标记为 dataHue 低透明度，播放头用 positive 绿。（2026-10-30 口径确认：
+六线谱**品数字用 ink**——数字是内容主体而非数据标记；dataHue 仅上低置信度底）
 
 ## 9. 错误处理
 
