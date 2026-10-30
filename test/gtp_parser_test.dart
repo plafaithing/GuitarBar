@@ -220,18 +220,18 @@ void _expectCommonIr(ScoreIr ir) {
   expect(m0.notes, hasLength(2));
   expect(m0.notes[0].beat, 0.0);
   expect(m0.notes[0].duration, 1.0);
-  expect(m0.notes[0].string, 6); // gp 5 → IR 6（低音 E 弦）
+  expect(m0.notes[0].string, 1); // gp 5 → IR 1（高音 E 弦）
   expect(m0.notes[0].fret, 0);
   expect(m0.notes[0].technique, isNull);
   expect(m0.notes[1].beat, 1.0);
   expect(m0.notes[1].duration, 1.0);
-  expect(m0.notes[1].string, 5); // gp 4 → IR 5
+  expect(m0.notes[1].string, 2); // gp 4 → IR 2
   expect(m0.notes[1].fret, 2);
   expect(m0.notes[1].technique, 'H'); // HarmonicType
   final m1 = ir.tracks.single.measures[1];
   expect(m1.index, 1);
   expect(m1.notes, hasLength(1));
-  expect(m1.notes.single.string, 4); // gp 3 → IR 4
+  expect(m1.notes.single.string, 3); // gp 3 → IR 3
   expect(m1.notes.single.fret, 0);
   // GTP 导入无 AI 置信度
   expect(m0.notes[0].confidence, isNull);
@@ -241,7 +241,7 @@ void _expectCommonIr(ScoreIr ir) {
 
 void main() {
   group('parseGpif（gpif XML 层）', () {
-    test('扁平 schema → IR（弦号 IR=gp+1、tempo/调弦/拍号/小节）', () {
+    test('扁平 schema → IR（弦号 IR=6-gp、tempo/调弦/拍号/小节）', () {
       _expectCommonIr(parseGpif(_gpifXml));
     });
 
@@ -276,7 +276,7 @@ void main() {
       final notes = parseGpif(xml).tracks.single.measures.single.notes;
       expect(notes, hasLength(3)); // 逐引用独立攻击
       expect([for (final n in notes) n.beat], [0.0, 1.0, 2.0]);
-      expect(notes[1].string, 4); // gp 3 → IR 4
+      expect(notes[1].string, 3); // gp 3 → IR 3
       expect(notes[1].fret, 0);
     });
 
@@ -420,27 +420,27 @@ void main() {
       expect(m0.notes, hasLength(6));
       expect(m0.notes[0].beat, 0.0);
       expect(m0.notes[0].duration, 0.5);
-      expect(m0.notes[0].string, 5); // gp 4 fret 9
+      expect(m0.notes[0].string, 2); // gp 4 → IR 2（B 弦）fret 9
       expect(m0.notes[0].fret, 9);
       expect(m0.notes[1].beat, 0.5);
       expect(m0.notes[1].duration, 0.5);
-      expect(m0.notes[1].string, 6); // gp 5 fret 9
+      expect(m0.notes[1].string, 1); // gp 5 → IR 1（高音 E）fret 9
       expect(m0.notes[1].fret, 9);
       expect(m0.notes[2].beat, 1.0);
       expect(m0.notes[2].duration, 0.5);
-      expect(m0.notes[2].string, 6); // gp 5 fret 9（重复引用 = 独立攻击）
+      expect(m0.notes[2].string, 1); // gp 5 → IR 1（重复引用 = 独立攻击）
       expect(m0.notes[2].fret, 9);
       expect(m0.notes[3].beat, 1.5);
       expect(m0.notes[3].duration, 0.5);
-      expect(m0.notes[3].string, 5); // gp 4 fret 9
+      expect(m0.notes[3].string, 2); // gp 4 → IR 2 fret 9
       expect(m0.notes[3].fret, 9);
       expect(m0.notes[4].beat, 2.0);
       expect(m0.notes[4].duration, 2.0); // 二分音符
-      expect(m0.notes[4].string, 6); // gp 5 fret 9
+      expect(m0.notes[4].string, 1); // gp 5 → IR 1 fret 9
       expect(m0.notes[4].fret, 9);
       expect(m0.notes[5].beat, 0.0);
       expect(m0.notes[5].duration, 4.0);
-      expect(m0.notes[5].string, 3); // gp 2 fret 7（声部 1 全音符）
+      expect(m0.notes[5].string, 4); // gp 2 → IR 4（G 弦）fret 7（声部 1 全音符）
       expect(m0.notes[5].fret, 7);
       var totalNotes = 0;
       for (final m in ir.tracks.single.measures) {

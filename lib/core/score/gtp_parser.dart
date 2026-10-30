@@ -18,7 +18,9 @@ import 'score_ir.dart';
 /// 均为顶层列表，元素间以空格分隔的 id 文本互相引用。gp6 逐引用复用：beat/note
 /// 的每个引用都是独立槽位/攻击（alphaTab 对账：月下之恋 770 引用 − 41 个
 /// destination="true" 续接端 = 729 攻击）；空拍是显式空引用或 "-1" 占位。
-/// 弦号约定：gpif string 0 = 1 弦（最高音），即 IR string = gp + 1（alphaTab 同款）。
+/// 弦号约定：gpif string 0 = 最粗低音弦（6 弦）；alphaTab 的 string 1 同为
+/// 最粗（其 tunings 低→高索引），与 GuitarBar IR（string 1 = 最细）相反，
+/// 故 IR string = 6 - gp（2026-10-31 修正，原 gp+1 造成谱面与音高双镜像）。
 /// v1 只取第一轨（多轨文件其余轨忽略），不做反复（repeat）展开。
 ScoreIr parseGpxBytes(Uint8List bytes) {
   if (bytes.length < 4) throw const FormatException('文件太小');
@@ -294,7 +296,11 @@ void _readVoice(
       out.add(NoteIr(
         beat: beatPos,
         duration: duration,
-        string: gpString + 1, // gp 0 = 1 弦（最高音）
+        // 弦号语义换算（2026-10-31 走查实证修正）：gpif 的 string 0 =
+        // 最粗低音弦（6 弦），alphaTab string 1 = tunings[0] = 最粗——而
+        // GuitarBar IR string 1 = 最细高音弦，两体系"1"相反，故 IR = 6 - gp。
+        // 原公式 gp+1 造成谱面上下镜像 + 播放弦音高 E2↔E4 反转。
+        string: 6 - gpString,
         fret: fret,
         technique: _technique(noteEl),
       ));
