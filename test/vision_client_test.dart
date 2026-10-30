@@ -36,6 +36,31 @@ void main() {
     expect(captured!.headers['Authorization'], 'Bearer sk-test');
     final content = body['messages'][0]['content'] as List;
     expect(content[1]['image_url']['url'], startsWith('data:image/png;base64,'));
+    // 默认不传 thinking（OpenAI 严格端点未知参数会 400）。
+    expect(body.containsKey('thinking'), isFalse);
+  });
+
+  test('disableThinking=true：请求体带 thinking disabled；maxTokens 可调', () async {
+    http.Request? captured;
+    final client = MockClient((req) async {
+      captured = req;
+      return http.Response(
+          jsonEncode({
+            'choices': [
+              {'message': {'content': 'ok'}}
+            ]
+          }),
+          200);
+    });
+    final c = VisionClient(
+        client: client, maxTokens: 8192, disableThinking: true);
+    final out = await c.complete(
+        baseUrl: cfg.baseUrl, apiKey: cfg.apiKey, model: cfg.model,
+        prompt: 'p', png: Uint8List.fromList([1, 2, 3]));
+    expect(out, 'ok');
+    final body = jsonDecode(captured!.body);
+    expect(body['thinking'], {'type': 'disabled'});
+    expect(body['max_tokens'], 8192);
   });
 
   test('HTTP 401 → VisionException', () async {

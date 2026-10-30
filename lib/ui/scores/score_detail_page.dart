@@ -189,8 +189,14 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
             content: Text('未配置识谱模型，请到 个人中心 → 识谱模型 配置')));
         return;
       }
-      // 延迟校准：模型 thinking 分钟级，识谱专用 10 分钟超时（区别于测试连接 15s）。
-      final client = VisionClient(timeout: const Duration(minutes: 10));
+      // 延迟校准：模型分钟级，识谱专用 10 分钟超时 + 8192 输出上限 + 关思考
+      // （区别于测试连接 15s/1024；thinking 模型不关会把预算烧在 reasoning，
+      // content 为空——2026-10-30 探针实证。OpenAI 严格端点用户自配时不传
+      // 此参数，故只在识谱场景绑定智谱系模型约定）。
+      final client = VisionClient(
+          timeout: const Duration(minutes: 10),
+          maxTokens: 8192,
+          disableThinking: true);
       try {
         final ir = await ScoreRecognizer(client).recognize(
             title: row.title,

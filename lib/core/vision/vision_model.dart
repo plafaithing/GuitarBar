@@ -56,12 +56,14 @@ class VisionModelStore {
   final AppDatabase _db;
 
   /// 智谱预置模板（配置页新建时一键预填）。
+  /// 模型默认 glm-4.5v：flash 的 max_tokens 上限 1024 撑不起整页识谱
+  /// （2026-10-30 实测截断；flash 仅供轻量测试连接用）。
   static VisionModelConfig zhipuTemplate() => VisionModelConfig(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       name: '智谱 GLM',
       baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
       apiKey: '',
-      model: 'glm-4v-flash',
+      model: 'glm-4.5v',
       active: false);
 
   Future<List<VisionModelConfig>> load() async {

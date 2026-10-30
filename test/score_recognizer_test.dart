@@ -22,6 +22,9 @@ class ScriptedClient implements VisionClient {
   int get maxTokens => 1024;
 
   @override
+  bool get disableThinking => false;
+
+  @override
   void close() {}
 
   @override
