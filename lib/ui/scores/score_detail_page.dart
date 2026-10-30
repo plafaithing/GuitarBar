@@ -401,23 +401,43 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                   ? Center(
                       child: Text('尚未识谱——点右上角 AI 识谱',
                           style: TextStyle(color: p.muted)))
-                  : ListenableBuilder(
-                      // 播放头 50ms 刷新（position notifier 驱动）。
-                      listenable: _player.positionSeconds,
-                      builder: (ctx, _) => TabView(
-                          ir: _ir!,
-                          // v1 播放头 tempo 来源：_ir.tempo（M5 变速后改用渲染时值）。
-                          playheadBeat: _player.playing
-                              ? (_player.positionSeconds.value /
-                                  (60.0 / _ir!.tempo))
-                              : null,
-                          // 播放时谱面自动滚动跟随（走查反馈 ②）。
-                          followPlayhead: true,
-                          // 识别中禁编辑：回调置空，避免编辑写入被识谱回写覆盖。
-                          onNoteTap: _recognizing ? null : _editNote,
-                          onFailedTap: _recognizing ? null : _clearMeasure,
+                  // 调弦/变调夹信息条 + 谱面（走查反馈：IR 有调弦与 capo
+                  // 数据但 UI 未显示）。宽窄两布局共用此 Column。
+                  : Column(children: [
+                      Padding(
+                        // 左缩进 16 与谱面 TabLayout.leftPad 对齐。
+                        padding: const EdgeInsets.only(left: 16, bottom: 8),
+                        child: Text(
+                            '调弦 ${_ir!.tuning.join(' - ')}'
+                            '${_ir!.capo > 0 ? ' · Capo ${_ir!.capo}品' : ''}'
+                            ' · ${_ir!.tempo.round()} BPM',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: p.muted,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures()
+                                ])),
+                      ),
+                      Expanded(
+                        child: ListenableBuilder(
+                          // 播放头 50ms 刷新（position notifier 驱动）。
+                          listenable: _player.positionSeconds,
+                          builder: (ctx, _) => TabView(
+                              ir: _ir!,
+                              // v1 播放头 tempo 来源：_ir.tempo（M5 变速后改用渲染时值）。
+                              playheadBeat: _player.playing
+                                  ? (_player.positionSeconds.value /
+                                      (60.0 / _ir!.tempo))
+                                  : null,
+                              // 播放时谱面自动滚动跟随（走查反馈 ②）。
+                              followPlayhead: true,
+                              // 识别中禁编辑：回调置空，避免编辑写入被识谱回写覆盖。
+                              onNoteTap: _recognizing ? null : _editNote,
+                              onFailedTap: _recognizing ? null : _clearMeasure,
+                            ),
                         ),
-                    );
+                      ),
+                    ]);
               if (wide) {
                 // 宽屏：谱面 + 原图并排（识谱对照的原位工作流，设计 §8）。
                 return Row(children: [

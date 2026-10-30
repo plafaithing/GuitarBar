@@ -44,19 +44,33 @@ RenderedScore renderScore(ScoreIr ir,
   for (final t in ir.tracks) {
     for (final m in t.measures) {
       if (m.failed) continue;
+      // 同拍多音微 stagger（走查反馈：多弦合弹"有先后顺序，听感差"）：
+      // 同 beat 分组（LinkedHashMap 保持 beat 首现序 = 既有 beat 排序），
+      // 组内按弦号低→高（string 大者先）各错开 10ms——KS 低音弦起振慢，
+      // 数学绝对同时反而听成先后错乱；10ms 错开贴近真实指弹的拨弦错手。
+      final byBeat = <double, List<NoteIr>>{};
       for (final n in m.notes) {
-        renderedAny = true;
-        // 弦号映射：NoteIr.string 1=最细高音弦，tuning 低→高 index 0=6弦，
-        // 故 string 1 → tunings[5]（E4）。发声 pitch = tuning + capo +
-        // fret（capo 是演奏时参数不回写音符，设计 §7.3）。
-        final freq = Note(tunings[6 - n.string].midi + ir.capo + n.fret)
-            .frequency(a4);
-        final pcm = pluck(freq,
-            sampleRate: sampleRate,
-            seconds: n.technique == 'x' ? 0.3 : tailSeconds);
-        final off = ((m.index * beatsPerBar + n.beat) * beatSamples).round();
-        for (var i = 0; i < pcm.length && off + i < total; i++) {
-          mix[off + i] += pcm[i] / 32768.0;
+        byBeat.putIfAbsent(n.beat, () => []).add(n);
+      }
+      for (final group in byBeat.values) {
+        group.sort((a, b) => b.string.compareTo(a.string)); // 低音弦先
+        for (var k = 0; k < group.length; k++) {
+          final n = group[k];
+          renderedAny = true;
+          // 弦号映射：NoteIr.string 1=最细高音弦，tuning 低→高 index 0=6弦，
+          // 故 string 1 → tunings[5]（E4）。发声 pitch = tuning + capo +
+          // fret（capo 是演奏时参数不回写音符，设计 §7.3）。
+          final freq = Note(tunings[6 - n.string].midi + ir.capo + n.fret)
+              .frequency(a4);
+          final pcm = pluck(freq,
+              sampleRate: sampleRate,
+              seconds: n.technique == 'x' ? 0.3 : tailSeconds);
+          final off = ((m.index * beatsPerBar + n.beat) * beatSamples +
+                  k * sampleRate * 0.01)
+              .round();
+          for (var i = 0; i < pcm.length && off + i < total; i++) {
+            mix[off + i] += pcm[i] / 32768.0;
+          }
         }
       }
     }

@@ -123,6 +123,36 @@ void main() {
     expect(r.pcm.any((v) => v.abs() >= 32767), isFalse);
   });
 
+  test('同拍双音微 stagger：低音弦先响，第二音错开 ~441 样本（10ms）', () {
+    // 输入故意高音弦在前：断言排序（string 大者先）而非输入序。
+    final both = renderScore(irWith([
+      const NoteIr(beat: 0, duration: 1, string: 1, fret: 0,
+          technique: null, confidence: null),
+      const NoteIr(beat: 0, duration: 1, string: 6, fret: 0,
+          technique: null, confidence: null),
+    ]));
+    final lo = renderScore(irWith([
+      const NoteIr(beat: 0, duration: 1, string: 6, fret: 0,
+          technique: null, confidence: null),
+    ]));
+    final hi = renderScore(irWith([
+      const NoteIr(beat: 0, duration: 1, string: 1, fret: 0,
+          technique: null, confidence: null),
+    ]));
+    final stagger = (sr * 0.01).round(); // 10ms = 441 样本
+    // 前缀段（0-441）：只有低音弦（k=0 原位），高音弦（k=1）尚未进入。
+    // 无 stagger 时高音 3ms 淡入后（~132 样本）即有能量，此处会失败。
+    for (var i = 132; i < stagger; i++) {
+      expect(both.pcm[i], closeTo(lo.pcm[i], 1), reason: '前缀段 i=$i');
+    }
+    // stagger 之后：合奏 = 低音原样 + 高音右移 441 样本（不削波前提下
+    // 逐样本线性可加；±1 容差覆盖各渲染 int16 取整差）。
+    for (var i = stagger; i < lo.pcm.length; i++) {
+      expect(both.pcm[i], closeTo(lo.pcm[i] + hi.pcm[i - stagger], 1),
+          reason: '叠加段 i=$i');
+    }
+  });
+
   test('弦号映射：string 1（最细）比 string 6（最粗）频率高两个八度', () {
     // KS 拨弦起振含宽带噪声，过零率不随基频变化（实测 E4/E2 各窗口 zc 比均
     // ≈1），故用归一化自相关锁基频周期：E4≈329.6Hz → 周期≈134 样本，
