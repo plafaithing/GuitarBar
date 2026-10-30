@@ -3301,6 +3301,13 @@ git commit -m "feat: IR→PCM 渲染器（采样精确时间线/闷音/混音限
 
 - [ ] **Step 1: 实现 ScorePlayer** `lib/audio/score_player.dart`
 
+> **执行修正备案（2026-10-30 Task 15 质量审查）**：计划原稿的 `stop()` 有置序 bug——
+> `_handle = null` 先于 `final h = _handle`，h 恒 null → stop/disposeSource 永不执行
+> （点停止声音不停）。实现时先取 `final h = _handle;` 再置空。另：真实谱渲染
+> 实测 ~0.3-1s（60 小节 JIT 953ms）非"毫秒级"——M4 播放时用 _progress 式忙碌
+> 反馈，M5 变速重渲染时 `Isolate.run(() => renderScore(ir))`（约 10 行改造）。
+> renderScore 侧多小节偏移/capo/秒哨兵三处 Critical 已由 Task 15 修复提交处理。
+
 ```dart
 import 'dart:async';
 
