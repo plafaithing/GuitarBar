@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as imgpkg;
 import 'package:provider/provider.dart';
 
 import '../../core/vision/vision_client.dart';
@@ -146,20 +147,18 @@ class _VisionModelsPageState extends State<VisionModelsPage> {
   Future<void> _testConnection(VisionModelConfig c) async {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _testing.add(c.id));
-    // 1×1 白 PNG：验证连通与返回格式，不花识别级 token。
-    const png = [
-      137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1,
-      0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137, 0, 0, 0, 13, 73, 68, 65, 84,
-      120, 156, 99, 250, 207, 192, 80, 15, 0, 4, 133, 2, 89, 137, 77, 217, 0,
-      0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130,
-    ];
+    // 8×8 小测试图：运行时生成。测试连接只需验证连通与返回格式，
+    // 不花识别级 token。（2026-10-30 走查修复：原手写 PNG 字节常量实测
+    // 是坏图——API 报 1210 图片解析错误；二进制常量不可手编。）
+    final png = Uint8List.fromList(
+        imgpkg.encodePng(imgpkg.Image(width: 8, height: 8)));
     // 短超时：测连接不该干等识别级 120s。超时由 VisionClient 转
     // VisionException，catch (e) 已覆盖，无需特判 TimeoutException。
     final client = VisionClient(timeout: const Duration(seconds: 15));
     try {
       await client.complete(
           baseUrl: c.baseUrl, apiKey: c.apiKey, model: c.model,
-          prompt: 'ping', png: Uint8List.fromList(png));
+          prompt: 'ping', png: png);
       messenger.showSnackBar(const SnackBar(content: Text('连接成功')));
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('失败：$e')));
