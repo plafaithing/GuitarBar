@@ -15,8 +15,9 @@ import 'score_ir.dart';
 /// - `PK`（GP7）：标准 zip 容器 → score.gpif。
 ///
 /// gpif XML 为扁平 id 引用文档：Tracks/MasterBars/Bars/Voices/Beats/Notes/Rhythms
-/// 均为顶层列表，元素间以空格分隔的 id 文本互相引用；voice/beat 的重复引用表示
-/// 延音槽位（时位照常推进，音符只在首次引用处输出）。
+/// 均为顶层列表，元素间以空格分隔的 id 文本互相引用。gp6 逐引用复用：beat/note
+/// 的每个引用都是独立槽位/攻击（alphaTab 对账：月下之恋 770 引用 − 41 个
+/// destination="true" 续接端 = 729 攻击）；空拍是显式空引用或 "-1" 占位。
 /// 弦号约定：gpif string 0 = 1 弦（最高音），即 IR string = gp + 1（alphaTab 同款）。
 /// v1 只取第一轨（多轨文件其余轨忽略），不做反复（repeat）展开。
 ScoreIr parseGpxBytes(Uint8List bytes) {
@@ -171,7 +172,9 @@ ScoreIr parseGpif(String xml) {
   if (masterBars == null) throw const FormatException('gpif 缺少 MasterBars');
 
   final measures = <MeasureIr>[];
-  final emittedNotes = <String>{};
+  // tie 起点登记：(弦,品) → 最近一次出音位置（列表引用 + 下标），
+  // 续接端的时值跨小节累加回起点。
+  final tieOrigins = <(int, int), (List<NoteIr>, int)>{};
   var measureIndex = 0;
   for (final masterBar in masterBars.findElements('MasterBar')) {
     // masterbar 的 Bars 引用按轨序排列；v1 单轨取第一个有效 id（"-1" 为空轨占位）。
@@ -188,8 +191,7 @@ ScoreIr parseGpif(String xml) {
         throw FormatException('gpif 引用了不存在的 voice id $voiceId');
       }
       // 多声部各自从 0 拍起计时（第二声部与主声部同时开始）。
-      notes.addAll(_readVoice(
-          voice, beatsById, rhythmsById, notesById, emittedNotes));
+      _readVoice(voice, beatsById, rhythmsById, notesById, tieOrigins, notes);
     }
     measures.add(
         MeasureIr(index: measureIndex++, confidence: 0, failed: false, notes: notes));
@@ -254,19 +256,19 @@ double _readTempo(XmlDocument doc) {
   return 90;
 }
 
-/// 单声部 → 音符列表。每个 beat 引用槽位消耗其节奏时值（重复引用 = 延音槽位，
-/// 时位照常推进）；音符在其首次被引用的槽位输出，后续延音重引用跳过。
-/// 裸 `<Tie/>` 在 gpif 里同时标记 tie 起点/续接端：前槽位有同弦同品者按续接处理（跳过）。
-List<NoteIr> _readVoice(
+/// 单声部 → 追加音符到 out。gp6 的 beat/note 引用逐次独立复用：每个引用都是
+/// 一次攻击，槽位时位照常推进；空拍是显式空引用（或 "-1" 占位），不是静音。
+/// 仅 `<Tie destination="true">` 续接端不出音，其时值累加到 tie 起点
+/// （alphaTab untilTieEnd 语义），起点按 (弦,品) 由 [tieOrigins] 定位。
+void _readVoice(
   XmlElement voice,
   Map<String, XmlElement> beatsById,
   Map<String, XmlElement> rhythmsById,
   Map<String, XmlElement> notesById,
-  Set<String> emittedNotes,
+  Map<(int, int), (List<NoteIr>, int)> tieOrigins,
+  List<NoteIr> out,
 ) {
-  final notes = <NoteIr>[];
   var beatPos = 0.0;
-  Set<(int, int)>? prevSlotPitches;
   for (final beatId in _refs(_childText(voice, 'Beats'))) {
     final beat = beatsById[beatId];
     if (beat == null) {
@@ -274,8 +276,6 @@ List<NoteIr> _readVoice(
     }
     final rhythmId = beat.findElements('Rhythm').firstOrNull?.getAttribute('ref');
     final duration = _rhythmBeats(rhythmId == null ? null : rhythmsById[rhythmId]);
-
-    final slotPitches = <(int, int)>{};
     for (final noteId in _refs(_childText(beat, 'Notes'))) {
       final noteEl = notesById[noteId];
       if (noteEl == null) {
@@ -283,25 +283,32 @@ List<NoteIr> _readVoice(
       }
       final (gpString, fret) = _noteProps(noteEl);
       if (gpString == null || fret == null) continue; // 无弦/品信息无法定位（v1 丢弃）
-      slotPitches.add((gpString, fret));
-      if (!emittedNotes.add(noteId)) continue; // 延音重引用：已输出过
-      if (noteEl.findElements('Tie').isNotEmpty &&
-          (prevSlotPitches?.contains((gpString, fret)) ?? false)) {
-        continue; // tie 续接端：不重新出音
+      if (_isTieDestination(noteEl)) {
+        final origin = tieOrigins[(gpString, fret)];
+        if (origin != null) {
+          final (list, idx) = origin;
+          list[idx] = list[idx].copyWith(duration: list[idx].duration + duration);
+        }
+        continue; // tie 续接端：不出音
       }
-      notes.add(NoteIr(
+      out.add(NoteIr(
         beat: beatPos,
         duration: duration,
         string: gpString + 1, // gp 0 = 1 弦（最高音）
         fret: fret,
         technique: _technique(noteEl),
       ));
+      tieOrigins[(gpString, fret)] = (out, out.length - 1);
     }
-    prevSlotPitches = slotPitches;
     beatPos += duration;
   }
-  return notes;
 }
+
+/// gpif 的 tie 用显式属性标两端：origin="true"（起点，出音）、
+/// destination="true"（续接端，不出音）。alphaTab 只认 destination === 'true'。
+bool _isTieDestination(XmlElement note) =>
+    note.findElements('Tie').firstOrNull?.getAttribute('destination')?.toLowerCase() ==
+    'true';
 
 /// note 的 String/Fret 属性（GP6 schema：`<Property name="String"><String>N</String>`）。
 (int?, int?) _noteProps(XmlElement note) {
@@ -354,7 +361,8 @@ double _rhythmBeats(XmlElement? rhythm) {
   return beats;
 }
 
-/// v1 技法映射：HarmonicType（非 NoHarmonic）→ H、Muted（Enable）→ x、Slide → s。
+/// v1 技法映射：HarmonicType（非 NoHarmonic）→ H、Muted（Enable）→ x、
+/// Slide（Property 的 Flags 非空）→ s。
 String? _technique(XmlElement note) {
   final properties = _child(note, 'Properties');
   if (properties != null) {
@@ -367,10 +375,12 @@ String? _technique(XmlElement note) {
         case 'Muted':
           if (prop.findElements('Enable').isNotEmpty) return 'x';
           break;
+        case 'Slide':
+          if ((_childText(prop, 'Flags')?.trim() ?? '').isNotEmpty) return 's';
+          break;
       }
     }
   }
-  if (note.findElements('Slide').isNotEmpty) return 's';
   return null;
 }
 

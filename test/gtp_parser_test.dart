@@ -254,9 +254,9 @@ void main() {
       expect(parseGpif(xml).capo, 2);
     });
 
-    test('延音重引用与 tie 续接不重复出音，槽位时位照常推进', () {
-      // b0: note0 (Quarter)；b1: note1 带 Tie（前槽同弦同品 → 续接，跳过）；
-      // b1 重复引用（延音槽位，note1 已输出过 → 跳过）。
+    test('每个引用独立出音；origin 标记且前槽同弦同品仍出音', () {
+      // b0: note0 (3,0)；b1: note1 (3,0) 带 origin="true"（前槽同弦同品 → 仍出音，
+      // 不得按续接吞掉）；b1 重复引用 = 独立攻击（gp6 逐引用复用）。
       const xml = '''<GPIF>
         <MasterTrack><Tracks>0</Tracks></MasterTrack>
         <Tracks><Track id="0"><Name><![CDATA[T]]></Name></Track></Tracks>
@@ -269,14 +269,51 @@ void main() {
         </Beats>
         <Notes>
           <Note id="0"><Properties><Property name="String"><String>3</String></Property><Property name="Fret"><Fret>0</Fret></Property></Properties></Note>
-          <Note id="1"><Tie/><Properties><Property name="String"><String>3</String></Property><Property name="Fret"><Fret>0</Fret></Property></Properties></Note>
+          <Note id="1"><Tie origin="true" destination="false"/><Properties><Property name="String"><String>3</String></Property><Property name="Fret"><Fret>0</Fret></Property></Properties></Note>
         </Notes>
         <Rhythms><Rhythm id="0"><NoteValue>Quarter</NoteValue></Rhythm></Rhythms>
       </GPIF>''';
       final notes = parseGpif(xml).tracks.single.measures.single.notes;
-      expect(notes, hasLength(1));
-      expect(notes.single.beat, 0.0);
-      expect(notes.single.string, 4); // gp 3 → IR 4
+      expect(notes, hasLength(3)); // 逐引用独立攻击
+      expect([for (final n in notes) n.beat], [0.0, 1.0, 2.0]);
+      expect(notes[1].string, 4); // gp 3 → IR 4
+      expect(notes[1].fret, 0);
+    });
+
+    test('跨小节 tie destination 落 beat0 不出音，时长累加到起点', () {
+      // m0 beat0: note0 origin（四分）；m1 beat0: note1 destination（四分）。
+      // destination 不出音（防假击弦），其时值累加回 m0 的起点 → duration 2.0。
+      const xml = '''<GPIF>
+        <MasterTrack><Tracks>0</Tracks></MasterTrack>
+        <Tracks><Track id="0"><Name><![CDATA[T]]></Name></Track></Tracks>
+        <MasterBars>
+          <MasterBar><Time>4/4</Time><Bars>0</Bars></MasterBar>
+          <MasterBar><Time>4/4</Time><Bars>1</Bars></MasterBar>
+        </MasterBars>
+        <Bars>
+          <Bar id="0"><Voices>0</Voices></Bar>
+          <Bar id="1"><Voices>1</Voices></Bar>
+        </Bars>
+        <Voices>
+          <Voice id="0"><Beats>0</Beats></Voice>
+          <Voice id="1"><Beats>2</Beats></Voice>
+        </Voices>
+        <Beats>
+          <Beat id="0"><Rhythm ref="0"/><Notes>0</Notes></Beat>
+          <Beat id="2"><Rhythm ref="0"/><Notes>1</Notes></Beat>
+        </Beats>
+        <Notes>
+          <Note id="0"><Tie origin="true" destination="false"/><Properties><Property name="String"><String>3</String></Property><Property name="Fret"><Fret>0</Fret></Property></Properties></Note>
+          <Note id="1"><Tie origin="false" destination="true"/><Properties><Property name="String"><String>3</String></Property><Property name="Fret"><Fret>0</Fret></Property></Properties></Note>
+        </Notes>
+        <Rhythms><Rhythm id="0"><NoteValue>Quarter</NoteValue></Rhythm></Rhythms>
+      </GPIF>''';
+      final measures = parseGpif(xml).tracks.single.measures;
+      expect(measures, hasLength(2));
+      expect(measures[0].notes, hasLength(1));
+      expect(measures[0].notes.single.beat, 0.0);
+      expect(measures[0].notes.single.duration, 2.0); // 1.0 + 跨小节续接累加
+      expect(measures[1].notes, isEmpty); // destination 不出音
     });
 
     test('缺 Track 抛 FormatException', () {
@@ -377,10 +414,10 @@ void main() {
       expect(ir.capo, 0);
       expect(ir.tracks.single.name, 'Steel Guitar');
       expect(ir.tracks.single.measures, hasLength(62));
-      // 小节 0 基准值（Python 参照实现逐音核对）：
-      // 声部 0 = 5 槽（8分×4 + 全音符延音槽），声部 1 = 全音符。
+      // 小节 0 基准值（Python 参照实现 + alphaTab 对账逐音核对）：
+      // gp6 逐引用复用 → 声部 0 五攻击（8分×4 + 二分）+ 声部 1 全音符 = 6 音。
       final m0 = ir.tracks.single.measures[0];
-      expect(m0.notes, hasLength(3));
+      expect(m0.notes, hasLength(6));
       expect(m0.notes[0].beat, 0.0);
       expect(m0.notes[0].duration, 0.5);
       expect(m0.notes[0].string, 5); // gp 4 fret 9
@@ -389,16 +426,28 @@ void main() {
       expect(m0.notes[1].duration, 0.5);
       expect(m0.notes[1].string, 6); // gp 5 fret 9
       expect(m0.notes[1].fret, 9);
-      expect(m0.notes[2].beat, 0.0);
-      expect(m0.notes[2].duration, 4.0);
-      expect(m0.notes[2].string, 3); // gp 2 fret 7（声部 1 全音符）
-      expect(m0.notes[2].fret, 7);
+      expect(m0.notes[2].beat, 1.0);
+      expect(m0.notes[2].duration, 0.5);
+      expect(m0.notes[2].string, 6); // gp 5 fret 9（重复引用 = 独立攻击）
+      expect(m0.notes[2].fret, 9);
+      expect(m0.notes[3].beat, 1.5);
+      expect(m0.notes[3].duration, 0.5);
+      expect(m0.notes[3].string, 5); // gp 4 fret 9
+      expect(m0.notes[3].fret, 9);
+      expect(m0.notes[4].beat, 2.0);
+      expect(m0.notes[4].duration, 2.0); // 二分音符
+      expect(m0.notes[4].string, 6); // gp 5 fret 9
+      expect(m0.notes[4].fret, 9);
+      expect(m0.notes[5].beat, 0.0);
+      expect(m0.notes[5].duration, 4.0);
+      expect(m0.notes[5].string, 3); // gp 2 fret 7（声部 1 全音符）
+      expect(m0.notes[5].fret, 7);
       var totalNotes = 0;
       for (final m in ir.tracks.single.measures) {
         totalNotes += m.notes.length;
       }
-      // 143 个 note 元素被首次引用，其中 17 个为 tie 续接端（不出音）→ 126。
-      expect(totalNotes, 126);
+      // 770 个引用 − 41 个 destination="true" 续接端 = 729 攻击。
+      expect(totalNotes, 729);
       expect(m0.notes[0].confidence, isNull);
     });
   });
