@@ -29,6 +29,11 @@ class ScoreRepository {
             ]))
           .get();
 
+  /// 单行读取（详情页用）。
+  Future<Score?> getScore(int id) =>
+      (_db.select(_db.scores)..where((s) => s.id.equals(id)))
+          .getSingleOrNull();
+
   /// 导入：插行拿 id → 原图落盘 → 生成页图（PDF 逐页转 PNG / 图片规范化单页）。
   Future<Score> importScore({required String title, required File source}) async {
     final ext = p.extension(source.path).replaceFirst('.', '').toLowerCase();
