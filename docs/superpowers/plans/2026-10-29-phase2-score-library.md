@@ -2286,6 +2286,15 @@ git commit -m "feat: 识谱编排（逐页/重试/失败占位，二期 M2）"
 
 ### Task 11: 识谱 UI 接线
 
+> **执行修正备案（2026-10-29 Task 10 质量审查）**：本任务代码与 Task 10 终态签名
+> 有三处漂移，实现时按下述修正：① `recognize` 调用**必须传 capo**（参数对话框
+> 的返回改为四元组 `(tempo, tuning, timeSignature, capo)`，对话框加变调夹输入，
+> v1 可固定 0 但参数位留齐）② client 构造必须 `VisionClient(timeout:
+> const Duration(minutes: 10))`（GLM thinking 分钟级，默认 120s 会掐断长页）③
+> recognize 支持 `cancelled` 回调与 `RecognizeCancelled` 异常——进度对话框加
+> 取消按钮，取消时捕获 RecognizeCancelled 提示"已取消"（不覆盖库内已有 IR）。
+> 进度文案按 onPage 契约（0 起、处理前回调）显示"第 done+1/N 页"。
+
 **Files:**
 - Modify: `lib/ui/scores/score_detail_page.dart`（识谱按钮 + 参数 + 进度）
 - Modify: `lib/ui/scores/scores_page.dart`（已识谱徽标已有，无需改——确认即可）
