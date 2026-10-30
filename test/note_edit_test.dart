@@ -11,6 +11,10 @@ ScoreIr sampleIr() => ScoreIr(
             const NoteIr(beat: 0, duration: 1, string: 1, fret: 3,
                 technique: null, confidence: 0.5),
           ]),
+          const MeasureIr(index: 1, confidence: 0.7, failed: false, notes: [
+            NoteIr(beat: 0, duration: 1, string: 3, fret: 0,
+                technique: null, confidence: 0.7),
+          ]),
         ]),
       ],
     );
@@ -63,12 +67,14 @@ void main() {
     expect(out.tracks[0].measures[0].confidence, 1);
   });
 
-  test('applyNoteEdit：无关小节保持同一实例（不可变重建最小化）', () {
+  test('applyNoteEdit：被编辑小节新实例且无关小节保持原实例', () {
     final ir = sampleIr();
+    final m0 = ir.tracks[0].measures[0];
+    final m1 = ir.tracks[0].measures[1];
     final out = applyNoteEdit(ir, 0, 0,
         const NoteIr(beat: 0, duration: 1, string: 1, fret: 3,
             technique: null, confidence: 1));
-    expect(identical(ir.tracks[0].measures[0], out.tracks[0].measures[0]),
-        isFalse); // 被编辑小节是新实例
+    expect(identical(m0, out.tracks[0].measures[0]), isFalse); // 编辑小节新实例
+    expect(identical(m1, out.tracks[0].measures[1]), isTrue); // 无关小节保 identity
   });
 }

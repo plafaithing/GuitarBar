@@ -35,6 +35,7 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
   bool _recognizing = false;
   String? _progress; // '第 X/N 页'
   bool _cancelRequested = false;
+  bool _writing = false; // 回写串行守卫：防连点两次，第二次基于旧 _ir 覆盖第一次编辑
 
   @override
   void initState() {
@@ -89,21 +90,57 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
   /// 音符点选编辑：弹层确认后回写 IR（confidence=1 人工确认）并刷新。
   Future<void> _editNote(int m, int i, NoteIr n) async {
     final ir = _ir;
-    if (ir == null || _repo == null) return;
-    final result = await showNoteEditSheet(context, n);
-    if (result == null || !mounted) return;
-    final next = applyNoteEdit(ir, m, i, result);
-    await _repo!.updateIrJson(widget.scoreId, jsonEncode(next.toJson()));
-    await _reload();
+    if (ir == null || _repo == null || _writing) return;
+    _writing = true;
+    try {
+      final beatsPerBar = int.tryParse(ir.timeSignature.split('/').first) ?? 4;
+      final result =
+          await showNoteEditSheet(context, n, beatsPerBar: beatsPerBar);
+      if (result == null || !mounted) return;
+      // 弹层期间识谱完成 _reload 换了新 IR：按旧坐标写入会覆盖识别结果，拒写。
+      if (!identical(_ir, ir)) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('识别结果已更新，请重新点选要修正的音符')));
+        return;
+      }
+      final next = applyNoteEdit(ir, m, i, result);
+      try {
+        await _repo!.updateIrJson(widget.scoreId, jsonEncode(next.toJson()));
+        await _reload();
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('保存失败：$e')));
+        }
+      }
+    } finally {
+      _writing = false;
+    }
   }
 
   /// failed 小节点击：重建为空小节，进入可编辑状态。
   Future<void> _clearMeasure(int m) async {
     final ir = _ir;
-    if (ir == null || _repo == null) return;
-    final next = applyMeasureClear(ir, m);
-    await _repo!.updateIrJson(widget.scoreId, jsonEncode(next.toJson()));
-    await _reload();
+    if (ir == null || _repo == null || _writing) return;
+    _writing = true;
+    try {
+      final next = applyMeasureClear(ir, m);
+      try {
+        await _repo!.updateIrJson(widget.scoreId, jsonEncode(next.toJson()));
+        await _reload();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('小节已清空；音符补录将在后续版本提供，可重新识谱')));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('保存失败：$e')));
+        }
+      }
+    } finally {
+      _writing = false;
+    }
   }
 
   Future<void> _recognize() async {
@@ -267,8 +304,9 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
           : (_ir != null)
               ? TabView(
                   ir: _ir!,
-                  onNoteTap: _editNote,
-                  onFailedTap: _clearMeasure,
+                  // 识别中禁编辑：回调置空，避免编辑写入被识谱回写覆盖。
+                  onNoteTap: _recognizing ? null : _editNote,
+                  onFailedTap: _recognizing ? null : _clearMeasure,
                 )
               : SourceViewer(pagePngs: _pages!),
     );
