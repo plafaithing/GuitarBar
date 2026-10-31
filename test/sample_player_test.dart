@@ -60,9 +60,8 @@ void main() {
     expect(engine.scheduleCount, 1);
     expect(engine.lastAt, Duration.zero);
     expect(engine.lastScale, 1.0); // 空弦精确命中
-    // 非闷音也带时长限制（音符时值 1.0 拍 @60bpm + 0.15s 余振 = 1.15s）：
-    // 2026-10-31 走查"抢拍"修复——自然衰减太长在密集曲中堆成音墙。
-    expect(engine.lastDuration, const Duration(milliseconds: 1150));
+    // 非闷音也带时长限制（音符时值 1.0 拍 @60bpm + 0.08s 余振 = 1.08s）。
+    expect(engine.lastDuration, const Duration(milliseconds: 1080));
     expect(player.durationSeconds, 5.2); // 4 拍 + 1.2 尾音
 
     // 时间推进到 1.2s：beat 1（time 1.0）入队；beat 2/3 仍在窗外。

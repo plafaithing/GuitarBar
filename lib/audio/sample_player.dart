@@ -110,10 +110,9 @@ class SampleScorePlayer implements ScorePlayback {
               technique: n.technique);
           if (r == null) continue; // 弦号越界的坏数据：跳过该音
           final absBeat = m.index * beatsPerBar + n.beat;
-          // 采样时长 = 音符时值 + 短余振（0.15s，可叠后续音但不堆"音墙"）：
-          // 2026-10-31 走查"抢拍"修复——自然衰减 ~1-2s 在密集指弹中
-          // 20+ 并发声部叠加成音墙，听感像音符挤在一起。
-          final noteSeconds = n.duration * beatSeconds + 0.15;
+          // 采样时长 = 音符时值 + 极短余振（0.08s，2026-10-31 二轮收窄：
+          // 0.15s 在 82bpm 快速指弹中仍叠出"抢拍"感）。
+          final noteSeconds = n.duration * beatSeconds + 0.08;
           _pending.add(_PendingEvent(
               time: absBeat * beatSeconds,
               file: r.file,
