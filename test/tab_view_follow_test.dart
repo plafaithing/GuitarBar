@@ -107,4 +107,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('渲染冒烟：103 小节谱 + followPlayhead 逐帧推进不抛异常',
+      (tester) async {
+    final ir = _makeIr(103);
+    await tester.pumpWidget(_host(ir, playheadBeat: 0, followPlayhead: true));
+    await tester.pumpAndSettle();
+    // 模拟播放 50ms tick：逐拍推进（跨多行触发跟随滚动动画），
+    // 谱面层不重绘、播放头层逐帧重录，全程无异常。
+    for (var beat = 4.0; beat <= 120; beat += 4) {
+      await tester.pumpWidget(
+          _host(ir, playheadBeat: beat, followPlayhead: true));
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    // 跟随滚动实际发生（beat 120 → 小节 30 → row 10，已滚出初始窗口）。
+    expect(_scrollOffset(tester), greaterThan(0));
+  });
 }

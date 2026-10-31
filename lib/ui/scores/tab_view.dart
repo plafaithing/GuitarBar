@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../core/score/score_ir.dart';
@@ -6,6 +8,10 @@ import 'tab_layout.dart';
 
 /// 六线谱视图：弦线/品数字/技法字母标注/小节线 + 置信度标记 + failed 小节
 /// 可见化 + 播放头。1 弦在最上。dataHue 上数据（低置信度底），播放头 positive。
+///
+/// 渲染分层（播放滚动卡顿修复）：谱面静态层与播放头层各自 shouldRepaint——
+/// 播放 50ms tick 只重画播放头竖线（RepaintBoundary 隔离），谱面层 ir 不变
+/// 不重绘，且画时按滚动位置只录可视行。
 class TabView extends StatefulWidget {
   const TabView(
       {super.key,
@@ -96,6 +102,9 @@ class _TabViewState extends State<TabView> {
       // behavior=opaque 冗余但更防御（RenderCustomPaint.hitTestSelf 对未重写
       // hitTest 的 painter 本就返回 true，deferToChild 已可命中；opaque 兜底
       // 覆盖 painter 未来重写 hitTest 的情况）。
+      // 双层 CustomPaint（不能合并为一个 painter/foregroundPainter：同一
+      // RenderObject 任一变更整体重绘）：谱面层 ir 不变时 shouldRepaint=false
+      // 不重绘；播放头层包 RepaintBoundary，50ms tick 只重录本层一条竖线。
       return SingleChildScrollView(
         controller: _scroll,
         child: GestureDetector(
@@ -104,19 +113,32 @@ class _TabViewState extends State<TabView> {
           child: SizedBox(
             width: w,
             height: layout.sizeFor(w).height,
-            child: CustomPaint(
-              painter: _TabPainter(
-                  layout: layout,
-                  ir: widget.ir,
-                  playheadBeat: widget.playheadBeat,
-                  stringLine: p.border,
-                  fretText: p.ink,
-                  barLine: p.border,
-                  confBg: p.dataHue.withValues(alpha: 0.12),
-                  failedText: p.negative,
-                  playhead: p.positive,
-                  pageNum: p.muted),
-            ),
+            child: Stack(children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _ScorePainter(
+                      layout: layout,
+                      ir: widget.ir,
+                      scroll: _scroll,
+                      stringLine: p.border,
+                      fretText: p.ink,
+                      barLine: p.border,
+                      confBg: p.dataHue.withValues(alpha: 0.12),
+                      failedText: p.negative,
+                      pageNum: p.muted),
+                ),
+              ),
+              Positioned.fill(
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _PlayheadPainter(
+                        layout: layout,
+                        playheadBeat: widget.playheadBeat,
+                        playhead: p.positive),
+                  ),
+                ),
+              ),
+            ]),
           ),
         ),
       );
@@ -163,24 +185,32 @@ class _TabViewState extends State<TabView> {
   }
 }
 
-class _TabPainter extends CustomPainter {
-  _TabPainter({
+/// 静态谱面层：弦线/小节线/品数字/技法字母/置信度底/failed 标记/图例。
+/// 播放头不在此层（见 _PlayheadPainter）。滚动时 SingleChildScrollView 整棵
+/// 重绘会重跑 paint()，因此这里按当前 scroll offset 只画可视行（加一行缓冲），
+/// 全量 2600 音符降为窗口内约 4 行；谱面层因此不能包 RepaintBoundary——
+/// 缓存层会让裁剪区过期。ir 不变时 shouldRepaint=false，播放 tick 不重绘。
+class _ScorePainter extends CustomPainter {
+  _ScorePainter({
     required this.layout,
     required this.ir,
-    required this.playheadBeat,
+    required this.scroll,
     required this.stringLine,
     required this.fretText,
     required this.barLine,
     required this.confBg,
     required this.failedText,
-    required this.playhead,
     required this.pageNum,
   });
 
   final TabLayout layout;
   final ScoreIr ir;
-  final double? playheadBeat;
-  final Color stringLine, fretText, barLine, confBg, failedText, playhead, pageNum;
+
+  /// 仅 paint 里读当前滚动位置裁可视行；滚动重绘由 viewport 触发，
+  /// 不参与 shouldRepaint。
+  final ScrollController scroll;
+
+  final Color stringLine, fretText, barLine, confBg, failedText, pageNum;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -188,7 +218,19 @@ class _TabPainter extends CustomPainter {
     final measures =
         ir.tracks.isEmpty ? const <MeasureIr>[] : ir.tracks.first.measures;
 
-    for (var r = 0; r < rows.length; r++) {
+    // 可视行区间（加一行缓冲）：painter 画布坐标即内容坐标
+    // （内容 y = 视口 y + scrollOffset）。
+    final stride = layout.rowHeight + TabLayout.rowGap;
+    final scrollOffset = scroll.hasClients ? scroll.offset : 0.0;
+    final viewportH =
+        scroll.hasClients ? scroll.position.viewportDimension : size.height;
+    final firstRow = math.max(0, (scrollOffset / stride).floor() - 1);
+    final lastRow = math.min(
+        rows.length - 1, ((scrollOffset + viewportH) / stride).ceil() + 1);
+
+    canvas.save();
+    canvas.clipRect(Rect.fromLTWH(0, scrollOffset, size.width, viewportH));
+    for (var r = firstRow; r <= lastRow; r++) {
       final rowTop = layout.stringY(1, r);
       final rowBottom = layout.stringY(6, r);
       // 弦线（1 弦最上）。
@@ -223,10 +265,18 @@ class _TabPainter extends CustomPainter {
               TextStyle(fontSize: 12, color: failedText));
           continue;
         }
+        // 同拍同弦多声部音符计数（2026-10-31 走查修复"12 写两遍"）：
+        // 指弹谱两个声部在同一拍弹同一弦同一品是合法数据（GP8 错开显示），
+        // 渲染层第二个及后续音符 x 偏移 12px 防止文字重叠。
+        final seenAt = <String, int>{}; // (string@beatRounded) → 已画次数
         for (final n in m.notes) {
           final nx = layout.noteX(m.index, n.beat, size.width);
           final ny = layout.stringY(n.string, r);
-          _text(canvas, '${n.fret}', Offset(nx, ny),
+          final key = '${n.string}@${n.beat.toStringAsFixed(1)}';
+          final dupCount = seenAt.putIfAbsent(key, () => 0);
+          seenAt[key] = dupCount + 1;
+          final dx = dupCount * 12.0; // 第 2/3 个音右偏 12/24px
+          _text(canvas, '${n.fret}', Offset(nx + dx, ny),
               TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -236,56 +286,91 @@ class _TabPainter extends CustomPainter {
           // 字母本身即标注——品数字右上角小字，muted 色，弦线/小节线不动。
           final tech = n.technique;
           if (tech != null) {
-            _text(canvas, tech, Offset(nx + 9, ny - 8),
+            _text(canvas, tech, Offset(nx + dx + 9, ny - 8),
                 TextStyle(fontSize: 9, color: pageNum));
           }
         }
       }
     }
-    // 播放头（全曲拍 → 小节/行内位置）。
-    if (playheadBeat != null) {
-      final beatPerBar = layout.beatsPerBar;
-      final measure = (playheadBeat! / beatPerBar).floor();
-      final inMeasure = playheadBeat! - measure * beatPerBar;
-      var row = 0, col = 0, found = false;
-      for (var r = 0; r < rows.length && !found; r++) {
-        final c = rows[r].indexOf(measure);
-        if (c >= 0) {
-          row = r;
-          col = c;
-          found = true;
-        }
-      }
-      if (found) {
-        final x = TabLayout.leftPad +
-            col * (layout.measureWidth + TabLayout.measureGap) +
-            inMeasure * TabLayout.pxPerBeat;
-        final y0 = layout.stringY(1, row) - 10;
-        final y1 = layout.stringY(6, row) + 10;
-        canvas.drawLine(Offset(x, y0), Offset(x, y1),
-            Paint()..color = playhead..strokeWidth = 2);
-      }
-    }
+    canvas.restore();
     // 图例（低置信度底色示意）：画布右上角，避开第 1 小节号；
-    // 右缘与弦线右端（size.width - leftPad）对齐。
+    // 右缘与弦线右端（size.width - leftPad）对齐。内容锚定（y≈6），
+    // 滚出视口即不可见，与裁剪前行为一致。
     canvas.drawRect(
         Rect.fromLTWH(size.width - 70, 6, 10, 10), Paint()..color = confBg);
     _text(canvas, '低置信度', Offset(size.width - 36, 11),
         TextStyle(fontSize: 10, color: pageNum));
   }
 
+  /// TextPainter 全局缓存（播放滚动卡顿修复 ②）：品数字仅 0-24、技法字母
+  /// 数个、小节号 ≤ 小节数，键含字号/字重/色值/数字特性位数，条目有界
+  /// （浅暗两套色板各一份）不清理。小节号与图例同为 10 号 muted 色，
+  /// 靠 fontFeatures 位数区分键。
+  static final Map<String, TextPainter> _textCache = {};
+
+  static TextPainter _cachedText(String s, TextStyle style) {
+    final key = '$s|${style.fontSize}|${style.fontWeight}|'
+        '${style.color?.toARGB32()}|${style.fontFeatures?.length ?? 0}';
+    return _textCache.putIfAbsent(
+        key,
+        () => TextPainter(
+              text: TextSpan(text: s, style: style),
+              textDirection: TextDirection.ltr,
+            )..layout());
+  }
+
   void _text(Canvas canvas, String s, Offset at, TextStyle style) {
-    final tp = TextPainter(
-        text: TextSpan(text: s, style: style),
-        textDirection: TextDirection.ltr)
-      ..layout();
+    final tp = _cachedText(s, style);
     tp.paint(canvas, at - Offset(tp.width / 2, tp.height / 2));
   }
 
   @override
-  bool shouldRepaint(covariant _TabPainter old) =>
-      old.playheadBeat != playheadBeat ||
+  bool shouldRepaint(covariant _ScorePainter old) =>
       // 明暗切换重绘：palette 为 const 单例、7 色同源，代理比较 stringLine 足够。
-      old.stringLine != stringLine ||
-      !identical(old.ir, ir);
+      // 播放 tick 重建 painter（ir 同实例）返回 false，不触发谱面重绘。
+      old.stringLine != stringLine || !identical(old.ir, ir);
+}
+
+/// 播放头层（全曲拍 → 小节/行内位置画一条竖线）：独立 CustomPaint +
+/// RepaintBoundary，50ms tick 只重录本层，谱面层不随之重绘。
+class _PlayheadPainter extends CustomPainter {
+  _PlayheadPainter({
+    required this.layout,
+    required this.playheadBeat,
+    required this.playhead,
+  });
+
+  final TabLayout layout;
+  final double? playheadBeat;
+  final Color playhead;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (playheadBeat == null) return;
+    final rows = layout.rowsFor(size.width);
+    final beatPerBar = layout.beatsPerBar;
+    final measure = (playheadBeat! / beatPerBar).floor();
+    final inMeasure = playheadBeat! - measure * beatPerBar;
+    var row = 0, col = 0, found = false;
+    for (var r = 0; r < rows.length && !found; r++) {
+      final c = rows[r].indexOf(measure);
+      if (c >= 0) {
+        row = r;
+        col = c;
+        found = true;
+      }
+    }
+    if (!found) return;
+    final x = TabLayout.leftPad +
+        col * (layout.measureWidth + TabLayout.measureGap) +
+        inMeasure * TabLayout.pxPerBeat;
+    final y0 = layout.stringY(1, row) - 10;
+    final y1 = layout.stringY(6, row) + 10;
+    canvas.drawLine(Offset(x, y0), Offset(x, y1),
+        Paint()..color = playhead..strokeWidth = 2);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PlayheadPainter old) =>
+      old.playheadBeat != playheadBeat || old.playhead != playhead;
 }
