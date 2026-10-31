@@ -241,6 +241,8 @@ class _ScorePainter extends CustomPainter {
       // 小节线（2026-10-31 小节合并：measureGap=0 后相邻小节共用竖线，
       // 只在每小节左边界画一条 + 行末收尾线；低置信度底色块随 AI 通道
       // 放弃一并移除——GTP confidence=0 曾让全部小节带底色成块状）。
+      // 行内音流（标注弧线/虚线的两端查找用）：按谱面序收集本行音符。
+      final flow = <_FlowNote>[];
       for (final m in rows[r].map((idx) => measures[idx])) {
         final mx = layout.measureX(m.index, size.width);
         final mw = layout.measureWidth;
@@ -269,21 +271,27 @@ class _ScorePainter extends CustomPainter {
           final dupCount = seenAt.putIfAbsent(key, () => 0);
           seenAt[key] = dupCount + 1;
           final dx = dupCount * 12.0; // 第 2/3 个音右偏 12/24px
-          _text(canvas, '${n.fret}', Offset(nx + dx, ny),
+          flow.add(_FlowNote(n, nx + dx, ny));
+          // ghost（AntiAccent）：GP8 括号品数字 (3)；tie 续接端也画数字
+          // （真实按住的位置，GP 同款），只是不发声。
+          final label = n.ghost ? '(${n.fret})' : '${n.fret}';
+          _text(canvas, label, Offset(nx + dx, ny),
               TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: fretText,
                   fontFeatures: [FontFeature.tabularFigures()]));
-          // 技法字母标注（走查反馈 ③）：H=泛音 s=滑音 x=闷 b=弯 h/p=击勾，
-          // 字母本身即标注——品数字右上角小字，muted 色，弦线/小节线不动。
-          final tech = n.technique;
+          // 技法字母标注（走查反馈 ③）：H=泛音 s=滑音 x=闷 b=弯，
+          // 点弦 T 兜底（击勾/连滑由弧线表达不再写 h/p 字母）——
+          // 品数字右上角小字，muted 色，弦线/小节线不动。
+          final tech = n.technique ?? (n.tap ? 'T' : null);
           if (tech != null) {
             _text(canvas, tech, Offset(nx + dx + 9, ny - 8),
                 TextStyle(fontSize: 9, color: pageNum));
           }
         }
       }
+      _paintMarks(canvas, flow, rowBottom, size.width);
       // 行末收尾竖线（最后一小节的右边界）。
       final lastMeasure = rows[r].last;
       final endX = layout.measureX(lastMeasure, size.width) +
@@ -292,6 +300,143 @@ class _ScorePainter extends CustomPainter {
           Paint()..color = barLine);
     }
     canvas.restore();
+  }
+
+  /// 标注绘制层（2026-10-31 GP8 标注补齐）：
+  /// - tie/击勾弦/连滑音：弦下弧线（弦间 y+6.5，顶 y+11.5），击勾弦在弧顶
+  ///   下标 H/P（按两音品数走向判向，GP8 同款）
+  /// - 定滑音 shift：弦间横线 + 右端箭头尖
+  /// - 揉弦 vibrato：音符下方 4 段折线波浪
+  /// - 延音 L.R. / 闷音 P.M.：行底虚线区间（GP8 画在谱底下方），
+  ///   letRing 按同弦分段、palmMute 按谱面序连续分段
+  void _paintMarks(
+      Canvas canvas, List<_FlowNote> flow, double rowBottom, double rowWidth) {
+    final endX = rowWidth - TabLayout.leftPad;
+    final line = Paint()
+      ..color = fretText
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    // 音流序扫描：每个标注音找同弦/连续终点。
+    for (var i = 0; i < flow.length; i++) {
+      final f = flow[i];
+      final n = f.note;
+      final nextSameString = _nextSameString(flow, i);
+      final x1 = nextSameString?.x ?? (f.x + 22); // 无后继：短弧
+      final clipped = x1.clamp(f.x + 8, endX);
+
+      // —— 弧线族：tie / 击勾弦 / 连滑音 ——
+      if (n.tieStart || n.hopoStart || n.legatoStart) {
+        final path = Path()
+          ..moveTo(f.x + 5, f.y + 6.5)
+          ..quadraticBezierTo((f.x + clipped) / 2, f.y + 11.5,
+              clipped - 5, f.y + 6.5);
+        canvas.drawPath(path, line);
+        // 击勾弦字母：品升 H / 品降 P（连滑音弧线无字母，GP8 同款）。
+        if (n.hopoStart) {
+          final dest = nextSameString?.note;
+          final letter = dest == null ? 'H' : (dest.fret > n.fret ? 'H' : 'P');
+          _text(canvas, letter,
+              Offset((f.x + clipped) / 2, f.y + 13),
+              TextStyle(fontSize: 9, color: fretText));
+        }
+      }
+
+      // —— 定滑音：横线 + 箭头（shift）——
+      if (n.slide == 'shift') {
+        final y = f.y + 6.5;
+        canvas.drawLine(Offset(f.x + 9, y), Offset(clipped - 8, y), line);
+        // 箭头尖。
+        final tip = Offset(clipped - 8, y);
+        canvas.drawLine(tip, tip + const Offset(-4, -2.6), line);
+        canvas.drawLine(tip, tip + const Offset(-4, 2.6), line);
+      }
+
+      // —— 揉弦：4 段折线波浪 ——
+      if (n.vibrato) {
+        final path = Path()..moveTo(f.x - 11, f.y + 9);
+        for (var k = 0; k < 4; k++) {
+          path.lineTo(f.x - 11 + (k + 0.5) * 5.5, f.y + (k.isEven ? 5.5 : 12.5));
+          path.lineTo(f.x - 11 + (k + 1) * 5.5, f.y + 9);
+        }
+        canvas.drawPath(path, line);
+      }
+
+      // —— 延音 L.R.：同弦连续 letRing 段（段首标文字）——
+      if (n.letRing) {
+        final prevSameString = i > 0 ? _prevSameString(flow, i) : null;
+        final isSegmentHead = prevSameString?.note.letRing != true;
+        // 段尾 = 同弦下一个非 letRing 音；中间全 letRing 则延到行末。
+        var segEnd = endX;
+        var j = i + 1;
+        while (j < flow.length) {
+          if (flow[j].note.string == n.string) {
+            if (!flow[j].note.letRing) {
+              segEnd = flow[j].x;
+            }
+            break;
+          }
+          j++;
+        }
+        if (isSegmentHead) {
+          _dashed(canvas, Offset(f.x + 4, rowBottom + 8),
+              Offset(segEnd.clamp(f.x + 4, endX), rowBottom + 8));
+          _text(canvas, 'L.R.', Offset(f.x + 16, rowBottom + 3),
+              TextStyle(fontSize: 9, color: fretText));
+        }
+      }
+
+      // —— 闷音 P.M.：谱面序连续 palmMute 段 ——
+      if (n.palmMute) {
+        final isSegmentHead = i == 0 || !flow[i - 1].note.palmMute;
+        var segEnd = endX;
+        for (var j = i + 1; j < flow.length; j++) {
+          if (!flow[j].note.palmMute) {
+            segEnd = flow[j].x;
+            break;
+          }
+        }
+        if (isSegmentHead) {
+          _dashed(canvas, Offset(f.x + 4, rowBottom + 8),
+              Offset(segEnd.clamp(f.x + 4, endX), rowBottom + 8));
+          _text(canvas, 'P.M.', Offset(f.x + 16, rowBottom + 3),
+              TextStyle(fontSize: 9, color: fretText));
+        }
+      }
+    }
+  }
+
+  _FlowNote? _nextSameString(List<_FlowNote> flow, int i) {
+    for (var j = i + 1; j < flow.length; j++) {
+      if (flow[j].note.string == flow[i].note.string) return flow[j];
+    }
+    return null;
+  }
+
+  _FlowNote? _prevSameString(List<_FlowNote> flow, int i) {
+    for (var j = i - 1; j >= 0; j--) {
+      if (flow[j].note.string == flow[i].note.string) return flow[j];
+    }
+    return null;
+  }
+
+  /// 手绘虚线（Canvas 无内置 dash）：dash 4 / gap 3。
+  void _dashed(Canvas canvas, Offset from, Offset to) {
+    const dash = 4.0, gap = 3.0;
+    final paint = Paint()
+      ..color = fretText
+      ..strokeWidth = 1.0;
+    final dx = to.dx - from.dx;
+    if (dx <= 0) return;
+    final dy = to.dy - from.dy;
+    final len = math.sqrt(dx * dx + dy * dy);
+    final ux = dx / len, uy = dy / len;
+    var t = 0.0;
+    while (t < len) {
+      final t2 = math.min(t + dash, len);
+      canvas.drawLine(
+          from + Offset(ux * t, uy * t), from + Offset(ux * t2, uy * t2), paint);
+      t = t2 + gap;
+    }
   }
 
   /// TextPainter 全局缓存（播放滚动卡顿修复 ②）：品数字仅 0-24、技法字母
@@ -321,6 +466,14 @@ class _ScorePainter extends CustomPainter {
       // 明暗切换重绘：palette 为 const 单例、7 色同源，代理比较 stringLine 足够。
       // 播放 tick 重建 painter（ir 同实例）返回 false，不触发谱面重绘。
       old.stringLine != stringLine || !identical(old.ir, ir);
+}
+
+/// 行内音流元素：音符 + 已算好的谱面坐标（含同拍同弦错开偏移）。
+class _FlowNote {
+  const _FlowNote(this.note, this.x, this.y);
+  final NoteIr note;
+  final double x;
+  final double y;
 }
 
 /// 播放头层（全曲拍 → 小节/行内位置画一条竖线）：独立 CustomPaint +

@@ -50,6 +50,7 @@ RenderedScore renderScore(ScoreIr ir,
       // 数学绝对同时反而听成先后错乱；10ms 错开贴近真实指弹的拨弦错手。
       final byBeat = <double, List<NoteIr>>{};
       for (final n in m.notes) {
+        if (n.tieEnd) continue; // tie 续接端不出音（时长已累计回链首）
         byBeat.putIfAbsent(n.beat, () => []).add(n);
       }
       for (final group in byBeat.values) {

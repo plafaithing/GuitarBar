@@ -16,7 +16,9 @@ class TabLayout {
   // 小节合并（2026-10-31 走查：对齐 Guitar Pro 连续谱面——小节间无缝、
   // 共用小节线，不再逐块间隙+底色）。
   static const measureGap = 0.0;
-  static const rowGap = 26.0;
+  // 32 = 26 + 6：行底标注区（L.R./P.M. 虚线，GP8 画在谱底下方）让位，
+  // 避开下一行小节号（下一行 rowTop - 16）。
+  static const rowGap = 32.0;
 
   int get beatsPerBar => int.tryParse(ir.timeSignature.split('/')[0]) ?? 4;
   double get measureWidth => beatsPerBar * pxPerBeat;

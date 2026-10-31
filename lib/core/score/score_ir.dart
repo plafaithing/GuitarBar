@@ -139,8 +139,20 @@ class NoteIr {
     required this.duration,
     required this.string,
     required this.fret,
-    required this.technique,
+    this.technique,
     this.confidence,
+    this.tieStart = false,
+    this.tieEnd = false,
+    this.hopoStart = false,
+    this.hopoEnd = false,
+    this.legatoStart = false,
+    this.legatoEnd = false,
+    this.letRing = false,
+    this.palmMute = false,
+    this.vibrato = false,
+    this.tap = false,
+    this.ghost = false,
+    this.slide,
   });
 
   final double beat; // 小节内拍位置，0 起
@@ -150,6 +162,27 @@ class NoteIr {
   final String? technique; // null | h | p | s | b | x | H
   final double? confidence; // null = 非 AI 来源
 
+  // —— 曲谱标注（2026-10-31 GP8 逆向补齐，gpif 属性 → bool 标记）——
+  // tie 弧线两端：start 出音（时长已含续接端累计），end 不发声仅画弧端点。
+  final bool tieStart;
+  final bool tieEnd;
+  // 击勾弦弧线两端（gpif HopoOrigin/HopoDestination）：两端都出音，
+  // 渲染按品数走向画 H（升）/P（降）。
+  final bool hopoStart;
+  final bool hopoEnd;
+  // 连滑音弧线两端（gpif LegatoOrigin/LegatoDestination / Slide legato 位）。
+  final bool legatoStart;
+  final bool legatoEnd;
+  // 延音 L.R. 虚线 / 闷音 P.M. 虚线 / 揉弦波浪 / 点弦 T / 幽灵音括号。
+  final bool letRing;
+  final bool palmMute;
+  final bool vibrato;
+  final bool tap;
+  final bool ghost;
+  // shift = 定滑音（斜线箭头）；legato = 连滑音（弧线）。null = 无滑音。
+  final String? slide;
+
+  /// 有标注才写字段：无标注音符的 JSON 与旧格式一致（存量 irJson 兼容）。
   Map<String, dynamic> toJson() => {
         'beat': beat,
         'duration': duration,
@@ -157,6 +190,18 @@ class NoteIr {
         'fret': fret,
         'technique': technique,
         'confidence': confidence,
+        if (tieStart) 'tieStart': true,
+        if (tieEnd) 'tieEnd': true,
+        if (hopoStart) 'hopoStart': true,
+        if (hopoEnd) 'hopoEnd': true,
+        if (legatoStart) 'legatoStart': true,
+        if (legatoEnd) 'legatoEnd': true,
+        if (letRing) 'letRing': true,
+        if (palmMute) 'palmMute': true,
+        if (vibrato) 'vibrato': true,
+        if (tap) 'tap': true,
+        if (ghost) 'ghost': true,
+        if (slide != null) 'slide': slide,
       };
 
   static NoteIr fromJson(Map<String, dynamic> j) => NoteIr(
@@ -166,17 +211,59 @@ class NoteIr {
         fret: (j['fret'] as num?)?.toInt() ?? 0,
         technique: j['technique'] as String?,
         confidence: (j['confidence'] as num?)?.toDouble(),
+        tieStart: j['tieStart'] as bool? ?? false,
+        tieEnd: j['tieEnd'] as bool? ?? false,
+        hopoStart: j['hopoStart'] as bool? ?? false,
+        hopoEnd: j['hopoEnd'] as bool? ?? false,
+        legatoStart: j['legatoStart'] as bool? ?? false,
+        legatoEnd: j['legatoEnd'] as bool? ?? false,
+        letRing: j['letRing'] as bool? ?? false,
+        palmMute: j['palmMute'] as bool? ?? false,
+        vibrato: j['vibrato'] as bool? ?? false,
+        tap: j['tap'] as bool? ?? false,
+        ghost: j['ghost'] as bool? ?? false,
+        slide: j['slide'] as String?,
       );
 
-  NoteIr copyWith({double? beat, double? duration, int? string, int? fret,
-      String? technique, double? confidence}) =>
+  NoteIr copyWith({
+    double? beat,
+    double? duration,
+    int? string,
+    int? fret,
+    String? technique,
+    double? confidence,
+    bool? tieStart,
+    bool? tieEnd,
+    bool? hopoStart,
+    bool? hopoEnd,
+    bool? legatoStart,
+    bool? legatoEnd,
+    bool? letRing,
+    bool? palmMute,
+    bool? vibrato,
+    bool? tap,
+    bool? ghost,
+    String? slide,
+  }) =>
       NoteIr(
           beat: beat ?? this.beat,
           duration: duration ?? this.duration,
           string: string ?? this.string,
           fret: fret ?? this.fret,
           technique: technique ?? this.technique,
-          confidence: confidence ?? this.confidence);
+          confidence: confidence ?? this.confidence,
+          tieStart: tieStart ?? this.tieStart,
+          tieEnd: tieEnd ?? this.tieEnd,
+          hopoStart: hopoStart ?? this.hopoStart,
+          hopoEnd: hopoEnd ?? this.hopoEnd,
+          legatoStart: legatoStart ?? this.legatoStart,
+          legatoEnd: legatoEnd ?? this.legatoEnd,
+          letRing: letRing ?? this.letRing,
+          palmMute: palmMute ?? this.palmMute,
+          vibrato: vibrato ?? this.vibrato,
+          tap: tap ?? this.tap,
+          ghost: ghost ?? this.ghost,
+          slide: slide ?? this.slide);
 
   @override
   bool operator ==(Object other) =>

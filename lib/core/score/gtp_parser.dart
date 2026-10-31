@@ -319,14 +319,37 @@ void _readVoice(
       }
       final (gpString, fret) = _noteProps(noteEl);
       if (gpString == null || fret == null) continue; // 无弦/品信息无法定位（v1 丢弃）
-      if (_isTieDestination(noteEl)) {
+      final isTieDest = _isTieDestination(noteEl);
+      // 标注解析（2026-10-31 GP8 逆向补齐）：gpif 属性/子元素 → NoteIr 标记。
+      final marks = _noteMarks(noteEl);
+      if (isTieDest) {
         final origin = tieOrigins[(gpString, fret)];
         if (origin != null) {
           final (list, idx) = origin;
+          // 发声时长仍累计回链首（tieEnd 不发声，仅作弧线端点入列表）。
           list[idx] = list[idx].copyWith(duration: list[idx].duration + duration);
         }
-        continue; // tie 续接端：不出音
+        out.add(NoteIr(
+          beat: beatPos,
+          duration: duration,
+          string: 6 - gpString,
+          fret: fret,
+          technique: marks.technique,
+          tieEnd: true,
+          letRing: marks.letRing,
+          palmMute: marks.palmMute,
+          vibrato: marks.vibrato,
+          tap: marks.tap,
+          ghost: marks.ghost,
+          slide: marks.slide,
+        ));
+        // 链式 tie（dest 再连下一 dest）时 dest 也登记为 origin（实测无此形态，兜底）。
+        tieOrigins[(gpString, fret)] = (out, out.length - 1);
+        continue;
       }
+      final tieOriginAttr = noteEl.findElements('Tie').firstOrNull
+              ?.getAttribute('origin')?.toLowerCase() ==
+          'true';
       out.add(NoteIr(
         beat: beatPos,
         duration: duration,
@@ -341,7 +364,18 @@ void _readVoice(
         // gpx = 绝对品（发声 = tuning + fret），AI = 夹后品（发声 =
         // tuning + capo + fret）——renderScore 按 ir.capoApplied 区分。
         fret: fret,
-        technique: _technique(noteEl),
+        technique: marks.technique,
+        tieStart: tieOriginAttr,
+        hopoStart: marks.hopoStart,
+        hopoEnd: marks.hopoEnd,
+        legatoStart: marks.legatoStart,
+        legatoEnd: marks.legatoEnd,
+        letRing: marks.letRing,
+        palmMute: marks.palmMute,
+        vibrato: marks.vibrato,
+        tap: marks.tap,
+        ghost: marks.ghost,
+        slide: marks.slide,
       ));
       tieOrigins[(gpString, fret)] = (out, out.length - 1);
     }
@@ -406,27 +440,71 @@ double _rhythmBeats(XmlElement? rhythm) {
   return beats;
 }
 
-/// v1 技法映射：HarmonicType（非 NoHarmonic）→ H、Muted（Enable）→ x、
-/// Slide（Property 的 Flags 非空）→ s。
-String? _technique(XmlElement note) {
+/// 标注集合（gpif Note → NoteIr 标记字段），2026-10-31 GP8 GPCore.dll
+/// strings 侦察 + 真实文件实测定名：
+/// - Properties 属性：HopoOrigin/HopoDestination（击勾弦）、LegatoOrigin/
+///   LegatoDestination（连滑音）、PalmMuted（闷音）、Tapped/LeftHandTapped
+///   （点弦）、Muted（闷击 x）、HarmonicType（泛音）、Slide Flags（滑音分型）
+/// - Note 子元素（非 Property）：LetRing（延音）、Vibrato（揉弦）、
+///   AntiAccent（幽灵音，重音的反义）
+/// - Slide Flags 位定义（alphaTab GpifReader 转写）：低 4 位 = 出滑，
+///   0x01 定滑 shift / 0x02 连滑 legato（高 4 位入滑，v1 只画出滑）
+class _NoteMarks {
+  String? technique;
+  bool hopoStart = false;
+  bool hopoEnd = false;
+  bool legatoStart = false;
+  bool legatoEnd = false;
+  bool letRing = false;
+  bool palmMute = false;
+  bool vibrato = false;
+  bool tap = false;
+  bool ghost = false;
+  String? slide;
+}
+
+bool _propEnabled(XmlElement note, String name) => note
+    .findAllElements('Property')
+    .any((p) => p.getAttribute('name') == name && p.findElements('Enable').isNotEmpty);
+
+_NoteMarks _noteMarks(XmlElement note) {
+  final m = _NoteMarks();
+  m.hopoStart = _propEnabled(note, 'HopoOrigin');
+  m.hopoEnd = _propEnabled(note, 'HopoDestination');
+  m.legatoStart = _propEnabled(note, 'LegatoOrigin');
+  m.legatoEnd = _propEnabled(note, 'LegatoDestination');
+  m.palmMute = _propEnabled(note, 'PalmMuted');
+  m.tap = _propEnabled(note, 'Tapped') || _propEnabled(note, 'LeftHandTapped');
+  // Note 子元素形态（探针实测：LetRing/Vibrato/AntiAccent 直接挂在 Note 下）。
+  m.letRing = note.findElements('LetRing').isNotEmpty;
+  m.vibrato = note.findElements('Vibrato').isNotEmpty;
+  m.ghost = note.findElements('AntiAccent').isNotEmpty;
   final properties = _child(note, 'Properties');
   if (properties != null) {
     for (final prop in properties.findElements('Property')) {
       switch (prop.getAttribute('name')) {
         case 'HarmonicType':
           final t = (_childText(prop, 'HType')?.trim() ?? '').toLowerCase();
-          if (t.isNotEmpty && t != 'noharmonic') return 'H';
+          if (t.isNotEmpty && t != 'noharmonic') m.technique = 'H';
           break;
         case 'Muted':
-          if (prop.findElements('Enable').isNotEmpty) return 'x';
+          if (prop.findElements('Enable').isNotEmpty) m.technique = 'x';
           break;
         case 'Slide':
-          if ((_childText(prop, 'Flags')?.trim() ?? '').isNotEmpty) return 's';
+          final flags =
+              int.tryParse(_childText(prop, 'Flags')?.trim() ?? '') ?? 0;
+          if (flags & 0x02 != 0) {
+            m.slide = 'legato';
+          } else if (flags & 0x01 != 0) {
+            m.slide = 'shift';
+          }
           break;
       }
     }
   }
-  return null;
+  // 兼容旧技法字母：连滑/击勾由专用弧线表达（渲染按品数判 H/P），
+  // gpx 通道不再写 h/p/s 字母；AI 通道的 technique 字段不受影响。
+  return m;
 }
 
 int _readIntLe(Uint8List b) => b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24);

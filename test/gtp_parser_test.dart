@@ -309,9 +309,10 @@ void main() {
       expect(notes[1].fret, 0);
     });
 
-    test('跨小节 tie destination 落 beat0 不出音，时长累加到起点', () {
+    test('跨小节 tie destination 入列表为弧线端点不出音，时长累加到起点', () {
       // m0 beat0: note0 origin（四分）；m1 beat0: note1 destination（四分）。
-      // destination 不出音（防假击弦），其时值累加回 m0 的起点 → duration 2.0。
+      // destination 入列表（tieEnd 标记，画弧端点）但发声层跳过，
+      // 其时值累加回 m0 的起点 → duration 2.0。
       const xml = '''<GPIF>
         <MasterTrack><Tracks>0</Tracks></MasterTrack>
         <Tracks><Track id="0"><Name><![CDATA[T]]></Name></Track></Tracks>
@@ -342,7 +343,73 @@ void main() {
       expect(measures[0].notes, hasLength(1));
       expect(measures[0].notes.single.beat, 0.0);
       expect(measures[0].notes.single.duration, 2.0); // 1.0 + 跨小节续接累加
-      expect(measures[1].notes, isEmpty); // destination 不出音
+      expect(measures[0].notes.single.tieStart, isTrue);
+      // destination 入列表作弧线端点（不出音，发声层跳过 tieEnd）。
+      expect(measures[1].notes, hasLength(1));
+      expect(measures[1].notes.single.tieEnd, isTrue);
+      expect(measures[1].notes.single.beat, 0.0);
+      expect(measures[1].notes.single.string, measures[0].notes.single.string);
+      expect(measures[1].notes.single.fret, measures[0].notes.single.fret);
+    });
+
+    test('击勾弦/延音/闷音/点弦/揉弦/幽灵音/滑音标注解析（GP8 逆向补齐）', () {
+      // 七拍七音（gp 弦 3 → IR 3）：Hopo 起止、LetRing（Note 子元素）、
+      // PalmMuted、Tapped、Vibrato（Note 子元素）、AntiAccent（幽灵音）、
+      // Slide Flags 分型（0x01 shift / 0x02 legato）。
+      // {children} = Note 子元素（Properties 外），{props} = Property 片段。
+      String note(int id, String children, String props) =>
+          '<Note id="$id">$children<Properties>$props'
+          '<Property name="String"><String>3</String></Property>'
+          '<Property name="Fret"><Fret>${id - 10}</Fret></Property>'
+          '</Properties></Note>';
+      String beat(int id, String notes) =>
+          '<Beat id="$id"><Rhythm ref="0"/><Notes>$notes</Notes></Beat>';
+      final xml = '''<GPIF>
+        <MasterTrack><Tracks>0</Tracks></MasterTrack>
+        <Tracks><Track id="0"><Name><![CDATA[T]]></Name></Track></Tracks>
+        <MasterBars><MasterBar><Time>7/4</Time><Bars>0</Bars></MasterBar></MasterBars>
+        <Bars><Bar id="0"><Voices>0</Voices></Bar></Bars>
+        <Voices><Voice id="0"><Beats>0 1 2 3 4 5 6</Beats></Voice></Voices>
+        <Beats>${beat(0, '10')}${beat(1, '11')}${beat(2, '12')}${beat(3, '13')}${beat(4, '14')}${beat(5, '15')}${beat(6, '16')}</Beats>
+        <Notes>
+          ${note(10, '', '<Property name="HopoOrigin"><Enable/></Property>')}
+          ${note(11, '', '<Property name="HopoDestination"><Enable/></Property>')}
+          ${note(12, '<LetRing/>', '')}
+          ${note(13, '', '<Property name="PalmMuted"><Enable/></Property>')}
+          ${note(14, '', '<Property name="Tapped"><Enable/></Property>')}
+          ${note(15, '<Vibrato/><AntiAccent/>', '')}
+          ${note(16, '', '<Property name="Slide"><Flags>2</Flags></Property>')}
+        </Notes>
+        <Rhythms><Rhythm id="0"><NoteValue>Quarter</NoteValue></Rhythm></Rhythms>
+      </GPIF>''';
+      final notes = parseGpif(xml).tracks.single.measures.single.notes;
+      expect(notes, hasLength(7));
+      expect(notes[0].hopoStart, isTrue);
+      expect(notes[1].hopoEnd, isTrue);
+      expect(notes[2].letRing, isTrue);
+      expect(notes[3].palmMute, isTrue);
+      expect(notes[4].tap, isTrue);
+      expect(notes[5].vibrato, isTrue);
+      expect(notes[5].ghost, isTrue);
+      expect(notes[6].slide, 'legato'); // Flags 2 = 连滑
+      // 击勾/连滑不再写 h/p/s 技法字母（弧线表达）。
+      expect(notes[0].technique, isNull);
+      expect(notes[6].technique, isNull);
+    });
+
+    test('Slide Flags=1 → shift 定滑音', () {
+      const xml = '''<GPIF>
+        <MasterTrack><Tracks>0</Tracks></MasterTrack>
+        <Tracks><Track id="0"><Name><![CDATA[T]]></Name></Track></Tracks>
+        <MasterBars><MasterBar><Time>1/4</Time><Bars>0</Bars></MasterBar></MasterBars>
+        <Bars><Bar id="0"><Voices>0</Voices></Bar></Bars>
+        <Voices><Voice id="0"><Beats>0</Beats></Voice></Voices>
+        <Beats><Beat id="0"><Rhythm ref="0"/><Notes>0</Notes></Beat></Beats>
+        <Notes><Note id="0"><Properties><Property name="String"><String>3</String></Property><Property name="Fret"><Fret>5</Fret></Property><Property name="Slide"><Flags>1</Flags></Property></Properties></Note></Notes>
+        <Rhythms><Rhythm id="0"><NoteValue>Quarter</NoteValue></Rhythm></Rhythms>
+      </GPIF>''';
+      final notes = parseGpif(xml).tracks.single.measures.single.notes;
+      expect(notes.single.slide, 'shift');
     });
 
     test('缺 Track 抛 FormatException', () {
@@ -491,11 +558,15 @@ void main() {
       expect(m0.notes[5].string, 4); // gp 2 → IR 4（G 弦）fret 7（声部 1 全音符）
       expect(m0.notes[5].fret, 7);
       var totalNotes = 0;
+      var tieEnds = 0;
       for (final m in ir.tracks.single.measures) {
         totalNotes += m.notes.length;
+        tieEnds += m.notes.where((n) => n.tieEnd).length;
       }
-      // 770 个引用 − 41 个 destination="true" 续接端 = 729 攻击。
-      expect(totalNotes, 729);
+      // 770 个引用全入列表（2026-10-31 标注补齐：tie dest 入列表作弧线端点），
+      // 其中 41 个 destination="true" 续接端标 tieEnd（不出音）。
+      expect(totalNotes, 770);
+      expect(tieEnds, 41);
       expect(m0.notes[0].confidence, isNull);
     });
 

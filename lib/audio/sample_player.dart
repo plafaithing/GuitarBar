@@ -100,6 +100,7 @@ class SampleScorePlayer implements ScorePlayback {
       for (final m in t.measures) {
         if (m.failed) continue;
         for (final n in m.notes) {
+          if (n.tieEnd) continue; // tie 续接端不出音（时长已累计回链首）
           // 弦号映射与渲染器同款：string 1（最细）→ tunings[5]；
           // 发声 MIDI 按通道语义（渲染器同款 capoApplied 公式）：
           // gpx=绝对品（+capo）、AI=夹后品（已含不补）。
