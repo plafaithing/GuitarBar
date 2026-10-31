@@ -40,7 +40,7 @@ class ToolboxPage extends StatelessWidget {
         tool(Icons.av_timer_outlined, '节拍器', '细分拍 · Tap 点速',
             const MetronomePage()),
         tool(Icons.library_music_outlined, '曲谱库',
-            '图片/PDF 归档 · AI 识谱 · 自动演奏', const ScoresPage()),
+            'GTP 导入播放 · 图片/PDF 查看器', const ScoresPage()),
       ]),
     );
   }

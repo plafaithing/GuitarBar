@@ -230,10 +230,12 @@ class _ScoresPageState extends State<ScoresPage> {
                                 fontWeight: FontWeight.w500,
                                 color: p.ink)),
                         // GTP 导入无页图概念（谱面即数据），徽标不显示页数段。
+                        // 13.4 后图片/PDF 不再识谱：徽标显示"可播放/查看器"
+                        // （GTP 有 IR 可播放；图片/PDF 是纯查看器条目）。
                         subtitle: Text(
                             '${s.sourceType == 'pdf' ? 'PDF' : s.sourceType == 'gtp' ? 'GTP' : '图片'}'
                             '${s.sourceType == 'gtp' ? '' : ' · ${_pageCounts?[s.id] ?? 0} 页'}'
-                            ' · ${s.irJson == null ? '未识谱' : '已识谱'}',
+                            ' · ${s.irJson == null ? '查看器' : '可播放'}',
                             style: TextStyle(fontSize: 12, color: p.muted)),
                         // 行尾菜单（2026-10-30 用户反馈补删除）：
                         // 桌面惯例三点菜单，删除带确认防误删整份谱。
