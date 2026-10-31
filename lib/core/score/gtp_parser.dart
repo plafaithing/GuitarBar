@@ -169,6 +169,23 @@ ScoreIr parseGpif(String xml) {
       }
     }
   }
+  // 2026-10-31 走查发现：部分 gpx 的 capo 存在 Beat 的
+  // <freetext>capo:N</freetext>（GP8 曲中标注）而非 Track Properties。
+  // 属性级优先（精确）；freetext 级兜底（取首个非零值）。
+  if (capo == 0) {
+    for (final ft in doc.findAllElements('freetext')) {
+      final m =
+          RegExp(r'capo[:\s]*(\d+)', caseSensitive: false)
+              .firstMatch(ft.innerText);
+      if (m != null) {
+        final v = int.tryParse(m.group(1)!) ?? 0;
+        if (v > 0) {
+          capo = v;
+          break;
+        }
+      }
+    }
+  }
 
   // 拍号：第一个 MasterBar 的 Time（"4/4"）
   var timeSignature = '4/4';
