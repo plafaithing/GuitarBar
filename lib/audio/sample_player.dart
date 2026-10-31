@@ -101,8 +101,11 @@ class SampleScorePlayer implements ScorePlayback {
         if (m.failed) continue;
         for (final n in m.notes) {
           // 弦号映射与渲染器同款：string 1（最细）→ tunings[5]；
-          // 发声 = 调弦 + 夹 + 夹后品（两通道统一约定，渲染器同款公式）。
-          final soundingMidi = tunings[6 - n.string].midi + ir.capo + n.fret;
+          // 发声 MIDI 按通道语义（渲染器同款 capoApplied 公式）：
+          // gpx=绝对品（+capo）、AI=夹后品（已含不补）。
+          final capoShift = ir.capoApplied ? 0 : ir.capo;
+          final soundingMidi =
+              tunings[6 - n.string].midi + capoShift + n.fret;
           final r = SteelSampleBank.resolve(
               string: n.string,
               fret: n.fret,

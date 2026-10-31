@@ -254,7 +254,7 @@ void main() {
       expect(parseGpif(xml).capo, 2);
     });
 
-    test('capo 品语义：gpif 绝对品 → IR 夹后品；低于夹位 clamp 0', () {
+    test('capo 记录到 IR 但 fret 保持绝对品（capoApplied=false）', () {
       // gpif fret 是绝对品格（alphaTab 发声不加 capo）；IR 统一夹后品：
       // 9-2=7；1-2=-1 → 按弦在夹位之前（不可弹），clamp 0 按夹后空弦。
       const xml = '''<GPIF>
@@ -277,9 +277,10 @@ void main() {
       </GPIF>''';
       final ir = parseGpif(xml);
       expect(ir.capo, 2);
+      expect(ir.capoApplied, isFalse);
       final notes = ir.tracks.single.measures.single.notes;
-      expect(notes[0].fret, 7); // 绝对 9 → 夹后 7
-      expect(notes[1].fret, 0); // 绝对 1 低于夹位 2 → clamp 0
+      expect(notes[0].fret, 9); // 绝对品原样（发声由渲染器按 capoApplied 加 capo）
+      expect(notes[1].fret, 1); // 绝对品原样
     });
 
     test('每个引用独立出音；origin 标记且前槽同弦同品仍出音', () {

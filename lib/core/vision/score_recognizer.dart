@@ -131,6 +131,7 @@ class ScoreRecognizer {
       timeSignature: timeSignature,
       tuning: effectiveTuning ?? tuning, // 谱面标注优先，参数兜底
       capo: effectiveCapo,
+      capoApplied: true, // AI 通道 fret = 夹后品（谱面印刷数字），capo 已含
       tracks: [TrackIr(name: '主旋律', measures: measures)],
       unrecognizedPages: failedPages,
     );

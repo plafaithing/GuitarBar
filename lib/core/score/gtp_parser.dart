@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -237,6 +236,7 @@ ScoreIr parseGpif(String xml) {
     timeSignature: timeSignature,
     tuning: tuning,
     capo: capo,
+    capoApplied: false, // gpif fret = 绝对品（GP8 同款），发声时加 capo
     tracks: [
       TrackIr(name: trackName.isEmpty ? '主旋律' : trackName, measures: measures),
     ],
@@ -335,10 +335,12 @@ void _readVoice(
         // GuitarBar IR string 1 = 最细高音弦，两体系"1"相反，故 IR = 6 - gp。
         // 原公式 gp+1 造成谱面上下镜像 + 播放弦音高 E2↔E4 反转。
         string: 6 - gpString,
-        // 品语义换算（capo 统一，2026-10-31 走查）：gpif fret 绝对品 →
-        // 夹后品（fret - capo）。负数 = 按弦在夹位之前（capo 后该段弦不
-        // 参与振动，记谱罕见/不可弹），clamp 0 按夹后空弦处理。
-        fret: math.max(0, fret - capo),
+        // fret 保持 gpif 绝对品（2026-10-31 二次修正）：GP8 显示/发声都用
+        // 绝对品（不加 capo），gpx 通道不做 -capo 转换——此前减法把全曲
+        // 品位错移 capo 度（Like A Star 12 品全变 10）。两条通道语义：
+        // gpx = 绝对品（发声 = tuning + fret），AI = 夹后品（发声 =
+        // tuning + capo + fret）——renderScore 按 ir.capoApplied 区分。
+        fret: fret,
         technique: _technique(noteEl),
       ));
       tieOrigins[(gpString, fret)] = (out, out.length - 1);

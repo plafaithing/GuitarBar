@@ -11,6 +11,7 @@ class ScoreIr {
     required this.tuning,
     required this.capo,
     required this.tracks,
+    this.capoApplied = false,
     this.unrecognizedPages = const [],
   });
 
@@ -21,6 +22,14 @@ class ScoreIr {
   // 低→高：index 0 = 6弦（E2）……index 5 = 1弦（E4）；与 Note.parse 对齐
   final List<String> tuning;
   final int capo;
+
+  /// fret 是否已含 capo 补偿（2026-10-31 语义定案）：
+  /// - gpx 通道：fret = 绝对品（GP8 同款），capoApplied = false，
+  ///   发声 = tuning + capo + fret
+  /// - AI 通道：fret = 夹后品（谱面印刷数字），capoApplied = true，
+  ///   发声 = tuning + fret（capo 已含）
+  /// 谱面显示/GTP 通道默认 false。
+  final bool capoApplied;
   final List<TrackIr> tracks;
   // 识别失败的页号（0 起），可见化不静默丢
   final List<int> unrecognizedPages;
@@ -32,6 +41,7 @@ class ScoreIr {
         'timeSignature': timeSignature,
         'tuning': tuning,
         'capo': capo,
+        'capoApplied': capoApplied,
         'tracks': [for (final t in tracks) t.toJson()],
         'unrecognizedPages': unrecognizedPages,
       };
@@ -46,6 +56,7 @@ class ScoreIr {
             for (final s in l) s as String
         ],
         capo: (j['capo'] as num?)?.toInt() ?? 0,
+        capoApplied: j['capoApplied'] as bool? ?? false,
         tracks: [
           if (j['tracks'] case final List l)
             for (final t in l) TrackIr.fromJson(t as Map<String, dynamic>)
