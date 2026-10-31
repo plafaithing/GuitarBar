@@ -7,7 +7,7 @@ import 'package:guitarbar/audio/score_renderer.dart';
 import 'package:guitarbar/audio/sound_engine.dart';
 
 /// SoundEngine 假体：统计调用并可控状态，不触 soloud。
-/// implements 门面需覆写全部 9 个成员。
+/// implements 门面需覆写全部 13 个成员。
 class FakeEngine implements SoundEngine {
   FakeEngine({this.validHandle = true});
 
@@ -17,16 +17,26 @@ class FakeEngine implements SoundEngine {
   /// position 返回值（tick 轮询读取）。
   Duration positionValue = Duration.zero;
 
+  /// engineNow 返回值（采样调度的引擎时钟）。
+  Duration engineTimeValue = Duration.zero;
+
   /// setPause 最后一次写入值（pause/resume 接线断言用）。
   bool pausedValue = false;
 
   /// loadPcm 抛错开关（验证失败不留脏时长）。
   bool throwOnLoad = false;
 
+  /// scheduleAt 最后一次入参（采样调度接线断言用）。
+  Duration lastAt = Duration.zero;
+  double lastScale = 1;
+  Duration? lastDuration;
+
   int loadCount = 0,
+      oggCount = 0,
       playCount = 0,
       stopCount = 0,
-      disposeCount = 0;
+      disposeCount = 0,
+      scheduleCount = 0;
 
   @override
   Future<AudioSource> loadPcm(Int16List samples) async {
@@ -39,10 +49,34 @@ class FakeEngine implements SoundEngine {
   }
 
   @override
+  Future<AudioSource> loadOgg(String key, Uint8List bytes) async {
+    oggCount++;
+    if (throwOnLoad) throw Exception('load failed');
+    // ignore: invalid_use_of_internal_member
+    return AudioSource(const SoundHash(2));
+  }
+
+  @override
   SoundHandle play(AudioSource src, {bool loop = false}) {
     playCount++;
     return const SoundHandle(1);
   }
+
+  @override
+  SoundHandle scheduleAt(AudioSource src,
+      {required Duration atTime, double scale = 1, Duration? duration}) {
+    scheduleCount++;
+    lastAt = atTime;
+    lastScale = scale;
+    lastDuration = duration;
+    return const SoundHandle(3);
+  }
+
+  @override
+  Duration engineNow() => engineTimeValue;
+
+  @override
+  void setMaxActiveVoiceCount(int count) {}
 
   @override
   Duration position(SoundHandle h) => positionValue;

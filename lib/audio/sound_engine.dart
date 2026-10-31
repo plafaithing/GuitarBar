@@ -64,4 +64,32 @@ class SoundEngine {
   /// flutter_soloud 5.2.1 签名：void setPause(SoundHandle, bool)。
   void setPause(SoundHandle h, bool paused) =>
       SoLoud.instance.setPause(h, paused);
+
+  /// ogg 等压缩音频字节 → 可播放音源（第 10 个成员，GP8 采样库用）。
+  /// loadMem 原生解码 ogg 容器（非 RAW PCM）；mode=memory 全量驻留防寻址卡顿。
+  Future<AudioSource> loadOgg(String key, Uint8List bytes) async {
+    await init();
+    return SoLoud.instance.loadMem(key, bytes, mode: LoadMode.memory);
+  }
+
+  /// 引擎时钟（第 11 个成员）：playScheduled 的绝对时基。设备停摆时冻结，
+  /// 预调度声音的偏移量在设备恢复后保持不变。
+  Duration engineNow() => SoLoud.instance.getEngineTime();
+
+  /// 绝对引擎时刻起播（第 12 个成员）：采样精确的节奏性调度；scale =
+  /// 相对播放速度（重移调 2^(半音差/12)），出生时原子生效无音高滑变；
+  /// duration 非空时到点自动停（闷音短音用）。atTime 已过则尽快起播。
+  SoundHandle scheduleAt(
+    AudioSource src, {
+    required Duration atTime,
+    double scale = 1,
+    Duration? duration,
+  }) =>
+      SoLoud.instance.playScheduled(src, atTime,
+          scale: scale, duration: duration ?? Duration.zero);
+
+  /// 活跃声部上限（第 13 个成员，默认 16）：逐音采样 + 自然衰减会并发
+  /// 叠加多条余振，16 不够（KS 路径是单条 PCM 流无此约束）。
+  void setMaxActiveVoiceCount(int count) =>
+      SoLoud.instance.setMaxActiveVoiceCount(count);
 }

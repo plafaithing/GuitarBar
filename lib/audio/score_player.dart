@@ -7,10 +7,22 @@ import 'package:flutter_soloud/flutter_soloud.dart';
 import 'score_renderer.dart';
 import 'sound_engine.dart';
 
+/// 两条播放路径（离线 PCM / 实时采样）的公共面：页面 UI 只看这组成员。
+/// 实现方：ScorePlayer（整曲 PCM）与 SampleScorePlayer（逐音采样调度）。
+abstract interface class ScorePlayback {
+  bool get playing;
+  bool get paused;
+  double get durationSeconds;
+  ValueNotifier<double> get positionSeconds;
+  void pause();
+  void resume();
+  Future<void> stop();
+}
+
 /// 自动演奏播放：渲染 PCM → loadPcm → play。
 /// 位置轮询仅供 UI 播放头（与节拍器同思路，不影响音频精度）。
 /// 渲染耗时 ~0.3-1s（真实谱）：调用方负责忙碌反馈（Task 15 备案）。
-class ScorePlayer {
+class ScorePlayer implements ScorePlayback {
   ScorePlayer(this._sound, {this.onEnded});
   final SoundEngine _sound;
 
@@ -22,16 +34,21 @@ class ScorePlayer {
   SoundHandle? _handle;
   Timer? _timer;
 
+  @override
   double durationSeconds = 0;
+  @override
   final ValueNotifier<double> positionSeconds = ValueNotifier(0);
+  @override
   bool get playing => _handle != null;
 
   /// 暂停中（playing 仍为 true：句柄活着，soloud 冻结在暂停点）。
   bool _paused = false;
+  @override
   bool get paused => _paused;
 
   /// 暂停：soloud setPause(true)，50ms 轮询继续但 position 冻结在暂停点。
   /// 暂停态的句柄不会自然失效（voice 未销毁），曲终检测不受影响。
+  @override
   void pause() {
     final h = _handle;
     if (h == null || _paused) return;
@@ -40,6 +57,7 @@ class ScorePlayer {
   }
 
   /// 恢复：从暂停点继续播。
+  @override
   void resume() {
     final h = _handle;
     if (h == null || !_paused) return;
@@ -79,6 +97,7 @@ class ScorePlayer {
     positionSeconds.value = pos.clamp(0.0, durationSeconds).toDouble();
   }
 
+  @override
   Future<void> stop() async {
     final d = _detachPlayback();
     if (d != null) await _release(d.$1, d.$2);

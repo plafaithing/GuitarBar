@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../audio/sample_bank.dart';
+import '../../audio/sample_player.dart';
 import '../../audio/score_player.dart';
 import '../../audio/score_renderer.dart';
 import '../../audio/sound_engine.dart';
@@ -38,6 +40,9 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
   List<File>? _pages;
   bool _writing = false; // 回写串行守卫：防连点两次，第二次基于旧 _ir 覆盖第一次编辑
   late final ScorePlayer _player;
+  // GP8 真录钢弦采样路径（构造不触引擎；play 时才预载/调度）。
+  late final SteelSampleBank _sampleBank;
+  late final SampleScorePlayer _samplePlayer;
   bool _rendering = false; // 渲染忙碌（0.3-1s 真实谱）
 
   @override
@@ -45,8 +50,18 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     super.initState();
     // 构造不触引擎（loadPcm/play 才会），initState 初始化安全。
     _player = ScorePlayer(SoundEngine.I, onEnded: _onPlayEnded);
+    _sampleBank = SteelSampleBank(SoundEngine.I);
+    _samplePlayer =
+        SampleScorePlayer(SoundEngine.I, _sampleBank, onEnded: _onPlayEnded);
     _initRepo();
   }
+
+  /// 当前生效的播放器：采样播放/暂停中读采样播放器，否则读 KS 播放器
+  /// （曲终/停止后回到 KS 播放器的预播放态：position 0、duration 0）。
+  ScorePlayback get _activePlayer =>
+      (_samplePlayer.playing || _samplePlayer.paused)
+          ? _samplePlayer
+          : _player;
 
   /// 曲终自动停止：tick 已同步清理播放态，这里只刷新按钮/进度。
   void _onPlayEnded() {
@@ -55,8 +70,15 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
 
   @override
   void dispose() {
-    unawaited(_player.stop());
+    unawaited(_shutdownAudio());
     super.dispose();
+  }
+
+  /// 两条路径一并停（各自幂等），采样库最后释放（需无活动句柄）。
+  Future<void> _shutdownAudio() async {
+    await _player.stop();
+    await _samplePlayer.stop();
+    await _sampleBank.dispose();
   }
 
   Future<void> _initRepo() async {
@@ -95,11 +117,11 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     }
     final pages = repo.files.pagePngs(widget.scoreId);
     if (mounted) {
-      // 播放中 _ir 被替换（编辑回写）：立即停播——旧 PCM 对不上
+      // 播放中 _ir 被替换（编辑回写）：立即停播——旧调度/旧 PCM 对不上
       // 新 IR 的拍位（tempo 可能变）。stop 同步段先清句柄，下方 setState
       // 时按钮已回到播放态。
-      if (_player.playing && !identical(_ir, ir)) {
-        unawaited(_player.stop());
+      if (_activePlayer.playing && !identical(_ir, ir)) {
+        unawaited(_activePlayer.stop());
       }
       setState(() {
         _row = row;
@@ -182,18 +204,20 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     return '调弦 ${ir.tuning.join(' - ')}';
   }
 
-  /// 播放/暂停切换（走查反馈 ①）：未播放 → 渲染播放；在播 → 暂停
-  /// （soloud 冻结在暂停点）；暂停中 → 从暂停点继续。
+  /// 播放/暂停切换（走查反馈 ①）：未播放 → 采样优先起播（预载失败降级
+  /// 离线 KS 渲染）；在播 → 暂停（采样路径切声部冻结时间轴，PCM 路径
+  /// soloud 冻结在暂停点）；暂停中 → 从暂停点继续。
   Future<void> _togglePlay() async {
     final ir = _ir;
     if (ir == null || _rendering) return;
-    if (_player.paused) {
-      _player.resume();
+    final active = _activePlayer;
+    if (active.paused) {
+      active.resume();
       if (mounted) setState(() {});
       return;
     }
-    if (_player.playing) {
-      _player.pause();
+    if (active.playing) {
+      active.pause();
       if (mounted) setState(() {});
       return;
     }
@@ -202,18 +226,22 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     // 再渲染，否则 spinner 与播放态同帧出现、忙碌反馈形同虚设。
     await WidgetsBinding.instance.endOfFrame;
     try {
-      // 渲染在主 isolate 直接做（0.3-1s）：忙碌态由 _rendering 承担；
-      // M5 变速重渲染时再 Isolate.run（Task 15 备案）。
-      final rendered = renderScore(ir);
-      if (rendered.seconds == 0) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('这份谱还没有可演奏的音符')));
+      // 采样优先：GP8 真录钢弦逐音调度；返回 false（预载失败/无可发
+      // 音符）降级离线 KS 渲染——"还没有可演奏的音符"提示也由该路径出。
+      if (!await _samplePlayer.play(ir)) {
+        // 渲染在主 isolate 直接做（0.3-1s）：忙碌态由 _rendering 承担；
+        // M5 变速重渲染时再 Isolate.run（Task 15 备案）。
+        final rendered = renderScore(ir);
+        if (rendered.seconds == 0) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('这份谱还没有可演奏的音符')));
+          }
+          return;
         }
-        return;
+        await _player.load(rendered);
+        await _player.start();
       }
-      await _player.load(rendered);
-      await _player.start();
       if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
@@ -227,7 +255,7 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
 
   /// 停止按钮：归零回开头（暂停只是冻结位置，停止才是归零）。
   Future<void> _stopPlay() async {
-    await _player.stop();
+    await _activePlayer.stop();
     if (mounted) setState(() {});
   }
 
@@ -265,12 +293,12 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                       Expanded(
                         child: ListenableBuilder(
                           // 播放头 50ms 刷新（position notifier 驱动）。
-                          listenable: _player.positionSeconds,
+                          listenable: _activePlayer.positionSeconds,
                           builder: (ctx, _) => TabView(
                               ir: _ir!,
                               // v1 播放头 tempo 来源：_ir.tempo（M5 变速后改用渲染时值）。
-                              playheadBeat: _player.playing
-                                  ? (_player.positionSeconds.value /
+                              playheadBeat: _activePlayer.playing
+                                  ? (_activePlayer.positionSeconds.value /
                                       (60.0 / _ir!.tempo))
                                   : null,
                               // 播放时谱面自动滚动跟随（走查反馈 ②）。
@@ -315,12 +343,12 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
       bottomSheet: (_ir == null)
           ? null
           : ListenableBuilder(
-              listenable: _player.positionSeconds,
+              listenable: _activePlayer.positionSeconds,
               builder: (ctx, _) => PlayBar(
-                  playing: _player.playing,
-                  paused: _player.paused,
-                  positionSeconds: _player.positionSeconds.value,
-                  durationSeconds: _player.durationSeconds,
+                  playing: _activePlayer.playing,
+                  paused: _activePlayer.paused,
+                  positionSeconds: _activePlayer.positionSeconds.value,
+                  durationSeconds: _activePlayer.durationSeconds,
                   busy: _rendering,
                   onToggle: _togglePlay,
                   onStop: _stopPlay),
