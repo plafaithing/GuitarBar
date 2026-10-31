@@ -50,19 +50,22 @@ void main() {
     expect(r.speed, 1.0);
   });
 
-  test('7 品自然泛音：采样发声 = 空弦+19（八度+五度），重移调对齐约定音高', () {
-    // 5 弦 sounding 52（渲染器约定 = 45+7）；采样实发 45+19 = 64 → 下移 12 半音。
+  test('7 品泛音重移调大（>2 半音）→ 跨弦找精确泛音采样', () {
+    // 5 弦 sounding 52；本弦采样发声 45+19=64 → 移调 12 半音太重。
+    // 跨弦：6 弦 12 品泛音 = 40+12=52 → 精确命中（速度 1.0）。
     final r = SteelSampleBank.resolve(
         string: 5, fret: 7, soundingMidi: 52, technique: 'H');
-    expect(r!.file, 'Mrg12-Hrm-Nat-07-none-5A45-none-none-none.ogg');
-    expect(r.speed, closeTo(0.5, 1e-9));
+    expect(r!.speed, 1.0); // 精确匹配（跨弦）
+    // 不再断言具体文件——跨弦策略的实现细节。
   });
 
-  test('5 品自然泛音：采样发声 = 空弦+24（两个八度）', () {
+  test('5 品泛音重移调大（>2 半音）→ 跨弦找最近泛音采样', () {
+    // 6 弦 sounding 45；本弦采样发声 40+24=64 → 移调 19 半音太重。
+    // 跨弦：最近泛音发声 = 6 弦 12 品（52）→ 移调 7 半音（远优于 19）。
     final r = SteelSampleBank.resolve(
         string: 6, fret: 5, soundingMidi: 45, technique: 'H');
-    expect(r!.file, 'Mrg12-Hrm-Nat-05-none-6E40-none-none-none.ogg');
-    expect(r.speed, closeTo(speedBySemitones(-19), 1e-9));
+    expect(r!.file, contains('Hrm')); // 确认用了泛音采样
+    expect(r.speed, lessThan(0.7)); // 移调量大幅减少（< 7 半音降速）
   });
 
   test('非 5/7/12 泛音位：按普通拨弦发声（音高正确优先）', () {

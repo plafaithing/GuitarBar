@@ -29,9 +29,46 @@ class SteelSampleBank {
   /// 拨弦采样的录制品位（空弦 + 半音数）。v1 固定 Up-01（上拨 mf）层。
   static const _pluckOffsets = [0, 4, 8, 12];
 
-  /// 自然泛音品位 → 采样发声高空弦的半音数（5 品两个八度、
-  /// 7 品八度+纯五度、12 品八度）。
+  /// 泛音采样弦号 → 各品位泛音的发声半音数。
+  /// 非标准调弦时按发声 MIDI 找最近泛音采样（跨弦借采），减少移调量
+  /// （2026-10-31 走查：重移调 >2 半音的泛音听感"太实"不像泛音）。
   static const _harmonicPitch = {5: 24, 7: 19, 12: 12};
+
+  /// 按弦+品匹配泛音采样（原始逻辑，标准调弦精确命中）。
+  static ({String file, double speed})? _harmonicByString(
+      int string, int fret, int soundingMidi) {
+    final base = _stringBaseMidi[string];
+    if (base == null) return null;
+    final pitch = _harmonicPitch[fret];
+    if (pitch == null) return null;
+    return (
+      file: _harmonicFile(string, fret, base),
+      speed: _speed(soundingMidi, base + pitch),
+    );
+  }
+
+  /// 按发声 MIDI 跨弦找最近泛音采样（非标准调弦主路径）。
+  /// 遍历 6 弦 × 3 泛音位 = 18 个采样发声点，取距离最小的。
+  static ({String file, double speed})? _harmonicByPitch(
+      int soundingMidi) {
+    ({String file, double speed})? best;
+    var bestDist = 999;
+    for (var s = 1; s <= 6; s++) {
+      final base = _stringBaseMidi[s]!;
+      for (final entry in _harmonicPitch.entries) {
+        final sampleMidi = base + entry.value;
+        final dist = (soundingMidi - sampleMidi).abs();
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = (
+            file: _harmonicFile(s, entry.key, base),
+            speed: _speed(soundingMidi, sampleMidi),
+          );
+        }
+      }
+    }
+    return best;
+  }
 
   /// 采样解析：文件名 + 重移调速度。弦号越界返回 null。
   ///
@@ -47,14 +84,17 @@ class SteelSampleBank {
   }) {
     final base = _stringBaseMidi[string];
     if (base == null) return null;
-    if (technique == 'H') {
-      final pitch = _harmonicPitch[fret];
-      if (pitch != null) {
-        return (
-          file: _harmonicFile(string, fret, base),
-          speed: _speed(soundingMidi, base + pitch),
-        );
+    if (technique == 'H' && _harmonicPitch.containsKey(fret)) {
+      // 泛音采样策略（2026-10-31 走查修正）：
+      // 1. 弦+品精确命中且移调轻（±2 半音）→ 直接用本弦采样
+      // 2. 非标准调弦/重移调→跨弦找最近发声 MIDI 的泛音采样
+      // 3. 仅 5/7/12 品走此路径；其他品按普通拨弦（与原逻辑一致）
+      final byString = _harmonicByString(string, fret, soundingMidi);
+      if (byString != null && (byString.speed - 1.0).abs() < 0.2) {
+        return byString;
       }
+      final byPitch = _harmonicByPitch(soundingMidi);
+      if (byPitch != null) return byPitch;
     }
     var best = _pluckOffsets[0];
     for (final o in _pluckOffsets) {
