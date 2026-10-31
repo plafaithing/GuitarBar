@@ -427,6 +427,25 @@ void main() {
     });
   });
 
+  group('extractGpifXml（13.4 源文件查看）', () {
+    test('GP6 容器 → gpif XML 文本', () {
+      final xml = extractGpifXml(_buildGp6Container(_gpifXml));
+      expect(xml, isNotNull);
+      expect(xml!, contains('<GPIF'));
+    });
+
+    test('GP7 zip 容器 → 同一 gpif 文本', () {
+      final xml = extractGpifXml(_buildGp7Container(_gpifXml));
+      expect(xml, isNotNull);
+      expect(xml!, contains('<GPIF'));
+    });
+
+    test('坏字节/过小文件返回 null 不抛', () {
+      expect(extractGpifXml(Uint8List.fromList([1, 2, 3, 4])), isNull);
+      expect(extractGpifXml(Uint8List.fromList([1])), isNull);
+    });
+  });
+
   group('真实文件集成（存在时）', () {
     test('D:/Guitar/月下之恋.gpx（GP6 容器）→ IR', () {
       final f = File(r'D:\Guitar\月下之恋.gpx');
@@ -477,6 +496,17 @@ void main() {
       // 770 个引用 − 41 个 destination="true" 续接端 = 729 攻击。
       expect(totalNotes, 729);
       expect(m0.notes[0].confidence, isNull);
+    });
+
+    test('extractGpifXml（存在时）解出 gpif 文本', () {
+      final f = File(r'D:\Guitar\月下之恋.gpx');
+      if (!f.existsSync()) {
+        markTestSkipped('真实 gpx 文件不存在');
+        return;
+      }
+      final xml = extractGpifXml(f.readAsBytesSync());
+      expect(xml, isNotNull);
+      expect(xml!, contains('<GPIF'));
     });
   });
 }

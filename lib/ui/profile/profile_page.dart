@@ -10,7 +10,6 @@ import '../../data/database.dart';
 import '../../state/practice_timer.dart';
 import '../../state/theme_settings.dart';
 import '../../ui/theme.dart';
-import 'vision_models_page.dart';
 
 /// 个人中心：练琴打卡（计时/统计/热力图/补卡）+ 外观与调试设置 + 数据导出/导入。
 class ProfilePage extends StatefulWidget {
@@ -110,31 +109,6 @@ class _ProfilePageState extends State<ProfilePage> {
                     onChanged: (_) => theme.toggleDebugDiagnostics(),
                   ),
                 ]),
-                const Divider(),
-                const SizedBox(height: 4),
-                // 识谱模型配置入口（二期 M2）。
-                InkWell(
-                  onTap: () => Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const VisionModelsPage())),
-                  child: SizedBox(
-                    height: 48,
-                    child: Row(children: [
-                      Expanded(child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('识谱模型',
-                                style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                    color: p.ink)),
-                            Text('AI 识谱 API 配置（OpenAI 兼容）',
-                                style: TextStyle(fontSize: 12, color: p.muted)),
-                          ])),
-                      Icon(Icons.chevron_right, size: 20, color: p.muted),
-                    ]),
-                  ),
-                ),
               ],
             )),
             const SizedBox(height: 24),

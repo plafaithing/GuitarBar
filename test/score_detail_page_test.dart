@@ -10,6 +10,7 @@ import 'package:guitarbar/core/score/score_ir.dart';
 import 'package:guitarbar/core/score/score_repository.dart';
 import 'package:guitarbar/data/database.dart';
 import 'package:guitarbar/ui/scores/score_detail_page.dart';
+import 'package:guitarbar/ui/scores/source_viewer.dart';
 import 'package:guitarbar/ui/theme.dart';
 import 'package:path/path.dart' as p;
 
@@ -83,5 +84,75 @@ void main() {
     // 标准调弦命中内置预设名 Standard（_tuningLabel 预设匹配）。
     expect(find.text('调弦 Standard · Capo 3品 · 90 BPM'),
         findsOneWidget);
+  });
+
+  // GTP 全屏（13.4）：谱面直接占满，无右侧查看器/TabBar/识谱按钮。
+  ScoreIr gtpIr() => ScoreIr(
+      version: 1,
+      title: 'T',
+      tempo: 90,
+      timeSignature: '4/4',
+      tuning: const ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'],
+      capo: 0,
+      tracks: [
+        TrackIr(name: '主旋律', measures: [
+          const MeasureIr(index: 0, confidence: 0, failed: false, notes: [
+            NoteIr(beat: 0, duration: 1, string: 1, fret: 0,
+                technique: null, confidence: null),
+          ]),
+        ]),
+      ]);
+
+  Future<int> insertGtp(AppDatabase db) => db.into(db.scores).insert(
+      ScoresCompanion.insert(
+          title: 'GTP谱',
+          sourceType: 'gtp',
+          sourcePath: '',
+          irJson: Value(jsonEncode(gtpIr().toJson()))));
+
+  Future<void> pumpDetail(WidgetTester tester, AppDatabase db, Directory tmp,
+          int id) =>
+      tester.pumpWidget(MaterialApp(
+        theme: GuitarBarTheme.light(),
+        home: ScoreDetailPage(
+            scoreId: id,
+            repoFactory: () => ScoreRepository(db, ScoreFiles(tmp))),
+      ));
+
+  testWidgets('GTP 全屏：窄屏无查看器与 TabBar，识谱按钮已移除', (tester) async {
+    final db = AppDatabase(NativeDatabase.memory());
+    final tmp = Directory.systemTemp.createTempSync('scoredetail');
+    addTearDown(() {
+      tmp.deleteSync(recursive: true);
+      db.close();
+    });
+    final id = await insertGtp(db);
+    await pumpDetail(tester, db, tmp, id);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(SourceViewer), findsNothing);
+    expect(find.byType(TabBar), findsNothing);
+    expect(find.byIcon(Icons.document_scanner_outlined), findsNothing);
+    // 谱面信息条直接显示（capo 0 不出 Capo 段）
+    expect(find.text('调弦 Standard · 90 BPM'), findsOneWidget);
+  });
+
+  testWidgets('GTP 全屏：宽屏同样不显示右侧查看器', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final db = AppDatabase(NativeDatabase.memory());
+    final tmp = Directory.systemTemp.createTempSync('scoredetail');
+    addTearDown(() {
+      tmp.deleteSync(recursive: true);
+      db.close();
+    });
+    final id = await insertGtp(db);
+    await pumpDetail(tester, db, tmp, id);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(SourceViewer), findsNothing);
+    expect(find.text('调弦 Standard · 90 BPM'), findsOneWidget);
   });
 }

@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
+import '../../core/score/gtp_parser.dart';
 import '../../core/score/score_repository.dart';
 import '../../data/database.dart';
 import '../theme.dart';
 import 'score_detail_page.dart';
+import 'source_file_page.dart';
 
 /// 曲谱库：源文件仓库（导入即归档即查看），识谱/演奏是叠加增强。
 class ScoresPage extends StatefulWidget {
@@ -237,15 +239,21 @@ class _ScoresPageState extends State<ScoresPage> {
                             style: TextStyle(fontSize: 12, color: p.muted)),
                         // 行尾菜单（2026-10-30 用户反馈补删除）：
                         // 桌面惯例三点菜单，删除带确认防误删整份谱。
+                        // 13.4：GTP 行加"查看源文件"（解析出 gpif 可读展示）。
                         trailing: PopupMenuButton<String>(
                           tooltip: '更多',
                           icon: Icon(Icons.more_horiz,
                               size: 20, color: p.muted),
                           itemBuilder: (ctx) => [
+                            if (s.sourceType == 'gtp')
+                              const PopupMenuItem(
+                                  value: 'viewSource',
+                                  child: Text('查看源文件')),
                             const PopupMenuItem(
                                 value: 'delete', child: Text('删除')),
                           ],
                           onSelected: (v) {
+                            if (v == 'viewSource') _viewSource(s);
                             if (v == 'delete') _confirmDelete(s);
                           },
                         ),
@@ -266,6 +274,31 @@ class _ScoresPageState extends State<ScoresPage> {
         ]),
       ),
     );
+  }
+
+  /// 查看源文件（13.4，仅 GTP 行）：读归档的 .gpx 解出 score.gpif XML
+  /// （压缩容器直接看是乱码），失败提示不进页。
+  Future<void> _viewSource(Score s) async {
+    final repo = _repo;
+    if (repo == null || !mounted) return;
+    String? xml;
+    try {
+      xml = extractGpifXml(
+          await repo.files.sourceFile(s.id, s.sourcePath).readAsBytes());
+    } catch (_) {
+      // 文件读取失败（原谱被移动/删除等）与解析失败同路提示。
+    }
+    if (!mounted) return;
+    if (xml == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('源文件解析失败')));
+      return;
+    }
+    await Navigator.push(
+        context,
+        MaterialPageRoute(
+            // try/catch 内赋值阻断类型提升，此处仍需断言。
+            builder: (_) => SourceFilePage(title: s.title, xml: xml!)));
   }
 
   /// 删除确认（对齐识谱模型配置页的确认模式）→ 行+文件+页图全清。

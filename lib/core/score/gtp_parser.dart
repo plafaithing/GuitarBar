@@ -8,12 +8,38 @@ import 'package:xml/xml.dart';
 import '../music/note.dart';
 import 'score_ir.dart';
 
-/// GTP（.gpx / .gp）字节 → ScoreIr。确定性导入：所有 NoteIr.confidence 保持 null。
-///
+/// gpx 容器（GP6 "BCFZ" / GP7 zip）→ score.gpif 字节。
 /// 容器按魔数分流（实测 D:\Guitar 真实文件并与 alphaTab GpxFileSystem 权威实现对齐）：
 /// - `BCFZ`（GP6）：自定义位级 LZ 压缩——**不是 zlib/deflate**（文件里不存在任何
 ///   deflate 流）→ 解压得 "BCFS" 扇区镜像（4096 字节/扇区的迷你文件系统）→ score.gpif。
 /// - `PK`（GP7）：标准 zip 容器 → score.gpif。
+Uint8List _gpifBytes(Uint8List bytes) {
+  if (bytes.length < 4) throw const FormatException('文件太小');
+  final magic = String.fromCharCodes(bytes.sublist(0, 4));
+  if (magic == 'BCFZ') {
+    final files = readBcfsFiles(decompressGpxImage(bytes));
+    final gpif = files['score.gpif'] ??
+        [
+          for (final e in files.entries)
+            if (e.key.toLowerCase().endsWith('.gpif')) e.value,
+        ].firstOrNull;
+    if (gpif == null) throw const FormatException('GP6 容器中无 score.gpif');
+    return gpif;
+  }
+  if (magic.startsWith('PK')) {
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final entry = archive.findFile('score.gpif') ??
+        [
+          for (final f in archive.files)
+            if (f.isFile && f.name.toLowerCase().endsWith('.gpif')) f,
+        ].firstOrNull;
+    if (entry == null) throw const FormatException('GP7 容器中无 score.gpif');
+    return entry.content;
+  }
+  throw FormatException('不是 .gpx 文件（魔数 $magic）');
+}
+
+/// GTP（.gpx / .gp）字节 → ScoreIr。确定性导入：所有 NoteIr.confidence 保持 null。
 ///
 /// gpif XML 为扁平 id 引用文档：Tracks/MasterBars/Bars/Voices/Beats/Notes/Rhythms
 /// 均为顶层列表，元素间以空格分隔的 id 文本互相引用。gp6 逐引用复用：beat/note
@@ -23,32 +49,17 @@ import 'score_ir.dart';
 /// 最粗（其 tunings 低→高索引），与 GuitarBar IR（string 1 = 最细）相反，
 /// 故 IR string = 6 - gp（2026-10-31 修正，原 gp+1 造成谱面与音高双镜像）。
 /// v1 只取第一轨（多轨文件其余轨忽略），不做反复（repeat）展开。
-ScoreIr parseGpxBytes(Uint8List bytes) {
-  if (bytes.length < 4) throw const FormatException('文件太小');
-  final magic = String.fromCharCodes(bytes.sublist(0, 4));
-  final String xml;
-  if (magic == 'BCFZ') {
-    final files = readBcfsFiles(decompressGpxImage(bytes));
-    final gpif = files['score.gpif'] ??
-        [
-          for (final e in files.entries)
-            if (e.key.toLowerCase().endsWith('.gpif')) e.value,
-        ].firstOrNull;
-    if (gpif == null) throw const FormatException('GP6 容器中无 score.gpif');
-    xml = utf8.decode(gpif);
-  } else if (magic.startsWith('PK')) {
-    final archive = ZipDecoder().decodeBytes(bytes);
-    final entry = archive.findFile('score.gpif') ??
-        [
-          for (final f in archive.files)
-            if (f.isFile && f.name.toLowerCase().endsWith('.gpif')) f,
-        ].firstOrNull;
-    if (entry == null) throw const FormatException('GP7 容器中无 score.gpif');
-    xml = utf8.decode(entry.content);
-  } else {
-    throw FormatException('不是 .gpx 文件（魔数 $magic）');
+ScoreIr parseGpxBytes(Uint8List bytes) =>
+    parseGpif(utf8.decode(_gpifBytes(bytes)));
+
+/// 解压 gpx 容器取 score.gpif XML 文本（13.4 源文件查看用）。
+/// 坏容器/非 gpx 返回 null（查看页提示），不抛异常。
+String? extractGpifXml(Uint8List bytes) {
+  try {
+    return utf8.decode(_gpifBytes(bytes));
+  } catch (_) {
+    return null;
   }
-  return parseGpif(xml);
 }
 
 /// GP6 "BCFZ" 位级 LZ 解压（alphaTab GpxFileSystem.decompress 逐条转写，真实文件实测对齐）。
