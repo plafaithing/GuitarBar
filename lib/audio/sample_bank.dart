@@ -5,6 +5,13 @@ import 'package:flutter_soloud/flutter_soloud.dart' show AudioSource;
 
 import 'sound_engine.dart';
 
+void _noop() {}
+
+/// 安全忽略（fire-and-forget 释放用）。
+void unawaited(Future<void> f) {
+  f.catchError((_) => _noop());
+}
+
 /// GP8 12-Steel 采样库（assets/sounds/steel/ 的 114 个 ogg 真录钢弦采样）：
 /// 按（弦号, 品位, 技法）→ 采样文件 + 重移调速度 → AudioSource 缓存。
 ///
@@ -137,14 +144,13 @@ class SteelSampleBank {
     }
   }
 
-  /// 释放全部缓存音源。需先停播放（无活动句柄）；页 dispose 时调用。
+  /// 释放全部缓存音源（2026-10-31 走查"关闭慢"修复）：并行 fire-and-forget，
+  /// 不逐个 await——顺序 await ~50 个原生释放曾把主 isolate 冻结数秒。
   Future<void> dispose() async {
     final sources = List.of(_cache.values);
     _cache.clear();
     for (final s in sources) {
-      try {
-        await _sound.disposeSource(s);
-      } catch (_) {}
+      unawaited(_sound.disposeSource(s));
     }
   }
 }

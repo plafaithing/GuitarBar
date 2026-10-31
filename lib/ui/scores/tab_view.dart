@@ -123,7 +123,6 @@ class _TabViewState extends State<TabView> {
                       stringLine: p.border,
                       fretText: p.ink,
                       barLine: p.border,
-                      confBg: p.dataHue.withValues(alpha: 0.12),
                       failedText: p.negative,
                       pageNum: p.muted),
                 ),
@@ -198,7 +197,6 @@ class _ScorePainter extends CustomPainter {
     required this.stringLine,
     required this.fretText,
     required this.barLine,
-    required this.confBg,
     required this.failedText,
     required this.pageNum,
   });
@@ -210,7 +208,7 @@ class _ScorePainter extends CustomPainter {
   /// 不参与 shouldRepaint。
   final ScrollController scroll;
 
-  final Color stringLine, fretText, barLine, confBg, failedText, pageNum;
+  final Color stringLine, fretText, barLine, failedText, pageNum;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -233,32 +231,27 @@ class _ScorePainter extends CustomPainter {
     for (var r = firstRow; r <= lastRow; r++) {
       final rowTop = layout.stringY(1, r);
       final rowBottom = layout.stringY(6, r);
-      // 弦线（1 弦最上）。
+      // 弦线（1 弦最上）——整行连续（对齐 Guitar Pro 连续谱面样式）。
       for (var s = 1; s <= 6; s++) {
         final y = layout.stringY(s, r);
         canvas.drawLine(Offset(TabLayout.leftPad, y),
             Offset(size.width - TabLayout.leftPad, y),
             Paint()..color = stringLine);
       }
+      // 小节线（2026-10-31 小节合并：measureGap=0 后相邻小节共用竖线，
+      // 只在每小节左边界画一条 + 行末收尾线；低置信度底色块随 AI 通道
+      // 放弃一并移除——GTP confidence=0 曾让全部小节带底色成块状）。
       for (final m in rows[r].map((idx) => measures[idx])) {
         final mx = layout.measureX(m.index, size.width);
         final mw = layout.measureWidth;
-        // 低置信度底（failed 不画底，画标记）。
-        if (!m.failed && m.confidence < 0.6) {
-          canvas.drawRect(
-              Rect.fromLTWH(mx, rowTop - 8, mw, rowBottom - rowTop + 16),
-              Paint()..color = confBg);
-        }
         // 小节号。
         _text(canvas, '${m.index + 1}', Offset(mx, rowTop - 16),
             TextStyle(
                 fontSize: 10,
                 color: pageNum,
                 fontFeatures: [FontFeature.tabularFigures()]));
-        // 左右小节竖线。
+        // 左小节竖线。
         canvas.drawLine(Offset(mx, rowTop), Offset(mx, rowBottom),
-            Paint()..color = barLine);
-        canvas.drawLine(Offset(mx + mw, rowTop), Offset(mx + mw, rowBottom),
             Paint()..color = barLine);
         if (m.failed) {
           _text(canvas, '未识别', Offset(mx + mw / 2, (rowTop + rowBottom) / 2),
@@ -291,15 +284,14 @@ class _ScorePainter extends CustomPainter {
           }
         }
       }
+      // 行末收尾竖线（最后一小节的右边界）。
+      final lastMeasure = rows[r].last;
+      final endX = layout.measureX(lastMeasure, size.width) +
+          layout.measureWidth;
+      canvas.drawLine(Offset(endX, rowTop), Offset(endX, rowBottom),
+          Paint()..color = barLine);
     }
     canvas.restore();
-    // 图例（低置信度底色示意）：画布右上角，避开第 1 小节号；
-    // 右缘与弦线右端（size.width - leftPad）对齐。内容锚定（y≈6），
-    // 滚出视口即不可见，与裁剪前行为一致。
-    canvas.drawRect(
-        Rect.fromLTWH(size.width - 70, 6, 10, 10), Paint()..color = confBg);
-    _text(canvas, '低置信度', Offset(size.width - 36, 11),
-        TextStyle(fontSize: 10, color: pageNum));
   }
 
   /// TextPainter 全局缓存（播放滚动卡顿修复 ②）：品数字仅 0-24、技法字母

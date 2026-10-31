@@ -13,7 +13,9 @@ class TabLayout {
   static const bottomPad = 20.0;
   static const leftPad = 16.0;
   static const pxPerBeat = 48.0;
-  static const measureGap = 14.0;
+  // 小节合并（2026-10-31 走查：对齐 Guitar Pro 连续谱面——小节间无缝、
+  // 共用小节线，不再逐块间隙+底色）。
+  static const measureGap = 0.0;
   static const rowGap = 26.0;
 
   int get beatsPerBar => int.tryParse(ir.timeSignature.split('/')[0]) ?? 4;
