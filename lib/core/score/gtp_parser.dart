@@ -170,10 +170,10 @@ ScoreIr parseGpif(String xml) {
     }
   }
   // 2026-10-31 走查发现：部分 gpx 的 capo 存在 Beat 的
-  // <freetext>capo:N</freetext>（GP8 曲中标注）而非 Track Properties。
-  // 属性级优先（精确）；freetext 级兜底（取首个非零值）。
+  // <FreeText>capo:N</FreeText>（GP8 曲中标注，注意大小写）而非
+  // Track Properties。属性级优先（精确）；FreeText 级兜底（首个非零值）。
   if (capo == 0) {
-    for (final ft in doc.findAllElements('freetext')) {
+    for (final ft in doc.findAllElements('FreeText')) {
       final m =
           RegExp(r'capo[:\s]*(\d+)', caseSensitive: false)
               .firstMatch(ft.innerText);
