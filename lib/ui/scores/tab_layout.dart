@@ -33,10 +33,10 @@ class TabLayout {
   // "把这对音撑到 18px" 反推每拍所需像素。
   static const _minNoteGapPx = 18.0;
 
-  // 连排降密度阈值（2026-11-01 走查四轮用户定参）：同弦连排数 <8 的
-  // 由拥挤修正趟排开（步长 16px 恰好两位数字），不降行密度；≥8 的
-  // 长连排累积右移会越小节界，所在行才降为 2 小节。
-  static const _runThreshold = 8;
+  // 连排降密度阈值（2026-11-01 走查用户定参二修）：同弦连排 ≥6（如
+  // Like A Star m71 "12×6"）所在行降为 2 小节/行拉长拍距；<6 的短连排
+  // 由拥挤修正趟排开（步长 16px 恰好两位数字），不降行密度。
+  static const _runThreshold = 6;
 
   int get beatsPerBar => int.tryParse(ir.timeSignature.split('/')[0]) ?? 4;
   double get measureWidth => beatsPerBar * pxPerBeat;

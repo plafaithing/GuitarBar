@@ -48,9 +48,9 @@ void main() {
     expect(xLast - TabLayout.leftPad, lessThanOrEqualTo(l.measureWidth - TabLayout.notePad));
   });
 
-  test('自适应行密度：同弦连排 ≥8 的小节所在行降为 2 小节/行', () {
-    // m1 全 16 分连排 16 音（≥8 阈值）：需要宽 308+ > 标准宽 256 →
-    // 降密度；普通小节行保持 3。
+  test('自适应行密度：同弦连排 ≥6 的小节所在行降为 2 小节/行', () {
+    // m1 全 16 分连排 16 音（≥6 阈值）：需要宽 > 标准宽 256 → 降密度；
+    // 普通小节行保持 3。
     ScoreIr irWithDense() => ScoreIr(
           version: 1,
           title: 'T',
@@ -94,9 +94,8 @@ void main() {
     expect(x1 - x0, greaterThanOrEqualTo(18.0));
   });
 
-  test('短连排（<8）不降行密度：保持 3 小节/行，修正趟排开', () {
-    // m1 仅 6 个 16 分连排（Like A Star "12×6" 场景）：<8 阈值 → 标准宽。
-    ScoreIr irWithShortRun() => ScoreIr(
+  test('6 连排（=阈值）降行密度；5 连排（<阈值）保持 3 小节/行', () {
+    ScoreIr irWithRun(int runLen) => ScoreIr(
           version: 1,
           title: 'T',
           tempo: 90,
@@ -112,7 +111,7 @@ void main() {
                   failed: false,
                   notes: [
                     if (m == 1)
-                      for (var k = 0; k < 6; k++)
+                      for (var k = 0; k < runLen; k++)
                         NoteIr(beat: 0.5 + k * 0.25, duration: 0.25,
                             string: 1, fret: 12, technique: null)
                     else
@@ -123,10 +122,15 @@ void main() {
             ]),
           ],
         );
-    final l = TabLayout(irWithShortRun());
-    final wide = l.measureWidth * 3 + TabLayout.leftPad * 2;
-    // 全部行都是 3 小节（无降密度）。
-    expect(l.rowsFor(wide).map((r) => r.length), everyElement(3));
+    final wide = TabLayout(irWithRun(6)).measureWidth * 3 +
+        TabLayout.leftPad * 2;
+    // 6 连排（m71 "12×6" 场景，=阈值）→ 所在行降密度。
+    final denseRows = TabLayout(irWithRun(6)).rowsFor(wide);
+    expect(
+        denseRows.firstWhere((r) => r.contains(1)).length, lessThan(3));
+    // 5 连排（<阈值）→ 全部行 3 小节。
+    final shortRows = TabLayout(irWithRun(5)).rowsFor(wide);
+    expect(shortRows.map((r) => r.length), everyElement(3));
   });
 
   test('stringY：1 弦在最上（y 最小）', () {
