@@ -48,9 +48,9 @@ void main() {
     expect(xLast - TabLayout.leftPad, lessThanOrEqualTo(l.measureWidth - TabLayout.notePad));
   });
 
-  test('自适应行密度：16 分连排密集小节所在行降为 2 小节/行', () {
-    // m1 全 16 分连排（beat 差 0.25）：需要宽 = 4×(18/0.25)+20 = 308 >
-    // 标准宽 256 → 与任何小节同行都会压低均分宽 → 独占/仅与 1 个同伴。
+  test('自适应行密度：同弦连排 ≥8 的小节所在行降为 2 小节/行', () {
+    // m1 全 16 分连排 16 音（≥8 阈值）：需要宽 308+ > 标准宽 256 →
+    // 降密度；普通小节行保持 3。
     ScoreIr irWithDense() => ScoreIr(
           version: 1,
           title: 'T',
@@ -82,7 +82,7 @@ void main() {
     final l = TabLayout(irWithDense());
     final wide = l.measureWidth * 3 + TabLayout.leftPad * 2;
     final rows = l.rowsFor(wide);
-    // m1（16 分连排）所在行小节数 < 3（降密度）；普通小节行保持 3。
+    // m1（16 连排 ≥8）所在行小节数 < 3（降密度）；普通小节行保持 3。
     final denseRow = rows.firstWhere((r) => r.contains(1));
     expect(denseRow.length, lessThan(3));
     // 密集行的小节更宽：行级拍距拉大，连排间隔 > 标准行。
@@ -92,6 +92,41 @@ void main() {
     final x0 = l.noteX(1, 0.0, wide);
     final x1 = l.noteX(1, 0.25, wide);
     expect(x1 - x0, greaterThanOrEqualTo(18.0));
+  });
+
+  test('短连排（<8）不降行密度：保持 3 小节/行，修正趟排开', () {
+    // m1 仅 6 个 16 分连排（Like A Star "12×6" 场景）：<8 阈值 → 标准宽。
+    ScoreIr irWithShortRun() => ScoreIr(
+          version: 1,
+          title: 'T',
+          tempo: 90,
+          timeSignature: '4/4',
+          tuning: const ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'],
+          capo: 0,
+          tracks: [
+            TrackIr(name: 'T', measures: [
+              for (var m = 0; m < 6; m++)
+                MeasureIr(
+                  index: m,
+                  confidence: 0.9,
+                  failed: false,
+                  notes: [
+                    if (m == 1)
+                      for (var k = 0; k < 6; k++)
+                        NoteIr(beat: 0.5 + k * 0.25, duration: 0.25,
+                            string: 1, fret: 12, technique: null)
+                    else
+                      NoteIr(beat: 0, duration: 1, string: 1, fret: 0,
+                          technique: null),
+                  ],
+                ),
+            ]),
+          ],
+        );
+    final l = TabLayout(irWithShortRun());
+    final wide = l.measureWidth * 3 + TabLayout.leftPad * 2;
+    // 全部行都是 3 小节（无降密度）。
+    expect(l.rowsFor(wide).map((r) => r.length), everyElement(3));
   });
 
   test('stringY：1 弦在最上（y 最小）', () {

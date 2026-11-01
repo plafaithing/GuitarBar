@@ -300,15 +300,15 @@ class _ScorePainter extends CustomPainter {
           flow.add(_FlowNote(m.index, n, nx + dx, ny));
         }
       }
-      // 同弦相邻拥挤修正趟（2026-11-01 走查：Like A Star m71 "12×6" 同弦
-      // 16 分连排两位数字叠死）：同弦按时间序，与前一音 x 距 <15px 的音
-      // 右移到 prev+15（新拍距 64 下 16 分距 14.75，步长 15 基本免触发，
-      // 仅极端密集时兜底排开）。
+      // 同弦相邻拥挤修正趟（2026-11-01 走查：Like A Star "12×6" 同弦
+      // 16 分连排两位数字叠死）：同弦按时间序，与前一音 x 距 <16px 的音
+      // 右移到 prev+16（步长 = 两位品数字宽，短连排 <8 个由此排开；
+      // ≥8 长连排由行密度自适应降为 2 小节/行）。
       final lastXAtString = <int, double>{};
       for (final fl in flow) {
         final prev = lastXAtString[fl.note.string];
-        if (prev != null && fl.x - prev < 15 && fl.x >= prev) {
-          fl.x = prev + 15;
+        if (prev != null && fl.x - prev < 16 && fl.x >= prev) {
+          fl.x = prev + 16;
         }
         lastXAtString[fl.note.string] = fl.x;
       }

@@ -33,23 +33,52 @@ class TabLayout {
   // "把这对音撑到 18px" 反推每拍所需像素。
   static const _minNoteGapPx = 18.0;
 
+  // 连排降密度阈值（2026-11-01 走查四轮用户定参）：同弦连排数 <8 的
+  // 由拥挤修正趟排开（步长 16px 恰好两位数字），不降行密度；≥8 的
+  // 长连排累积右移会越小节界，所在行才降为 2 小节。
+  static const _runThreshold = 8;
+
   int get beatsPerBar => int.tryParse(ir.timeSignature.split('/')[0]) ?? 4;
   double get measureWidth => beatsPerBar * pxPerBeat;
   double get rowHeight => topPad + 5 * stringGap + bottomPad;
 
-  /// 小节需要的宽度：相邻音符最小拍距反推每拍像素（两位数字 + 弧线/
-  /// 标注净空），与标准宽取大。32 分连排封顶单小节行宽。
+  /// 小节需要的宽度：**同弦连排链**检测（用户定参：链长 ≥8 才算密集）。
+  /// 短连排（如 "12×6"）由修正趟 16px 步长排开不占额外宽度；长连排的
+  /// 累积撑宽需求反推每拍像素。32 分极密封顶 2.8×标准宽。
   double _needWidth(MeasureIr m) {
-    var minGap = double.infinity;
-    var prev = double.negativeInfinity;
+    final byString = <int, List<double>>{};
     for (final n in m.notes) {
-      final g = n.beat - prev;
-      if (g > 1e-9 && g < minGap) minGap = g;
-      prev = n.beat;
+      byString.putIfAbsent(n.string, () => []).add(n.beat);
     }
-    if (minGap == double.infinity) return measureWidth; // 单音/空小节
-    final pxPerBeatNeed = _minNoteGapPx / minGap;
-    final w = beatsPerBar * pxPerBeatNeed + notePad * 2;
+    var maxRun = 0;
+    var maxRunSpan = 0.0; // 最长链首尾拍距
+    for (final beats in byString.values) {
+      beats.sort();
+      var run = 1;
+      var runStart = beats.first;
+      void close(double lastBeat) {
+        if (run > maxRun) {
+          maxRun = run;
+          maxRunSpan = lastBeat - runStart;
+        }
+      }
+
+      for (var i = 1; i < beats.length; i++) {
+        // 16 分以内（含）算连排延续；32 分谱同式覆盖。
+        if (beats[i] - beats[i - 1] <= 0.25 + 1e-9) {
+          run++;
+        } else {
+          close(beats[i - 1]);
+          run = 1;
+          runStart = beats[i];
+        }
+      }
+      close(beats.last);
+    }
+    if (maxRun < _runThreshold) return measureWidth;
+    final span = maxRunSpan < 0.25 ? 0.25 : maxRunSpan;
+    final needBeatPx = ((maxRun - 1) * _minNoteGapPx + 16.0) / span;
+    final w = beatsPerBar * needBeatPx + notePad * 2;
     return w.clamp(measureWidth, measureWidth * 2.8);
   }
 
