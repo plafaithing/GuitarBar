@@ -153,6 +153,9 @@ class NoteIr {
     this.tap = false,
     this.ghost = false,
     this.slide,
+    this.arpeggio,
+    this.brush,
+    this.pickStroke,
   });
 
   final double beat; // 小节内拍位置，0 起
@@ -181,6 +184,11 @@ class NoteIr {
   final bool ghost;
   // shift = 定滑音（斜线箭头）；legato = 连滑音（弧线）。null = 无滑音。
   final String? slide;
+  // Beat 级标注（2026-11-01 走查补齐，挂该拍全部音）：
+  // 琶音竖波浪 / 扫弦箭头 / 拨片方向符号，'up'|'down'|null。
+  final String? arpeggio;
+  final String? brush;
+  final String? pickStroke;
 
   /// 有标注才写字段：无标注音符的 JSON 与旧格式一致（存量 irJson 兼容）。
   Map<String, dynamic> toJson() => {
@@ -202,6 +210,9 @@ class NoteIr {
         if (tap) 'tap': true,
         if (ghost) 'ghost': true,
         if (slide != null) 'slide': slide,
+        if (arpeggio != null) 'arpeggio': arpeggio,
+        if (brush != null) 'brush': brush,
+        if (pickStroke != null) 'pickStroke': pickStroke,
       };
 
   static NoteIr fromJson(Map<String, dynamic> j) => NoteIr(
@@ -223,6 +234,9 @@ class NoteIr {
         tap: j['tap'] as bool? ?? false,
         ghost: j['ghost'] as bool? ?? false,
         slide: j['slide'] as String?,
+        arpeggio: j['arpeggio'] as String?,
+        brush: j['brush'] as String?,
+        pickStroke: j['pickStroke'] as String?,
       );
 
   NoteIr copyWith({
@@ -244,6 +258,9 @@ class NoteIr {
     bool? tap,
     bool? ghost,
     String? slide,
+    String? arpeggio,
+    String? brush,
+    String? pickStroke,
   }) =>
       NoteIr(
           beat: beat ?? this.beat,
@@ -263,7 +280,10 @@ class NoteIr {
           vibrato: vibrato ?? this.vibrato,
           tap: tap ?? this.tap,
           ghost: ghost ?? this.ghost,
-          slide: slide ?? this.slide);
+          slide: slide ?? this.slide,
+          arpeggio: arpeggio ?? this.arpeggio,
+          brush: brush ?? this.brush,
+          pickStroke: pickStroke ?? this.pickStroke);
 
   @override
   bool operator ==(Object other) =>

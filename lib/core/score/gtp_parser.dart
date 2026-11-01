@@ -312,6 +312,27 @@ void _readVoice(
     }
     final rhythmId = beat.findElements('Rhythm').firstOrNull?.getAttribute('ref');
     final duration = _rhythmBeats(rhythmId == null ? null : rhythmsById[rhythmId]);
+    // Beat 级标注（2026-10-31 走查补齐；Like A Star 实测结构）：
+    // <Arpeggio>Down</Arpeggio>（Beat 子元素）、Brush/PickStroke
+    // （Beat Properties，<Direction>Up|Down</Direction>）。挂该拍全部音。
+    final arpeggioEl = beat.findElements('Arpeggio').firstOrNull;
+    final arpeggio =
+        arpeggioEl == null ? null : _upDown(arpeggioEl.innerText);
+    String? brush;
+    String? pickStroke;
+    final beatProps = _child(beat, 'Properties');
+    if (beatProps != null) {
+      for (final prop in beatProps.findElements('Property')) {
+        switch (prop.getAttribute('name')) {
+          case 'Brush':
+            brush = _upDown(_childText(prop, 'Direction') ?? '');
+            break;
+          case 'PickStroke':
+            pickStroke = _upDown(_childText(prop, 'Direction') ?? '');
+            break;
+        }
+      }
+    }
     for (final noteId in _refs(_childText(beat, 'Notes'))) {
       final noteEl = notesById[noteId];
       if (noteEl == null) {
@@ -342,6 +363,9 @@ void _readVoice(
           tap: marks.tap,
           ghost: marks.ghost,
           slide: marks.slide,
+          arpeggio: arpeggio,
+          brush: brush,
+          pickStroke: pickStroke,
         ));
         // 链式 tie（dest 再连下一 dest）时 dest 也登记为 origin（实测无此形态，兜底）。
         tieOrigins[(gpString, fret)] = (out, out.length - 1);
@@ -376,6 +400,9 @@ void _readVoice(
         tap: marks.tap,
         ghost: marks.ghost,
         slide: marks.slide,
+        arpeggio: arpeggio,
+        brush: brush,
+        pickStroke: pickStroke,
       ));
       tieOrigins[(gpString, fret)] = (out, out.length - 1);
     }
@@ -466,6 +493,14 @@ class _NoteMarks {
 bool _propEnabled(XmlElement note, String name) => note
     .findAllElements('Property')
     .any((p) => p.getAttribute('name') == name && p.findElements('Enable').isNotEmpty);
+
+/// gpif 方向值（"Up"/"Down"）→ 小写规范形；空/未知返回 null。
+String? _upDown(String raw) {
+  final t = raw.trim().toLowerCase();
+  if (t == 'up') return 'up';
+  if (t == 'down') return 'down';
+  return null;
+}
 
 _NoteMarks _noteMarks(XmlElement note) {
   final m = _NoteMarks();

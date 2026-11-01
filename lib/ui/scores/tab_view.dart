@@ -210,6 +210,13 @@ class _ScorePainter extends CustomPainter {
 
   final Color stringLine, fretText, barLine, failedText, pageNum;
 
+  /// 标注线画笔（GP8 tabSlurThickness × MusicalFont 默认 scale 1.625
+  /// 视觉等效 ≈1px；helper 方法共享）。
+  late final Paint _markLine = Paint()
+    ..color = fretText
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.0;
+
   @override
   void paint(Canvas canvas, Size size) {
     final rows = layout.rowsFor(size.width);
@@ -246,8 +253,9 @@ class _ScorePainter extends CustomPainter {
       for (final m in rows[r].map((idx) => measures[idx])) {
         final mx = layout.measureX(m.index, size.width);
         final mw = layout.measureWidth;
-        // 小节号。
-        _text(canvas, '${m.index + 1}', Offset(mx, rowTop - 16),
+        // 小节号（上移一层：谱上方两行布局 = 小节号 + L.R./P.M. 区，
+        // GP8 的 let ring 虚线在谱上方——2026-11-01 走查截图对齐）。
+        _text(canvas, '${m.index + 1}', Offset(mx, rowTop - 20),
             TextStyle(
                 fontSize: 10,
                 color: pageNum,
@@ -260,9 +268,8 @@ class _ScorePainter extends CustomPainter {
               TextStyle(fontSize: 12, color: failedText));
           continue;
         }
-        // 同拍同弦多声部音符计数（2026-10-31 走查修复"12 写两遍"）：
-        // 指弹谱两个声部在同一拍弹同一弦同一品是合法数据（GP8 错开显示），
-        // 渲染层第二个及后续音符 x 偏移 12px 防止文字重叠。
+        // 同拍同弦多声部错开（2026-10-31 走查修复"12 写两遍"）保留在
+        // 收集时；16 分音近邻拥挤统一在下方修正趟处理。
         final seenAt = <String, int>{}; // (string@beatRounded) → 已画次数
         for (final n in m.notes) {
           final nx = layout.noteX(m.index, n.beat, size.width);
@@ -271,27 +278,41 @@ class _ScorePainter extends CustomPainter {
           final dupCount = seenAt.putIfAbsent(key, () => 0);
           seenAt[key] = dupCount + 1;
           final dx = dupCount * 12.0; // 第 2/3 个音右偏 12/24px
-          flow.add(_FlowNote(n, nx + dx, ny));
-          // ghost（AntiAccent）：GP8 括号品数字 (3)；tie 续接端也画数字
-          // （真实按住的位置，GP 同款），只是不发声。
-          final label = n.ghost ? '(${n.fret})' : '${n.fret}';
-          _text(canvas, label, Offset(nx + dx, ny),
-              TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: fretText,
-                  fontFeatures: [FontFeature.tabularFigures()]));
-          // 技法字母标注（走查反馈 ③）：H=泛音 s=滑音 x=闷 b=弯，
-          // 点弦 T 兜底（击勾/连滑由弧线表达不再写 h/p 字母）——
-          // 品数字右上角小字，muted 色，弦线/小节线不动。
-          final tech = n.technique ?? (n.tap ? 'T' : null);
-          if (tech != null) {
-            _text(canvas, tech, Offset(nx + dx + 9, ny - 8),
-                TextStyle(fontSize: 9, color: pageNum));
-          }
+          flow.add(_FlowNote(m.index, n, nx + dx, ny));
         }
       }
-      _paintMarks(canvas, flow, rowBottom, size.width);
+      // 同弦相邻拥挤修正趟（2026-11-01 走查：m49 b3.5 f11 与 b3.75 f12
+      // 拍位差 0.25 拍=12px，两位品数字宽 ~16px 重叠成"1⑪21"）：
+      // 同弦按时间序，与前一音 x 距 <14px 的音右移到 prev+14。
+      final lastXAtString = <int, double>{};
+      for (final fl in flow) {
+        final prev = lastXAtString[fl.note.string];
+        if (prev != null && fl.x - prev < 14 && fl.x >= prev) {
+          fl.x = prev + 14;
+        }
+        lastXAtString[fl.note.string] = fl.x;
+      }
+      // 文字层（修正后坐标）：品数字 + 技法字母。
+      for (final fl in flow) {
+        final n = fl.note;
+        // ghost（AntiAccent）：GP8 括号品数字 (3)；tie 续接端也画数字
+        // （真实按住的位置，GP 同款），只是不发声。
+        final label = n.ghost ? '(${n.fret})' : '${n.fret}';
+        _text(canvas, label, Offset(fl.x, fl.y),
+            TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: fretText,
+                fontFeatures: [FontFeature.tabularFigures()]));
+        // 技法字母标注：H=泛音 s=滑音 x=闷 b=弯，点弦 T 兜底（击勾/连滑
+        // 由弧线表达不写 h/p 字母）——品数字右上角小字。
+        final tech = n.technique ?? (n.tap ? 'T' : null);
+        if (tech != null) {
+          _text(canvas, tech, Offset(fl.x + 9, fl.y - 8),
+              TextStyle(fontSize: 9, color: pageNum));
+        }
+      }
+      _paintMarks(canvas, flow, rowTop, rowBottom, size.width);
       // 行末收尾竖线（最后一小节的右边界）。
       final lastMeasure = rows[r].last;
       final endX = layout.measureX(lastMeasure, size.width) +
@@ -303,20 +324,15 @@ class _ScorePainter extends CustomPainter {
   }
 
   /// 标注绘制层（2026-10-31 GP8 标注补齐）：
-  /// - tie/击勾弦/连滑音：弦下弧线（弦间 y+6.5，顶 y+11.5），击勾弦在弧顶
-  ///   下标 H/P（按两音品数走向判向，GP8 同款）
-  /// - 定滑音 shift：弦间横线 + 右端箭头尖
-  /// - 揉弦 vibrato：音符下方 4 段折线波浪
-  /// - 延音 L.R. / 闷音 P.M.：行底虚线区间（GP8 画在谱底下方），
-  ///   letRing 按同弦分段、palmMute 按谱面序连续分段
-  void _paintMarks(
-      Canvas canvas, List<_FlowNote> flow, double rowBottom, double rowWidth) {
+  /// - 琶音/扫弦/拨片方向：Beat 级标注，画在该拍音群左侧（GP8 位置）
+  /// - tie/击勾弦/连滑音：GP8 Slur 模型弧线（详注见下），击勾弦弧下标 H/P
+  /// - 定滑音 shift：品数字上方横线 + 右端箭头尖；揉弦 vibrato：SMuFL 尖峰锯齿
+  /// - 延音 L.R. / 闷音 P.M.：**谱上方**虚线区间（GP8 位置，2026-11-01
+  ///   走查截图对齐；原行底位置与 6 弦品数字叠印）
+  void _paintMarks(Canvas canvas, List<_FlowNote> flow, double rowTop,
+      double rowBottom, double rowWidth) {
     final endX = rowWidth - TabLayout.leftPad;
-    // GP8 tabSlurThickness（SMuFL 度量 × 默认 scale 1.625）视觉等效 ≈1px。
-    final line = Paint()
-      ..color = fretText
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
+    final line = _markLine;
     // 音流序扫描：每个标注音找同弦/连续终点。
     for (var i = 0; i < flow.length; i++) {
       final f = flow[i];
@@ -324,6 +340,44 @@ class _ScorePainter extends CustomPainter {
       final nextSameString = _nextSameString(flow, i);
       final x1 = nextSameString?.x ?? (f.x + 22); // 无后继：短标注
       final clipped = x1.clamp(f.x + 8, endX);
+
+      // —— 琶音 / 扫弦 / 拨片方向（Beat 级，2026-11-01 走查补齐）——
+      // gpif Beat 层编码：<Arpeggio>Up|Down</Arpeggio>、Brush/PickStroke
+      // Direction（Like A Star 实测）。琶音=竖波浪线、扫弦=竖直箭头、
+      // 拨片=音符上方 V/^，均在该拍音群左侧，同拍群首画一次。
+      if (n.arpeggio != null || n.brush != null || n.pickStroke != null) {
+        final isGroupHead = i == 0 ||
+            flow[i - 1].mIdx != f.mIdx ||
+            flow[i - 1].note.beat != n.beat;
+        if (isGroupHead) {
+          // 同拍音群（跨声部）：y 范围 = 群内最高/最低弦。
+          var yMin = f.y, yMax = f.y, xMin = f.x;
+          for (final g in flow) {
+            if (g.mIdx == f.mIdx && g.note.beat == n.beat) {
+              yMin = math.min(yMin, g.y);
+              yMax = math.max(yMax, g.y);
+              xMin = math.min(xMin, g.x);
+            }
+          }
+          final span = math.max(yMax - yMin, TabLayout.stringGap.toDouble());
+          if (n.arpeggio != null) {
+            _wavyLine(canvas, xMin - 10, yMin - 6, yMin - 6 + span + 12,
+                up: n.arpeggio == 'up');
+          } else if (n.brush != null) {
+            _arrowLine(canvas, xMin - 10, yMin - 6, yMin - 6 + span + 12,
+                down: n.brush == 'down');
+          }
+          if (n.pickStroke != null) {
+            // 拨片方向：下拨 V / 上拨 ^，画在群首音符上方。
+            final cy = yMin - 16;
+            final path = Path()
+              ..moveTo(xMin - 4, n.pickStroke == 'down' ? cy - 4 : cy + 4)
+              ..lineTo(xMin, cy)
+              ..lineTo(xMin + 4, n.pickStroke == 'down' ? cy - 4 : cy + 4);
+            canvas.drawPath(path, _markLine);
+          }
+        }
+      }
 
       // —— 弧线族：tie / 击勾弦 / 连滑音 ——
       // GP8 am::painting::Slur 模型逆向转写（AMPainting.dll computeIdealSlurControl
@@ -403,9 +457,11 @@ class _ScorePainter extends CustomPainter {
           j++;
         }
         if (isSegmentHead) {
-          _dashed(canvas, Offset(f.x + 4, rowBottom + 8),
-              Offset(segEnd.clamp(f.x + 4, endX), rowBottom + 8));
-          _text(canvas, 'L.R.', Offset(f.x + 16, rowBottom + 3),
+          // GP8 位置：L.R. 文字+虚线在谱上方（小节号之下、弦 1 之上），
+          // 原行底位置与 6 弦品数字叠印（2026-11-01 走查截图）。
+          _dashed(canvas, Offset(f.x + 4, rowTop - 4),
+              Offset(segEnd.clamp(f.x + 4, endX), rowTop - 4));
+          _text(canvas, 'L.R.', Offset(f.x + 16, rowTop - 9),
               TextStyle(fontSize: 9, color: fretText));
         }
       }
@@ -421,9 +477,10 @@ class _ScorePainter extends CustomPainter {
           }
         }
         if (isSegmentHead) {
-          _dashed(canvas, Offset(f.x + 4, rowBottom + 8),
-              Offset(segEnd.clamp(f.x + 4, endX), rowBottom + 8));
-          _text(canvas, 'P.M.', Offset(f.x + 16, rowBottom + 3),
+          // GP8 位置：P.M. 文字+虚线在谱上方（同 L.R.）。
+          _dashed(canvas, Offset(f.x + 4, rowTop - 4),
+              Offset(segEnd.clamp(f.x + 4, endX), rowTop - 4));
+          _text(canvas, 'P.M.', Offset(f.x + 16, rowTop - 9),
               TextStyle(fontSize: 9, color: fretText));
         }
       }
@@ -491,13 +548,48 @@ class _ScorePainter extends CustomPainter {
       // 明暗切换重绘：palette 为 const 单例、7 色同源，代理比较 stringLine 足够。
       // 播放 tick 重建 painter（ir 同实例）返回 false，不触发谱面重绘。
       old.stringLine != stringLine || !identical(old.ir, ir);
+
+  /// 竖直波浪线（琶音，GP8 tab 样式）：周期 7px、峰 ±3px；
+  /// [up] 时尖端（上拨方向小尖）画在上端，否则下端。
+  void _wavyLine(Canvas canvas, double x, double y1, double y2,
+      {required bool up}) {
+    const period = 7.0, amp = 3.0;
+    final path = Path()..moveTo(x, y1);
+    var y = y1;
+    var k = 0;
+    while (y + period < y2) {
+      path.lineTo(x + (k.isEven ? amp : -amp), y + period / 2);
+      y += period;
+      path.lineTo(x, y);
+      k++;
+    }
+    if (y2 > y) path.lineTo(x, y2);
+    // 方向尖端。
+    final tipY = up ? y1 : y2;
+    final dir = up ? -1.0 : 1.0;
+    path.moveTo(x - 3.5, tipY - dir * 5);
+    path.lineTo(x, tipY);
+    path.lineTo(x + 3.5, tipY - dir * 5);
+    canvas.drawPath(path, _markLine);
+  }
+
+  /// 竖直箭头线（扫弦 Brush）：[down] 时尖端在下端（向下扫），否则上端。
+  void _arrowLine(Canvas canvas, double x, double y1, double y2,
+      {required bool down}) {
+    canvas.drawLine(Offset(x, y1), Offset(x, y2), _markLine);
+    final tipY = down ? y2 : y1;
+    final dir = down ? 1.0 : -1.0;
+    canvas.drawLine(Offset(x - 3.5, tipY - dir * 5), Offset(x, tipY), _markLine);
+    canvas.drawLine(Offset(x + 3.5, tipY - dir * 5), Offset(x, tipY), _markLine);
+  }
 }
 
 /// 行内音流元素：音符 + 已算好的谱面坐标（含同拍同弦错开偏移）。
 class _FlowNote {
-  const _FlowNote(this.note, this.x, this.y);
+  _FlowNote(this.mIdx, this.note, this.x, this.y);
+  final int mIdx;
   final NoteIr note;
-  final double x;
+  double x; // 可变：同弦相邻拥挤修正趟会右移
   final double y;
 }
 
