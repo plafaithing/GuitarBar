@@ -365,6 +365,19 @@ void _readVoice(
         }
       }
     }
+    // Beat 子元素三件（2026-11-02 GP8 标识符对照；Like A Star 实测形态）：
+    // <Dynamic>MF</Dynamic>、<Fadding>FadeIn</Fadding>、<Wah>...</Wah>、
+    // <GraceNotes>BeforeBeat</GraceNotes>。挂该拍全部音（渲染取拍群首）。
+    final dynamicRaw = _childText(beat, 'Dynamic')?.trim().toLowerCase();
+    final dynamicMark = (dynamicRaw == null || dynamicRaw.isEmpty)
+        ? null
+        : dynamicRaw;
+    final faddingRaw = _childText(beat, 'Fadding')?.trim().toLowerCase();
+    final fadding = faddingRaw == null
+        ? null
+        : (faddingRaw.contains('in') ? 'in' : 'out');
+    final wah = beat.findElements('Wah').isNotEmpty;
+    final grace = beat.findElements('GraceNotes').isNotEmpty;
     for (final noteId in _refs(_childText(beat, 'Notes'))) {
       final noteEl = notesById[noteId];
       if (noteEl == null) {
@@ -398,6 +411,13 @@ void _readVoice(
           arpeggio: arpeggio,
           brush: brush,
           pickStroke: pickStroke,
+          accent: marks.accent,
+          staccato: marks.staccato,
+          trill: marks.trill,
+          grace: grace,
+          dynamicMark: dynamicMark,
+          fadding: fadding,
+          wah: wah,
         ));
         // 链式 tie（dest 再连下一 dest）时 dest 也登记为 origin（实测无此形态，兜底）。
         tieOrigins[(gpString, fret)] = (out, out.length - 1);
@@ -435,6 +455,13 @@ void _readVoice(
         arpeggio: arpeggio,
         brush: brush,
         pickStroke: pickStroke,
+        accent: marks.accent,
+        staccato: marks.staccato,
+        trill: marks.trill,
+        grace: grace,
+        dynamicMark: dynamicMark,
+        fadding: fadding,
+        wah: wah,
       ));
       tieOrigins[(gpString, fret)] = (out, out.length - 1);
     }
@@ -519,6 +546,9 @@ class _NoteMarks {
   bool vibrato = false;
   bool tap = false;
   bool ghost = false;
+  bool accent = false;
+  bool staccato = false;
+  bool trill = false;
   String? slide;
 }
 
@@ -542,6 +572,12 @@ _NoteMarks _noteMarks(XmlElement note) {
   m.legatoEnd = _propEnabled(note, 'LegatoDestination');
   m.palmMute = _propEnabled(note, 'PalmMuted');
   m.tap = _propEnabled(note, 'Tapped') || _propEnabled(note, 'LeftHandTapped');
+  // 轻量标注第二批（2026-11-02 GP8 标识符对照）：Accent/Staccato/Trill。
+  m.accent = _propEnabled(note, 'Accent') ||
+      _propEnabled(note, 'AccentFlag');
+  m.staccato = _propEnabled(note, 'Staccato');
+  m.trill = _propEnabled(note, 'Trill') ||
+      note.findElements('Trill').isNotEmpty;
   // Note 子元素形态（探针实测：LetRing/Vibrato/AntiAccent 直接挂在 Note 下）。
   m.letRing = note.findElements('LetRing').isNotEmpty;
   m.vibrato = note.findElements('Vibrato').isNotEmpty;

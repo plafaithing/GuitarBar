@@ -256,6 +256,13 @@ class NoteIr {
     this.arpeggio,
     this.brush,
     this.pickStroke,
+    this.trill = false,
+    this.accent = false,
+    this.staccato = false,
+    this.grace = false,
+    this.dynamicMark,
+    this.fadding,
+    this.wah = false,
   });
 
   final double beat; // 小节内拍位置，0 起
@@ -290,6 +297,23 @@ class NoteIr {
   final String? brush;
   final String? pickStroke;
 
+  // 轻量标注第二批（2026-11-02 GP8 标识符对照补齐；Bend/Whammy 曲线类
+  // 另立项）：
+  // - Trill 颤音（Note 属性 Trill）→ "tr" 上标
+  // - Accent 重音（Note 属性 Accent）→ 数字上方 >
+  // - Staccato 断音 → 数字上方 ·
+  // - Grace 装饰音（Beat GraceNotes）→ 小号斜体数字
+  // - Dynamic 力度（Beat Dynamic 'MF' 等）→ 行底力度字（拍群首画）
+  // - Fadding 淡入出（Beat Fadding 'FadeIn'）→ 行底文字
+  // - Wah → 行底文字
+  final bool trill;
+  final bool accent;
+  final bool staccato;
+  final bool grace;
+  final String? dynamicMark; // 小写规范化（'f'/'mf'/'p'...）
+  final String? fadding; // 'in' | 'out'
+  final bool wah;
+
   /// 有标注才写字段：无标注音符的 JSON 与旧格式一致（存量 irJson 兼容）。
   Map<String, dynamic> toJson() => {
         'beat': beat,
@@ -313,6 +337,13 @@ class NoteIr {
         if (arpeggio != null) 'arpeggio': arpeggio,
         if (brush != null) 'brush': brush,
         if (pickStroke != null) 'pickStroke': pickStroke,
+        if (trill) 'trill': true,
+        if (accent) 'accent': true,
+        if (staccato) 'staccato': true,
+        if (grace) 'grace': true,
+        if (dynamicMark != null) 'dynamicMark': dynamicMark,
+        if (fadding != null) 'fadding': fadding,
+        if (wah) 'wah': true,
       };
 
   static NoteIr fromJson(Map<String, dynamic> j) => NoteIr(
@@ -337,6 +368,13 @@ class NoteIr {
         arpeggio: j['arpeggio'] as String?,
         brush: j['brush'] as String?,
         pickStroke: j['pickStroke'] as String?,
+        trill: j['trill'] as bool? ?? false,
+        accent: j['accent'] as bool? ?? false,
+        staccato: j['staccato'] as bool? ?? false,
+        grace: j['grace'] as bool? ?? false,
+        dynamicMark: j['dynamicMark'] as String?,
+        fadding: j['fadding'] as String?,
+        wah: j['wah'] as bool? ?? false,
       );
 
   NoteIr copyWith({
@@ -361,6 +399,13 @@ class NoteIr {
     String? arpeggio,
     String? brush,
     String? pickStroke,
+    bool? trill,
+    bool? accent,
+    bool? staccato,
+    bool? grace,
+    String? dynamicMark,
+    String? fadding,
+    bool? wah,
   }) =>
       NoteIr(
           beat: beat ?? this.beat,
@@ -383,7 +428,14 @@ class NoteIr {
           slide: slide ?? this.slide,
           arpeggio: arpeggio ?? this.arpeggio,
           brush: brush ?? this.brush,
-          pickStroke: pickStroke ?? this.pickStroke);
+          pickStroke: pickStroke ?? this.pickStroke,
+          trill: trill ?? this.trill,
+          accent: accent ?? this.accent,
+          staccato: staccato ?? this.staccato,
+          grace: grace ?? this.grace,
+          dynamicMark: dynamicMark ?? this.dynamicMark,
+          fadding: fadding ?? this.fadding,
+          wah: wah ?? this.wah);
 
   @override
   bool operator ==(Object other) =>

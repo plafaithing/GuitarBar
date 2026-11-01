@@ -363,8 +363,9 @@ class _ScorePainter extends CustomPainter {
         if (label.isNotEmpty) {
           _text(canvas, label, Offset(fl.x, fl.y),
               TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                  fontSize: n.grace ? 10 : 14,
+                  fontStyle: n.grace ? FontStyle.italic : FontStyle.normal,
+                  fontWeight: n.grace ? FontWeight.w500 : FontWeight.w600,
                   color: fretText,
                   fontFeatures: [FontFeature.tabularFigures()]));
         }
@@ -383,6 +384,23 @@ class _ScorePainter extends CustomPainter {
         if (n.tap) {
           _text(canvas, 'T', Offset(fl.x, fl.y - 13),
               TextStyle(fontSize: 10, color: fretText));
+        }
+        // 轻量标注第二批（2026-11-02 GP8 标识符对照）：重音 > / 断音 ·
+        // 在数字上方（GP8 位置），颤音 tr 右上角，装饰音小号斜体数字。
+        if (n.accent) {
+          _text(canvas, '>', Offset(fl.x, fl.y - 12),
+              TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: fretText));
+        }
+        if (n.staccato) {
+          canvas.drawCircle(
+              Offset(fl.x, fl.y - 12), 2, Paint()..color = fretText);
+        }
+        if (n.trill) {
+          _text(canvas, 'tr', Offset(fl.x + 10, fl.y - 8),
+              TextStyle(
+                  fontSize: 9,
+                  fontStyle: FontStyle.italic,
+                  color: pageNum));
         }
         final tech = n.technique;
         if (tech != null && tech != 'x' && tech != 'H') {
@@ -457,6 +475,25 @@ class _ScorePainter extends CustomPainter {
           } else if (n.brush != null) {
             _arrowLine(canvas, x, yMin - 6, yMin - 6 + span + 12,
                 down: n.brush == 'down');
+          }
+          // Beat 级文字三件（2026-11-02 GP8 对照）：力度/淡入出/Wah——
+          // 行底区（rowBottom + 6，L.R./P.M. 移谱上方后的空位）。
+          if (n.dynamicMark != null) {
+            _text(canvas, n.dynamicMark!, Offset(x + 14, rowBottom + 6),
+                TextStyle(
+                    fontSize: 11,
+                    fontStyle: FontStyle.italic,
+                    fontWeight: FontWeight.w600,
+                    color: fretText));
+          }
+          if (n.fadding != null) {
+            _text(canvas, n.fadding == 'in' ? 'fade in' : 'fade out',
+                Offset(x + 22, rowBottom + 6),
+                TextStyle(fontSize: 9, fontStyle: FontStyle.italic, color: fretText));
+          }
+          if (n.wah) {
+            _text(canvas, 'Wah', Offset(x + 16, rowBottom + 6),
+                TextStyle(fontSize: 9, fontStyle: FontStyle.italic, color: fretText));
           }
           if (n.pickStroke != null) {
             // 拨片方向：下拨 V / 上拨 ^，画在群首音符上方。
