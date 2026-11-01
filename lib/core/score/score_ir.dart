@@ -102,6 +102,7 @@ class MeasureIr {
     required this.notes,
     this.repeatStart = false,
     this.repeatEnd = false,
+    this.endings = const [],
   });
 
   final int index; // 全曲连续小节号（0 起）
@@ -115,6 +116,10 @@ class MeasureIr {
   final bool repeatStart;
   final bool repeatEnd;
 
+  // 结尾跳房子标记（2026-11-02 走查：GP8 "1."/"2." 括号，v1 缺失）——
+  // gpif AlternativeEndings/Ending 的 number（该小节属于第 N 结尾）。
+  final List<int> endings;
+
   Map<String, dynamic> toJson() => {
         'index': index,
         'confidence': confidence,
@@ -122,6 +127,7 @@ class MeasureIr {
         'notes': [for (final n in notes) n.toJson()],
         if (repeatStart) 'repeatStart': true,
         if (repeatEnd) 'repeatEnd': true,
+        if (endings.isNotEmpty) 'endings': endings,
       };
 
   static MeasureIr fromJson(Map<String, dynamic> j) => MeasureIr(
@@ -134,6 +140,10 @@ class MeasureIr {
         ],
         repeatStart: j['repeatStart'] as bool? ?? false,
         repeatEnd: j['repeatEnd'] as bool? ?? false,
+        endings: [
+          if (j['endings'] case final List l)
+            for (final n in l) (n as num).toInt()
+        ],
       );
 
   @override

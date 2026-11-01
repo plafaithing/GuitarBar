@@ -220,6 +220,19 @@ ScoreIr parseGpif(String xml) {
     final repeatEl = masterBar.findElements('Repeat').firstOrNull;
     final repeatStart = repeatEl?.getAttribute('start')?.toLowerCase() == 'true';
     final repeatEnd = repeatEl?.getAttribute('end')?.toLowerCase() == 'true';
+    // 结尾跳房子（GP8 "1."/"2." 括号）：AlternativeEndings/Ending number
+    //（GP6 schema：number 属性可逗号分隔多值）。
+    final endings = <int>[];
+    final ae = masterBar.findElements('AlternativeEndings').firstOrNull;
+    if (ae != null) {
+      for (final e in ae.findElements('Ending')) {
+        final raw = e.getAttribute('number') ?? '';
+        for (final part in raw.split(',')) {
+          final v = int.tryParse(part.trim());
+          if (v != null) endings.add(v);
+        }
+      }
+    }
     final notes = <NoteIr>[];
     for (final voiceId in _refs(_childText(bar, 'Voices'))) {
       final voice = voicesById[voiceId];
@@ -236,7 +249,8 @@ ScoreIr parseGpif(String xml) {
         failed: false,
         notes: notes,
         repeatStart: repeatStart,
-        repeatEnd: repeatEnd));
+        repeatEnd: repeatEnd,
+        endings: endings));
   }
   if (measures.isEmpty) throw const FormatException('gpif 无小节');
 

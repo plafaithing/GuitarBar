@@ -276,6 +276,15 @@ class _ScorePainter extends CustomPainter {
       for (final m in rows[r].map((idx) => measures[idx])) {
         final mx = layout.measureX(m.index, size.width);
         final mw = layout.measureWidthAt(m.index, size.width);
+        // 结尾跳房子（GP8 "N." 括号）：谱最上层横线 + 左端"N."。
+        if (m.endings.isNotEmpty) {
+          final label = m.endings.map((e) => '$e').join('.');
+          final lineY = rowTop - 30.0;
+          canvas.drawLine(Offset(mx + 6, lineY),
+              Offset(mx + mw - 6, lineY), Paint()..color = barLine);
+          _text(canvas, '$label.', Offset(mx + 12, lineY - 4),
+              TextStyle(fontSize: 10, color: barLine));
+        }
         // 小节号（上移一层：谱上方两行布局 = 小节号 + L.R./P.M. 区，
         // GP8 的 let ring 虚线在谱上方——2026-11-01 走查截图对齐）。
         _text(canvas, '${m.index + 1}', Offset(mx, rowTop - 20),
