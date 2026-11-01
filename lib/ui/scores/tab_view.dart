@@ -312,16 +312,17 @@ class _ScorePainter extends CustomPainter {
   void _paintMarks(
       Canvas canvas, List<_FlowNote> flow, double rowBottom, double rowWidth) {
     final endX = rowWidth - TabLayout.leftPad;
+    // GP8 tabSlurThickness（SMuFL 度量 × 默认 scale 1.625）视觉等效 ≈1px。
     final line = Paint()
       ..color = fretText
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
+      ..strokeWidth = 1.0;
     // 音流序扫描：每个标注音找同弦/连续终点。
     for (var i = 0; i < flow.length; i++) {
       final f = flow[i];
       final n = f.note;
       final nextSameString = _nextSameString(flow, i);
-      final x1 = nextSameString?.x ?? (f.x + 22); // 无后继：短弧
+      final x1 = nextSameString?.x ?? (f.x + 22); // 无后继：短标注
       final clipped = x1.clamp(f.x + 8, endX);
 
       // —— 弧线族：tie / 击勾弦 / 连滑音 ——
@@ -355,22 +356,32 @@ class _ScorePainter extends CustomPainter {
         }
       }
 
-      // —— 定滑音：横线 + 箭头（shift）——
+      // —— 定滑音：数字上方横线 + 箭头（shift）——
+      // GP8 slide 参数族（slideYIntercept/slideHeight/slideThickness）：
+      // 斜线走品数字上方（y-10，数字顶缘 y-7 之上 3px），箭头指向滑向音。
       if (n.slide == 'shift') {
-        final y = f.y + 6.5;
-        canvas.drawLine(Offset(f.x + 9, y), Offset(clipped - 8, y), line);
-        // 箭头尖。
+        final y = f.y - 10;
+        canvas.drawLine(Offset(f.x + 8, y), Offset(clipped - 8, y), line);
         final tip = Offset(clipped - 8, y);
         canvas.drawLine(tip, tip + const Offset(-4, -2.6), line);
         canvas.drawLine(tip, tip + const Offset(-4, 2.6), line);
       }
 
-      // —— 揉弦：4 段折线波浪 ——
+      // —— 揉弦：SMuFL Bravura wiggle 风格尖峰锯齿波 ——
+      // （GP8 用 GPBravura 字体的 vibrato glyph：峰高 0.25×弦距、
+      // 周期 0.5×弦距，约 2.5 个周期）
       if (n.vibrato) {
-        final path = Path()..moveTo(f.x - 11, f.y + 9);
-        for (var k = 0; k < 4; k++) {
-          path.lineTo(f.x - 11 + (k + 0.5) * 5.5, f.y + (k.isEven ? 5.5 : 12.5));
-          path.lineTo(f.x - 11 + (k + 1) * 5.5, f.y + 9);
+        const cycles = 2.5;
+        final period = TabLayout.stringGap * 0.5;
+        final peak = TabLayout.stringGap * 0.25;
+        final w = period * cycles;
+        final yBase = f.y + 8.0;
+        final path = Path()..moveTo(f.x - w / 2, yBase);
+        final nSeg = (cycles * 2).ceil();
+        for (var k = 0; k < nSeg; k++) {
+          final xMid = f.x - w / 2 + (k + 0.5) * (w / nSeg);
+          path.lineTo(xMid, yBase + (k.isEven ? -peak : peak));
+          path.lineTo(f.x - w / 2 + (k + 1) * (w / nSeg), yBase);
         }
         canvas.drawPath(path, line);
       }
