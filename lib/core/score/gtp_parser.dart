@@ -220,17 +220,21 @@ ScoreIr parseGpif(String xml) {
     final repeatEl = masterBar.findElements('Repeat').firstOrNull;
     final repeatStart = repeatEl?.getAttribute('start')?.toLowerCase() == 'true';
     final repeatEnd = repeatEl?.getAttribute('end')?.toLowerCase() == 'true';
-    // 结尾跳房子（GP8 "1."/"2." 括号）：AlternativeEndings/Ending number
-    //（GP6 schema：number 属性可逗号分隔多值）。
+    // 结尾跳房子（GP8 "1."/"2." 括号）：AlternateEndings（注意是
+    // Alternate 不是 Alternative）。GP6 schema 变体实测（月下之恋）：
+    // **innerText 直接是编号**（"1" / "2"，可能逗号分隔多值），无 Ending
+    // 子元素；GP7 兼容 Ending number 属性形态一并支持。
     final endings = <int>[];
-    final ae = masterBar.findElements('AlternativeEndings').firstOrNull;
+    final ae = masterBar.findElements('AlternateEndings').firstOrNull;
     if (ae != null) {
+      final raw = ae.innerText.trim();
+      for (final part in raw.split(',')) {
+        final v = int.tryParse(part.trim());
+        if (v != null) endings.add(v);
+      }
       for (final e in ae.findElements('Ending')) {
-        final raw = e.getAttribute('number') ?? '';
-        for (final part in raw.split(',')) {
-          final v = int.tryParse(part.trim());
-          if (v != null) endings.add(v);
-        }
+        final v = int.tryParse((e.getAttribute('number') ?? '').trim());
+        if (v != null) endings.add(v);
       }
     }
     final notes = <NoteIr>[];

@@ -297,18 +297,19 @@ class _ScorePainter extends CustomPainter {
         canvas.drawLine(Offset(mx, rowTop), Offset(mx, rowBottom),
             Paint()..color = barLine);
         if (m.repeatStart) {
+          // GP8 反复起始 ‖:：细线在正线左外，**点在正线内侧**（指向反复段）。
           canvas.drawLine(Offset(mx - 5, rowTop), Offset(mx - 5, rowBottom),
               Paint()..color = barLine);
           final dot = Paint()..color = barLine;
-          canvas.drawCircle(Offset(mx - 10, rowTop + 8), 2.2, dot);
-          canvas.drawCircle(Offset(mx - 10, rowBottom - 8), 2.2, dot);
+          canvas.drawCircle(Offset(mx + 6, rowTop + 8), 2.2, dot);
+          canvas.drawCircle(Offset(mx + 6, rowBottom - 8), 2.2, dot);
         }
-        // 反复结束（Repeat end）：右边界圆点 + 双竖线（行内任意位置）。
+        // 反复结束 :‖：点在正线内侧（反复段一侧），细线在右外。
         if (m.repeatEnd) {
           final rx = mx + mw;
           final dot = Paint()..color = barLine;
-          canvas.drawCircle(Offset(rx + 10, rowTop + 8), 2.2, dot);
-          canvas.drawCircle(Offset(rx + 10, rowBottom - 8), 2.2, dot);
+          canvas.drawCircle(Offset(rx - 6, rowTop + 8), 2.2, dot);
+          canvas.drawCircle(Offset(rx - 6, rowBottom - 8), 2.2, dot);
           canvas.drawLine(Offset(rx + 5, rowTop), Offset(rx + 5, rowBottom),
               Paint()..color = barLine);
         }
