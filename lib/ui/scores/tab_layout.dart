@@ -12,7 +12,12 @@ class TabLayout {
   static const topPad = 28.0;
   static const bottomPad = 20.0;
   static const leftPad = 16.0;
-  static const pxPerBeat = 48.0;
+  // 拍距（2026-11-01 走查：48→52，小节内两侧各留 10px 音符净空后
+  // 每拍有效 47px，16 分音距 11.75px 与原持平）。
+  static const pxPerBeat = 52.0;
+  // 小节内音符净空：拍位 0 的音符中心离小节左竖线 ≥10px（两位品数字
+  // 半宽 8px 不压线）；尾拍同理不越右竖线。
+  static const notePad = 10.0;
   // 小节合并（2026-10-31 走查：对齐 Guitar Pro 连续谱面——小节间无缝、
   // 共用小节线，不再逐块间隙+底色）。
   static const measureGap = 0.0;
@@ -23,6 +28,10 @@ class TabLayout {
   int get beatsPerBar => int.tryParse(ir.timeSignature.split('/')[0]) ?? 4;
   double get measureWidth => beatsPerBar * pxPerBeat;
   double get rowHeight => topPad + 5 * stringGap + bottomPad;
+
+  /// 小节内有效拍距：两侧各留 [notePad] 净空后均分。
+  double get _effectiveBeatPx =>
+      (measureWidth - notePad * 2) / beatsPerBar;
 
   /// 自动换行：每行小节 index 列表。
   List<List<int>> rowsFor(double maxWidth) {
@@ -64,7 +73,9 @@ class TabLayout {
   }
 
   double noteX(int measureIndex, double beat, double maxWidth) =>
-      measureX(measureIndex, maxWidth) + beat * pxPerBeat;
+      measureX(measureIndex, maxWidth) +
+      notePad +
+      beat * _effectiveBeatPx;
 
   double stringY(int string, int row) =>
       row * (rowHeight + rowGap) + topPad + (string - 1) * stringGap;

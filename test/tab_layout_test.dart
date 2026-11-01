@@ -34,12 +34,18 @@ void main() {
     expect(rows2.map((r) => r.length), [1, 1, 1, 1, 1]);
   });
 
-  test('noteX 随 beat 线性', () {
+  test('noteX 随 beat 线性（含 notePad 净空，两侧收窄均分）', () {
     final l = TabLayout(ir(1));
     final wide = l.measureWidth + TabLayout.leftPad * 2;
     final x0 = l.noteX(0, 0.0, wide);
     final x1 = l.noteX(0, 1.0, wide);
-    expect(x1 - x0, TabLayout.pxPerBeat);
+    // 拍距 = 小节宽两侧各让 notePad 后均分（2026-11-01 竖线避让）。
+    expect(x0 - TabLayout.leftPad, TabLayout.notePad);
+    expect(
+        x1 - x0, (l.measureWidth - TabLayout.notePad * 2) / l.beatsPerBar);
+    // 拍位 0 与末拍都不压小节竖线：音符中心离线 ≥ notePad - 数字半宽。
+    final xLast = l.noteX(0, l.beatsPerBar.toDouble(), wide);
+    expect(xLast - TabLayout.leftPad, lessThanOrEqualTo(l.measureWidth - TabLayout.notePad));
   });
 
   test('stringY：1 弦在最上（y 最小）', () {

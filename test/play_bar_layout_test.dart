@@ -28,7 +28,8 @@ void main() {
                 durationSeconds: 100.0,
                 busy: busy,
                 onToggle: onToggle ?? () {},
-                onStop: onStop ?? () {}),
+                onStop: onStop ?? () {},
+                onSeek: (_) {}),
           ));
 
   IconButton stopButton(WidgetTester tester) => tester.widget<IconButton>(
@@ -82,7 +83,8 @@ void main() {
         positionSeconds: 1.0,
         durationSeconds: 100.0,
         onToggle: _noop,
-        onStop: _noop);
+        onStop: _noop,
+        onSeek: _noopSeek);
     Future<double> pumpHeight(Widget body) async {
       await tester.pumpWidget(MaterialApp(
           theme: GuitarBarTheme.light(),
@@ -117,3 +119,5 @@ void main() {
 }
 
 void _noop() {}
+
+void _noopSeek(double seconds) {}

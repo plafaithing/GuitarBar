@@ -93,6 +93,12 @@ class FakeEngine implements SoundEngine {
   @override
   void setPause(SoundHandle h, bool paused) => pausedValue = paused;
 
+  /// seek 最后一次入参（定位接线断言用）。
+  Duration lastSeek = Duration.zero;
+
+  @override
+  void seek(SoundHandle h, Duration time) => lastSeek = time;
+
   @override
   Future<void> init() async {}
 

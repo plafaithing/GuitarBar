@@ -42,6 +42,9 @@ class SampleScorePlayer implements ScorePlayback {
   bool _paused = false;
   double _pausedAt = 0;
 
+  /// 未播放时的 seek 记忆：play 后从该处起播（点音起播用）。
+  double? _pendingSeek;
+
   @override
   double durationSeconds = 0;
   @override
@@ -78,8 +81,20 @@ class SampleScorePlayer implements ScorePlayback {
     }
 
     _sound.setMaxActiveVoiceCount(64);
-    _t0 = _sound.engineNow();
-    _pointer = 0;
+    // 未播放时的 seek 记忆（点音起播）：时间轴零点前移到起点，
+    // 指针跳过起点前的事件。
+    final seek = _pendingSeek;
+    _pendingSeek = null;
+    if (seek != null) {
+      _t0 = _sound.engineNow() -
+          Duration(microseconds: (seek * 1e6).round());
+      while (_pointer < _pending.length &&
+          _pending[_pointer].time < seek - 1e-9) {
+        _pointer++;
+      }
+    } else {
+      _t0 = _sound.engineNow();
+    }
     _playing = true;
     _paused = false;
     _pausedAt = 0;
@@ -174,6 +189,37 @@ class SampleScorePlayer implements ScorePlayback {
     }
   }
 
+  /// 定位（2026-11-01 走查：进度条拖动 + 点音起播）。三种态：
+  /// - 播放中：切现场声部，时间轴零点重锚到 [s]，指针重排到 s 后首事件
+  /// - 暂停中：同播放中重排（暂停点更新为 s，恢复即从 s 续）
+  /// - 未播放：记住起点，play 后从该处起播
+  @override
+  Future<void> seekToSecond(double s) async {
+    final clamped = s.clamp(0.0, durationSeconds).toDouble();
+    if (!_playing) {
+      _pendingSeek = clamped;
+      return;
+    }
+    _killVoices(); // 现场 + 预调度声部全切
+    if (_paused) {
+      _pausedAt = clamped;
+    } else {
+      _t0 = _sound.engineNow() -
+          Duration(microseconds: (clamped * 1e6).round());
+    }
+    // 指针重排：跳过 s 前的事件（已被切，不重放）。
+    while (_pointer > 0 && _pending[_pointer - 1].time >= clamped - 1e-9) {
+      _pointer--;
+    }
+    while (_pointer < _pending.length && _pending[_pointer].time < clamped - 1e-9) {
+      _pointer++;
+    }
+    if (!_paused) {
+      positionSeconds.value = clamped;
+      onTick(); // 立即调度 s 起的音（不等 50ms tick）
+    }
+  }
+
   @override
   void pause() {
     if (!_playing || _paused) return;
@@ -207,6 +253,7 @@ class SampleScorePlayer implements ScorePlayback {
     _paused = false;
     _pending.clear();
     _pointer = 0;
+    _pendingSeek = null; // 停止=回开头，清未生效的 seek 记忆
     positionSeconds.value = 0;
     _killVoices();
   }

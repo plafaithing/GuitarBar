@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
@@ -49,24 +51,18 @@ class _RootPageState extends State<RootPage> with WindowListener {
     super.dispose();
   }
 
-  /// 窗口关闭拦截（main 里 setPreventClose(true)）：快速路径——唯一数据
-  /// 关键步（打卡落库，毫秒级）完成后立即 destroy；音频栈（麦克风流/引擎
-  /// 拆除）不等待，随进程退出由系统回收。边界：音频驱动级卡死时 destroy 后
-  /// 进程仍可能残留，最终手段仍是任务管理器/重启。
-  @override
-  /// 窗口关闭拦截（main 里 setPreventClose(true)）：快速关闭——唯一数据
-  /// 关键步（打卡落库，毫秒级）完成后，麦克风停流加 2s 超时守卫（SST 驱动
-  /// 停止可能卡顿，不等待），随后立即 destroy；引擎拆除随进程退出由系统
-  /// 回收（无数据风险）。边界：驱动级卡死超 2s 时 destroy 后进程仍可能
-  /// 短暂残留，最终手段仍是任务管理器/重启。
+  /// 窗口关闭拦截（main 里 setPreventClose(true)）：1s 内彻底关闭
+  /// （2026-11-01 走查提速）。唯一数据关键步 = 打卡落库（毫秒级，加
+  /// 500ms 超时守卫防 drift 偶发慢）；麦克风停流**不等待**（原 2s 守卫
+  /// 是每次关闭的最大耗时源——SST 驱动停止常挂满 2s；录音句柄随进程
+  /// 退出由 OS 回收，无数据风险）；引擎拆除同样不等待。
   @override
   void onWindowClose() async {
     try {
-      await PracticeTimer.I.stop(note: '应用关闭时自动保存');
+      await PracticeTimer.I.stop(note: '应用关闭时自动保存')
+          .timeout(const Duration(milliseconds: 500));
     } catch (_) {}
-    try {
-      await MicPitchStream.I.stop().timeout(const Duration(seconds: 2));
-    } catch (_) {}
+    unawaited(MicPitchStream.I.stop()); // 不等：OS 进程退出兜底回收
     await windowManager.destroy();
   }
 

@@ -19,7 +19,8 @@ class TabView extends StatefulWidget {
       this.playheadBeat,
       this.followPlayhead = false,
       this.onNoteTap,
-      this.onFailedTap});
+      this.onFailedTap,
+      this.onNoteLongPress});
   final ScoreIr ir;
 
   /// 播放头位置（全曲拍位，Task 16 接线）；null = 不显示。
@@ -27,8 +28,14 @@ class TabView extends StatefulWidget {
 
   /// 播放跟随（走查反馈 ②）：播放头滑出可视窗口时自动平滑滚动居中。
   final bool followPlayhead;
+
+  /// 点击音符（2026-11-01 走查改为从此音起播；编辑移到长按）。
   final void Function(int measureIndex, int noteIndex, NoteIr note)? onNoteTap;
   final void Function(int measureIndex)? onFailedTap;
+
+  /// 长按音符：编辑入口（原点击编辑语义让位给点音起播）。
+  final void Function(int measureIndex, int noteIndex, NoteIr note)?
+      onNoteLongPress;
 
   @override
   State<TabView> createState() => _TabViewState();
@@ -109,7 +116,8 @@ class _TabViewState extends State<TabView> {
         controller: _scroll,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTapUp: (d) => _hitTest(d.localPosition, w),
+          onTapUp: (d) => _hitTest(d.localPosition, w, tap: true),
+          onLongPressEnd: (d) => _hitTest(d.localPosition, w, tap: false),
           child: SizedBox(
             width: w,
             height: layout.sizeFor(w).height,
@@ -122,7 +130,9 @@ class _TabViewState extends State<TabView> {
                       scroll: _scroll,
                       stringLine: p.border,
                       fretText: p.ink,
-                      barLine: p.border,
+                      // 小节线加深（2026-11-01 走查：p.border 太浅看不出，
+                      // GP8 小节线与音符同黑）。
+                      barLine: p.ink,
                       failedText: p.negative,
                       pageNum: p.muted),
                 ),
@@ -144,13 +154,18 @@ class _TabViewState extends State<TabView> {
     });
   }
 
-  /// 点击命中：找最近的弦线（|dy| < stringGap/2），再找该弦上最近的音符
-  /// （|dx| < pxPerBeat/2）。failed 小节整块可点。
-  void _hitTest(Offset local, double maxWidth) {
+  /// 点击/长按命中：找最近的弦线（|dy| < stringGap/2），再找该弦上最近的
+  /// 音符（|dx| < 11）。x 容差 11 而非 pxPerBeat/2：绘制层有同弦近邻修正
+  /// （拥挤音右移 14px），容差须小于修正步长，否则点击修正后的音错命中
+  /// 前一音；也须小于同拍同弦 12px 错开步长。
+  void _hitTest(Offset local, double maxWidth, {required bool tap}) {
     final layout = TabLayout(widget.ir);
     final tracks = widget.ir.tracks;
+    final hasNoteCb = tap
+        ? widget.onNoteTap != null
+        : widget.onNoteLongPress != null;
     if (tracks.isEmpty ||
-        (widget.onNoteTap == null && widget.onFailedTap == null)) {
+        (!hasNoteCb && widget.onFailedTap == null)) {
       return;
     }
     for (final m in tracks.first.measures) {
@@ -174,9 +189,13 @@ class _TabViewState extends State<TabView> {
         final n = m.notes[i];
         final nx = layout.noteX(m.index, n.beat, maxWidth);
         final ny = layout.stringY(n.string, row);
-        if ((local.dx - nx).abs() < TabLayout.pxPerBeat / 2 &&
+        if ((local.dx - nx).abs() < 11 &&
             (local.dy - ny).abs() < TabLayout.stringGap / 2) {
-          widget.onNoteTap?.call(m.index, i, n);
+          if (tap) {
+            widget.onNoteTap?.call(m.index, i, n);
+          } else {
+            widget.onNoteLongPress?.call(m.index, i, n);
+          }
           return;
         }
       }
@@ -623,9 +642,11 @@ class _PlayheadPainter extends CustomPainter {
       }
     }
     if (!found) return;
+    // 与 noteX 同款净空公式（notePad + 收窄拍距），播放头与音符对齐。
     final x = TabLayout.leftPad +
         col * (layout.measureWidth + TabLayout.measureGap) +
-        inMeasure * TabLayout.pxPerBeat;
+        TabLayout.notePad +
+        inMeasure * (layout.measureWidth - TabLayout.notePad * 2) / beatPerBar;
     final y0 = layout.stringY(1, row) - 10;
     final y1 = layout.stringY(6, row) + 10;
     canvas.drawLine(Offset(x, y0), Offset(x, y1),

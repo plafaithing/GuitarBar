@@ -74,11 +74,13 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     super.dispose();
   }
 
-  /// 两条路径一并停（各自幂等），采样库最后释放（需无活动句柄）。
+  /// 三条路径全 fire-and-forget（2026-11-01 走查"关闭 1s 内"：逐个 await
+  /// 的原生释放——尤其 KS 整曲 PCM disposeSource——在主 isolate 排队拖慢
+  /// 页面退出/窗口关闭；各自幂等，进程退出 OS 兜底回收）。
   Future<void> _shutdownAudio() async {
-    await _player.stop();
-    await _samplePlayer.stop();
-    await _sampleBank.dispose();
+    unawaited(_player.stop());
+    unawaited(_samplePlayer.stop());
+    unawaited(_sampleBank.dispose());
   }
 
   Future<void> _initRepo() async {
@@ -207,7 +209,8 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
   /// 播放/暂停切换（走查反馈 ①）：未播放 → 采样优先起播（预载失败降级
   /// 离线 KS 渲染）；在播 → 暂停（采样路径切声部冻结时间轴，PCM 路径
   /// soloud 冻结在暂停点）；暂停中 → 从暂停点继续。
-  Future<void> _togglePlay() async {
+  /// [startAt]：起播位置秒（点音起播/进度条拖动起播用，null=从头）。
+  Future<void> _togglePlay({double? startAt}) async {
     final ir = _ir;
     if (ir == null || _rendering) return;
     final active = _activePlayer;
@@ -228,6 +231,10 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     try {
       // 采样优先：GP8 真录钢弦逐音调度；返回 false（预载失败/无可发
       // 音符）降级离线 KS 渲染——"还没有可演奏的音符"提示也由该路径出。
+      // startAt 先记入播放器的 pendingSeek（播放器内部 start 时生效）。
+      if (startAt != null) {
+        await _samplePlayer.seekToSecond(startAt);
+      }
       if (!await _samplePlayer.play(ir)) {
         // 渲染在主 isolate 直接做（0.3-1s）：忙碌态由 _rendering 承担；
         // M5 变速重渲染时再 Isolate.run（Task 15 备案）。
@@ -240,7 +247,13 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
           return;
         }
         await _player.load(rendered);
-        await _player.start();
+        if (startAt != null) {
+          // KS 路径：无 pendingSeek 机制内建（PCM 已加载），start 后立即 seek。
+          await _player.start();
+          await _player.seekToSecond(startAt);
+        } else {
+          await _player.start();
+        }
       }
       if (mounted) setState(() {});
     } catch (e) {
@@ -251,6 +264,33 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     } finally {
       if (mounted) setState(() => _rendering = false);
     }
+  }
+
+  /// 点击音符：从此音起播（2026-11-01 走查需求）。播放/暂停中即时跳转，
+  /// 未播放则记起点起播；编辑入口移至长按（TabView.onNoteLongPress）。
+  Future<void> _playFromNote(int m, int i, NoteIr n) async {
+    final ir = _ir;
+    if (ir == null || _rendering) return;
+    final beatsPerBar = int.tryParse(ir.timeSignature.split('/').first) ?? 4;
+    final seconds = (m * beatsPerBar + n.beat) * 60.0 / ir.tempo;
+    final active = _activePlayer;
+    if (active.playing || active.paused) {
+      await active.seekToSecond(seconds);
+      if (mounted) setState(() {});
+      return;
+    }
+    await _togglePlay(startAt: seconds);
+  }
+
+  /// 进度条拖动定位（松手回调）：播放/暂停中即时 seek；未播放从该处起播。
+  Future<void> _onSeek(double seconds) async {
+    final active = _activePlayer;
+    if (active.playing || active.paused) {
+      await active.seekToSecond(seconds);
+    } else {
+      await _togglePlay(startAt: seconds);
+    }
+    if (mounted) setState(() {});
   }
 
   /// 停止按钮：归零回开头（暂停只是冻结位置，停止才是归零）。
@@ -303,7 +343,10 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                                   : null,
                               // 播放时谱面自动滚动跟随（走查反馈 ②）。
                               followPlayhead: true,
-                              onNoteTap: _editNote,
+                              // 点击音符=从此起播（2026-11-01 走查）；
+                              // 编辑移到长按。
+                              onNoteTap: _playFromNote,
+                              onNoteLongPress: _editNote,
                               onFailedTap: _clearMeasure,
                             ),
                         ),
@@ -350,8 +393,9 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                   positionSeconds: _activePlayer.positionSeconds.value,
                   durationSeconds: _activePlayer.durationSeconds,
                   busy: _rendering,
-                  onToggle: _togglePlay,
-                  onStop: _stopPlay),
+                  onToggle: () => _togglePlay(),
+                  onStop: _stopPlay,
+                  onSeek: _onSeek),
             ),
     );
   }

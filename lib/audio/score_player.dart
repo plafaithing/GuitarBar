@@ -17,6 +17,10 @@ abstract interface class ScorePlayback {
   void pause();
   void resume();
   Future<void> stop();
+
+  /// 定位到 [s] 秒（2026-11-01 走查：进度条拖动 + 点音起播）：
+  /// 播放中即时跳转（现场声部切清重排），未播放则记住起点、start 后生效。
+  Future<void> seekToSecond(double s);
 }
 
 /// 自动演奏播放：渲染 PCM → loadPcm → play。
@@ -33,6 +37,9 @@ class ScorePlayer implements ScorePlayback {
   AudioSource? _src;
   SoundHandle? _handle;
   Timer? _timer;
+
+  /// 未播放时的 seek 记忆：start 后立即定位到该处（点音起播用）。
+  double? _pendingSeek;
 
   @override
   double durationSeconds = 0;
@@ -76,7 +83,27 @@ class ScorePlayer implements ScorePlayback {
     final src = _src;
     if (src == null || _handle != null) return;
     _handle = _sound.play(src);
+    // 未播放时的 seek 记忆（点音起播）：起播后立即定位。
+    final seek = _pendingSeek;
+    if (seek != null) {
+      _pendingSeek = null;
+      await seekToSecond(seek);
+    }
     _timer = Timer.periodic(const Duration(milliseconds: 50), (_) => onTick());
+  }
+
+  /// 定位：播放中 soloud 句柄内跳位（暂停中也有效，冻结点随之移动）；
+  /// 未播放记住起点，start 后生效。曲终态（无句柄）seek 后需 start。
+  @override
+  Future<void> seekToSecond(double s) async {
+    final clamped = s.clamp(0.0, durationSeconds).toDouble();
+    final h = _handle;
+    if (h == null) {
+      _pendingSeek = clamped;
+      return;
+    }
+    _sound.seek(h, Duration(microseconds: (clamped * 1e6).round()));
+    positionSeconds.value = clamped;
   }
 
   /// 50ms 轮询一步。公开为可直测（Timer 周期在测试里难控，
@@ -111,6 +138,7 @@ class ScorePlayer implements ScorePlayback {
     final h = _handle;
     _handle = null;
     _paused = false; // 停止/曲终即清暂停态，否则下次 start 后 UI 误显示恢复键
+    _pendingSeek = null; // 停止/曲终清未生效的 seek 记忆（停止=回开头）
     positionSeconds.value = 0;
     final s = _src;
     _src = null;

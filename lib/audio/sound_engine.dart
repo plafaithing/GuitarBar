@@ -92,4 +92,8 @@ class SoundEngine {
   /// 叠加多条余振，16 不够（KS 路径是单条 PCM 流无此约束）。
   void setMaxActiveVoiceCount(int count) =>
       SoLoud.instance.setMaxActiveVoiceCount(count);
+
+  /// 句柄内定位（第 14 个成员，进度条拖动/点音起播用）：KS 路径 PCM 流
+  /// 直接跳位；暂停中 seek 后 position 冻结在新位置。
+  void seek(SoundHandle h, Duration time) => SoLoud.instance.seek(h, time);
 }
