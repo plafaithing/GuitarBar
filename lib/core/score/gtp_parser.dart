@@ -214,6 +214,12 @@ ScoreIr parseGpif(String xml) {
       throw FormatException(
           'gpif 引用了不存在的 bar（小节 $measureIndex, id $barId）');
     }
+    // 反复记号（2026-11-02 走查：GP8 显示反复双竖线，v1 缺失）——
+    // MasterBar 的 Repeat 子元素 start/end 属性（实测月下の恋 MB#21
+    // start=true、MB#43 end=true）。
+    final repeatEl = masterBar.findElements('Repeat').firstOrNull;
+    final repeatStart = repeatEl?.getAttribute('start')?.toLowerCase() == 'true';
+    final repeatEnd = repeatEl?.getAttribute('end')?.toLowerCase() == 'true';
     final notes = <NoteIr>[];
     for (final voiceId in _refs(_childText(bar, 'Voices'))) {
       final voice = voicesById[voiceId];
@@ -224,8 +230,13 @@ ScoreIr parseGpif(String xml) {
       _readVoice(
           voice, beatsById, rhythmsById, notesById, tieOrigins, capo, notes);
     }
-    measures.add(
-        MeasureIr(index: measureIndex++, confidence: 0, failed: false, notes: notes));
+    measures.add(MeasureIr(
+        index: measureIndex++,
+        confidence: 0,
+        failed: false,
+        notes: notes,
+        repeatStart: repeatStart,
+        repeatEnd: repeatEnd));
   }
   if (measures.isEmpty) throw const FormatException('gpif 无小节');
 

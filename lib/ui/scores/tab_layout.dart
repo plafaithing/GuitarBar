@@ -12,9 +12,9 @@ class TabLayout {
   TabLayout(this.ir);
   final ScoreIr ir;
 
-  // 弦距（2026-11-01 走查：18→22，弧线上拱后 H/P 字母在弧内侧需要
-  // 上方净空，GP8 视觉间距也更宽）。
-  static const stringGap = 22.0;
+  // 弦距（2026-11-01 走查 18→22 弧线字母净空；2026-11-02 走查回调
+  // 22→20——用户反馈太宽；20 下弧顶/字母/上弦数字恰好互不侵入）。
+  static const stringGap = 20.0;
   static const topPad = 28.0;
   static const bottomPad = 20.0;
   static const leftPad = 16.0;

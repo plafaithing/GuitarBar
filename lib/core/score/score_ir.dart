@@ -100,6 +100,8 @@ class MeasureIr {
     required this.confidence,
     required this.failed,
     required this.notes,
+    this.repeatStart = false,
+    this.repeatEnd = false,
   });
 
   final int index; // 全曲连续小节号（0 起）
@@ -107,11 +109,19 @@ class MeasureIr {
   final bool failed; // true = 识别失败占位，notes 恒空
   final List<NoteIr> notes;
 
+  // 反复记号（2026-11-02 走查：GP8 显示反复双竖线+圆点，v1 缺失）。
+  // gpif MasterBar 的 Repeat start="true"/end="true"（count 为重复次数，
+  // 播放展开 v1 未做——只显示记号）。
+  final bool repeatStart;
+  final bool repeatEnd;
+
   Map<String, dynamic> toJson() => {
         'index': index,
         'confidence': confidence,
         'failed': failed,
         'notes': [for (final n in notes) n.toJson()],
+        if (repeatStart) 'repeatStart': true,
+        if (repeatEnd) 'repeatEnd': true,
       };
 
   static MeasureIr fromJson(Map<String, dynamic> j) => MeasureIr(
@@ -122,6 +132,8 @@ class MeasureIr {
           if (j['notes'] case final List l)
             for (final n in l) NoteIr.fromJson(n as Map<String, dynamic>)
         ],
+        repeatStart: j['repeatStart'] as bool? ?? false,
+        repeatEnd: j['repeatEnd'] as bool? ?? false,
       );
 
   @override

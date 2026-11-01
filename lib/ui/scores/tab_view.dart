@@ -130,7 +130,9 @@ class _TabViewState extends State<TabView> {
                       layout: layout,
                       ir: widget.ir,
                       scroll: _scroll,
-                      stringLine: p.border,
+                      // 弦线加深（2026-11-02 走查：浅色模式 p.border 太浅
+                      // 看不清，p.muted 中灰）。
+                      stringLine: p.muted,
                       fretText: p.ink,
                       // 小节线加深（2026-11-01 走查：p.border 太浅看不出，
                       // GP8 小节线与音符同黑）。
@@ -281,9 +283,26 @@ class _ScorePainter extends CustomPainter {
                 fontSize: 10,
                 color: pageNum,
                 fontFeatures: [FontFeature.tabularFigures()]));
-        // 左小节竖线。
+        // 左小节竖线；反复起始（Repeat start）= 双竖线 + 弦区上下圆点
+        //（2026-11-02 走查：GP8 反复记号 v1 缺失）。
         canvas.drawLine(Offset(mx, rowTop), Offset(mx, rowBottom),
             Paint()..color = barLine);
+        if (m.repeatStart) {
+          canvas.drawLine(Offset(mx - 5, rowTop), Offset(mx - 5, rowBottom),
+              Paint()..color = barLine);
+          final dot = Paint()..color = barLine;
+          canvas.drawCircle(Offset(mx - 10, rowTop + 8), 2.2, dot);
+          canvas.drawCircle(Offset(mx - 10, rowBottom - 8), 2.2, dot);
+        }
+        // 反复结束（Repeat end）：右边界圆点 + 双竖线（行内任意位置）。
+        if (m.repeatEnd) {
+          final rx = mx + mw;
+          final dot = Paint()..color = barLine;
+          canvas.drawCircle(Offset(rx + 10, rowTop + 8), 2.2, dot);
+          canvas.drawCircle(Offset(rx + 10, rowBottom - 8), 2.2, dot);
+          canvas.drawLine(Offset(rx + 5, rowTop), Offset(rx + 5, rowBottom),
+              Paint()..color = barLine);
+        }
         if (m.failed) {
           _text(canvas, '未识别', Offset(mx + mw / 2, (rowTop + rowBottom) / 2),
               TextStyle(fontSize: 12, color: failedText));
@@ -363,9 +382,18 @@ class _ScorePainter extends CustomPainter {
       }
       _paintMarks(canvas, flow, rowTop, rowBottom, size.width);
       // 行末收尾竖线（最后一小节的右边界；行级小节宽——密集行更宽）。
+      // 反复结束（Repeat end）= 圆点 + 双竖线（点在行末线左）。
       final lastMeasure = rows[r].last;
+      final lastM = measures[lastMeasure];
       final endX = layout.measureX(lastMeasure, size.width) +
           layout.measureWidthAt(lastMeasure, size.width);
+      if (lastM.repeatEnd) {
+        final dot = Paint()..color = barLine;
+        canvas.drawCircle(Offset(endX + 10, rowTop + 8), 2.2, dot);
+        canvas.drawCircle(Offset(endX + 10, rowBottom - 8), 2.2, dot);
+        canvas.drawLine(Offset(endX + 5, rowTop), Offset(endX + 5, rowBottom),
+            Paint()..color = barLine);
+      }
       canvas.drawLine(Offset(endX, rowTop), Offset(endX, rowBottom),
           Paint()..color = barLine);
     }
