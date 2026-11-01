@@ -120,7 +120,9 @@ class _TabViewState extends State<TabView> {
           onLongPressEnd: (d) => _hitTest(d.localPosition, w, tap: false),
           child: SizedBox(
             width: w,
-            height: layout.sizeFor(w).height,
+            // 底部缓冲 = PlayBar 高（64，bottomSheet 常驻遮挡）：滚动到
+            // 底时最后一行完整可见（2026-11-01 走查）。
+            height: layout.sizeFor(w).height + 64,
             child: Stack(children: [
               Positioned.fill(
                 child: CustomPaint(
