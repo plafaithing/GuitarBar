@@ -48,6 +48,52 @@ void main() {
     expect(xLast - TabLayout.leftPad, lessThanOrEqualTo(l.measureWidth - TabLayout.notePad));
   });
 
+  test('自适应行密度：16 分连排密集小节所在行降为 2 小节/行', () {
+    // m1 全 16 分连排（beat 差 0.25）：需要宽 = 4×(18/0.25)+20 = 308 >
+    // 标准宽 256 → 与任何小节同行都会压低均分宽 → 独占/仅与 1 个同伴。
+    ScoreIr irWithDense() => ScoreIr(
+          version: 1,
+          title: 'T',
+          tempo: 90,
+          timeSignature: '4/4',
+          tuning: const ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'],
+          capo: 0,
+          tracks: [
+            TrackIr(name: 'T', measures: [
+              for (var m = 0; m < 6; m++)
+                MeasureIr(
+                  index: m,
+                  confidence: 0.9,
+                  failed: false,
+                  notes: [
+                    if (m == 1)
+                      // 16 分连排（0 起每 0.25 拍一个）
+                      for (var k = 0; k < 16; k++)
+                        NoteIr(beat: k * 0.25, duration: 0.25,
+                            string: 1, fret: 12, technique: null)
+                    else
+                      NoteIr(beat: 0, duration: 1, string: 1, fret: 0,
+                          technique: null),
+                  ],
+                ),
+            ]),
+          ],
+        );
+    final l = TabLayout(irWithDense());
+    final wide = l.measureWidth * 3 + TabLayout.leftPad * 2;
+    final rows = l.rowsFor(wide);
+    // m1（16 分连排）所在行小节数 < 3（降密度）；普通小节行保持 3。
+    final denseRow = rows.firstWhere((r) => r.contains(1));
+    expect(denseRow.length, lessThan(3));
+    // 密集行的小节更宽：行级拍距拉大，连排间隔 > 标准行。
+    final denseRowW = l.measureWidthAt(1, wide);
+    expect(denseRowW, greaterThan(l.measureWidth));
+    // 密集小节内 16 分相邻音符 x 间距 ≥ 两位数字宽（连排可辨认）。
+    final x0 = l.noteX(1, 0.0, wide);
+    final x1 = l.noteX(1, 0.25, wide);
+    expect(x1 - x0, greaterThanOrEqualTo(18.0));
+  });
+
   test('stringY：1 弦在最上（y 最小）', () {
     final l = TabLayout(ir(1));
     expect(l.stringY(1, 0), lessThan(l.stringY(6, 0)));

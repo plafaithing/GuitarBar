@@ -171,7 +171,7 @@ class _TabViewState extends State<TabView> {
     for (final m in tracks.first.measures) {
       final mx = layout.measureX(m.index, maxWidth);
       if (local.dx < mx - TabLayout.measureGap / 2 ||
-          local.dx > mx + layout.measureWidth) {
+          local.dx > mx + layout.measureWidthAt(m.index, maxWidth)) {
         continue;
       }
       final row = layout.locate(m.index, maxWidth).$1;
@@ -271,7 +271,7 @@ class _ScorePainter extends CustomPainter {
       final flow = <_FlowNote>[];
       for (final m in rows[r].map((idx) => measures[idx])) {
         final mx = layout.measureX(m.index, size.width);
-        final mw = layout.measureWidth;
+        final mw = layout.measureWidthAt(m.index, size.width);
         // 小节号（上移一层：谱上方两行布局 = 小节号 + L.R./P.M. 区，
         // GP8 的 let ring 虚线在谱上方——2026-11-01 走查截图对齐）。
         _text(canvas, '${m.index + 1}', Offset(mx, rowTop - 20),
@@ -333,10 +333,10 @@ class _ScorePainter extends CustomPainter {
         }
       }
       _paintMarks(canvas, flow, rowTop, rowBottom, size.width);
-      // 行末收尾竖线（最后一小节的右边界）。
+      // 行末收尾竖线（最后一小节的右边界；行级小节宽——密集行更宽）。
       final lastMeasure = rows[r].last;
       final endX = layout.measureX(lastMeasure, size.width) +
-          layout.measureWidth;
+          layout.measureWidthAt(lastMeasure, size.width);
       canvas.drawLine(Offset(endX, rowTop), Offset(endX, rowBottom),
           Paint()..color = barLine);
     }
@@ -636,21 +636,20 @@ class _PlayheadPainter extends CustomPainter {
     final beatPerBar = layout.beatsPerBar;
     final measure = (playheadBeat! / beatPerBar).floor();
     final inMeasure = playheadBeat! - measure * beatPerBar;
-    var row = 0, col = 0, found = false;
+    var row = 0, found = false;
     for (var r = 0; r < rows.length && !found; r++) {
-      final c = rows[r].indexOf(measure);
-      if (c >= 0) {
+      if (rows[r].contains(measure)) {
         row = r;
-        col = c;
         found = true;
       }
     }
     if (!found) return;
-    // 与 noteX 同款净空公式（notePad + 收窄拍距），播放头与音符对齐。
-    final x = TabLayout.leftPad +
-        col * (layout.measureWidth + TabLayout.measureGap) +
-        TabLayout.notePad +
-        inMeasure * (layout.measureWidth - TabLayout.notePad * 2) / beatPerBar;
+    // 与 noteX 同款公式（行级小节宽 + notePad + 行级拍距），播放头与
+    // 音符对齐（密集行拍距自动拉长，播放头跟随）。
+    final x = layout.noteX(
+        measure.clamp(0, rows.last.last),
+        inMeasure,
+        size.width);
     final y0 = layout.stringY(1, row) - 10;
     final y1 = layout.stringY(6, row) + 10;
     canvas.drawLine(Offset(x, y0), Offset(x, y1),
