@@ -256,7 +256,13 @@ class _ChordPageState extends State<ChordPage> {
             ButtonSegment(value: true, label: Text('浏览')),
           ],
           selected: {_browseMode},
-          onSelectionChanged: (s) => setState(() => _browseMode = s.first),
+          // 切模式清结果（2026-11-01 走查：旧模式的指法卡挂在新模式下
+          // 误导——输入/浏览的查询语境不同）。
+          onSelectionChanged: (s) => setState(() {
+            _browseMode = s.first;
+            _voicings = [];
+            _error = null;
+          }),
         ),
         const SizedBox(height: 12),
         // 调弦入口：两模式共用，tap 打开预设浮层（全局预设，与调音器共享）。
