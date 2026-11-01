@@ -300,14 +300,15 @@ class _ScorePainter extends CustomPainter {
           flow.add(_FlowNote(m.index, n, nx + dx, ny));
         }
       }
-      // 同弦相邻拥挤修正趟（2026-11-01 走查：m49 b3.5 f11 与 b3.75 f12
-      // 拍位差 0.25 拍=12px，两位品数字宽 ~16px 重叠成"1⑪21"）：
-      // 同弦按时间序，与前一音 x 距 <14px 的音右移到 prev+14。
+      // 同弦相邻拥挤修正趟（2026-11-01 走查：Like A Star m71 "12×6" 同弦
+      // 16 分连排两位数字叠死）：同弦按时间序，与前一音 x 距 <15px 的音
+      // 右移到 prev+15（新拍距 64 下 16 分距 14.75，步长 15 基本免触发，
+      // 仅极端密集时兜底排开）。
       final lastXAtString = <int, double>{};
       for (final fl in flow) {
         final prev = lastXAtString[fl.note.string];
-        if (prev != null && fl.x - prev < 14 && fl.x >= prev) {
-          fl.x = prev + 14;
+        if (prev != null && fl.x - prev < 15 && fl.x >= prev) {
+          fl.x = prev + 15;
         }
         lastXAtString[fl.note.string] = fl.x;
       }
@@ -402,8 +403,10 @@ class _ScorePainter extends CustomPainter {
       // GP8 am::painting::Slur 模型逆向转写（AMPainting.dll computeIdealSlurControl
       // Points/makeSlur 反编译）：三次贝塞尔，p0/p1=音符中心；控制点沿连线内缩
       // max(0.05×dx, 0.36×dx×e^(-0.0144dx))；弧高系数同弦 0.36、跨弦 0.426
-      // （0.36+0.14×e^(-0.75)，SlurParameters{0.36,0.5,0.05,0.04} 默认值）× 弦距；
-      // 弧顶=0.75×弧高≈4.9px，明显浅于早期手调的 9px（GP8 实测更浅更平）。
+      // （SlurParameters{0.36,0.5,0.05,0.04} 默认值）× 弦距。
+      // 方向（2026-11-01 走查）：**上拱**——下拱弧顶压品数字视线（用户点名），
+      // 上拱弧顶在弦线上方 0.75×h≈5.9px（stringGap 22），恰在上一弦数字底缘
+      // 之下的弦间空隙里。
       if (n.tieStart || n.hopoStart || n.legatoStart) {
         final next = nextSameString;
         final xEnd = (next?.x ?? f.x + 22).clamp(f.x + 8, endX).toDouble();
@@ -418,13 +421,14 @@ class _ScorePainter extends CustomPainter {
             .clamp(0.0, dx / 3);
         final path = Path()
           ..moveTo(f.x, f.y)
-          ..cubicTo(f.x + inset, f.y + h, xEnd - inset, yEnd + h, xEnd, yEnd);
+          ..cubicTo(f.x + inset, f.y - h, xEnd - inset, yEnd - h, xEnd, yEnd);
         canvas.drawPath(path, line);
-        // 击勾弦字母：品升 H / 品降 P（连滑音弧线无字母，GP8 同款）。
+        // 击勾弦字母：品升 H / 品降 P（连滑音弧线无字母，GP8 同款）——
+        // 弧线内侧（弧顶之下、品数字之上）。
         if (n.hopoStart) {
           final dest = next?.note;
           final letter = dest == null ? 'H' : (dest.fret > n.fret ? 'H' : 'P');
-          _text(canvas, letter, Offset((f.x + xEnd) / 2, f.y + 13),
+          _text(canvas, letter, Offset((f.x + xEnd) / 2, f.y - 10),
               TextStyle(fontSize: 9, color: fretText));
         }
       }
@@ -448,7 +452,7 @@ class _ScorePainter extends CustomPainter {
         final period = TabLayout.stringGap * 0.5;
         final peak = TabLayout.stringGap * 0.25;
         final w = period * cycles;
-        final yBase = f.y + 8.0;
+        final yBase = f.y + 9.0;
         final path = Path()..moveTo(f.x - w / 2, yBase);
         final nSeg = (cycles * 2).ceil();
         for (var k = 0; k < nSeg; k++) {

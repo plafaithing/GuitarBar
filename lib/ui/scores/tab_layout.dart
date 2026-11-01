@@ -8,13 +8,16 @@ class TabLayout {
   TabLayout(this.ir);
   final ScoreIr ir;
 
-  static const stringGap = 18.0;
+  // 弦距（2026-11-01 走查：18→22，弧线上拱后 H/P 字母在弧内侧需要
+  // 上方净空，GP8 视觉间距也更宽）。
+  static const stringGap = 22.0;
   static const topPad = 28.0;
   static const bottomPad = 20.0;
   static const leftPad = 16.0;
-  // 拍距（2026-11-01 走查：48→52，小节内两侧各留 10px 音符净空后
-  // 每拍有效 47px，16 分音距 11.75px 与原持平）。
-  static const pxPerBeat = 52.0;
+  // 拍距（2026-11-01 走查二轮：52→64——Like A Star m71 "12×6" 同弦
+  // 16 分连排两位数字 16px 叠死，64 下 16 分距 14.75px + 修正步长 15
+  // 可排开；每行仍 3 小节：(800-32)/256=3）。
+  static const pxPerBeat = 64.0;
   // 小节内音符净空：拍位 0 的音符中心离小节左竖线 ≥10px（两位品数字
   // 半宽 8px 不压线）；尾拍同理不越右竖线。
   static const notePad = 10.0;
