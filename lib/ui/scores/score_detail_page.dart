@@ -268,18 +268,22 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
 
   /// 点击音符：从此音起播（2026-11-01 走查需求）。播放/暂停中即时跳转，
   /// 未播放则记起点起播；编辑入口移至长按（TabView.onNoteLongPress）。
+  /// 反复结构谱：起播点映射到展开轴（该小节首次出现的遍次）。
   Future<void> _playFromNote(int m, int i, NoteIr n) async {
     final ir = _ir;
     if (ir == null || _rendering) return;
     final beatsPerBar = int.tryParse(ir.timeSignature.split('/').first) ?? 4;
-    final seconds = (m * beatsPerBar + n.beat) * 60.0 / ir.tempo;
+    final linearBeat = m * beatsPerBar + n.beat;
+    final seconds = linearBeat * 60.0 / ir.tempo;
     final active = _activePlayer;
     if (active.playing || active.paused) {
-      await active.seekToSecond(seconds);
+      // 播放中：展开轴定位（结构谱），否则线性秒。
+      final start = active.startSecondsForMeasure(m);
+      await active.seekToSecond(start ?? seconds);
       if (mounted) setState(() {});
       return;
     }
-    await _togglePlay(startAt: seconds);
+    await _togglePlay(startAt: active.startSecondsForMeasure(m) ?? seconds);
   }
 
   /// 进度条拖动定位（松手回调）：播放/暂停中即时 seek；未播放从该处起播。
@@ -387,12 +391,18 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                         child: ListenableBuilder(
                           // 播放头 50ms 刷新（position notifier 驱动）。
                           listenable: _activePlayer.positionSeconds,
-                          builder: (ctx, _) => TabView(
+                          builder: (ctx, _) {
+                            // 展开拍位（含反复跳回）→ 线性谱面拍位
+                            //（2026-11-02 GP8 复刻：反复播放头指回段首）。
+                            final playBeat =
+                                _activePlayer.positionSeconds.value /
+                                    (60.0 / _ir!.tempo);
+                            final linear =
+                                _activePlayer.linearBeatAt(playBeat);
+                            return TabView(
                               ir: _ir!,
-                              // v1 播放头 tempo 来源：_ir.tempo（M5 变速后改用渲染时值）。
                               playheadBeat: _activePlayer.playing
-                                  ? (_activePlayer.positionSeconds.value /
-                                      (60.0 / _ir!.tempo))
+                                  ? (linear ?? playBeat)
                                   : null,
                               // 播放时谱面自动滚动跟随（走查反馈 ②）。
                               followPlayhead: true,
@@ -401,7 +411,8 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                               onNoteTap: _playFromNote,
                               onNoteLongPress: _editNote,
                               onFailedTap: _clearMeasure,
-                            ),
+                            );
+                          },
                         ),
                       ),
                     ]);

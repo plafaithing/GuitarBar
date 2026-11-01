@@ -31,6 +31,14 @@ abstract interface class ScorePlayback {
   double? get loopB;
   set loopA(double? v);
   set loopB(double? v);
+
+  /// 反复展开（2026-11-02 GP8 复刻）：展开时间轴拍位 → 线性谱面拍位
+  ///（播放头定位）。无反复结构的谱返回 null（调用方走原式换算）。
+  double? linearBeatAt(double playBeat);
+
+  /// 线性小节 → 展开时间轴上的起播秒（点音起播用：点反复段内音符从
+  /// 该小节首次出现的遍次起播）。无展开结构返回 null（从头）。
+  double? startSecondsForMeasure(int measureIndex);
 }
 
 /// 自动演奏播放：渲染 PCM → loadPcm → play。
@@ -71,6 +79,35 @@ class ScorePlayer implements ScorePlayback {
   @override
   set loopB(double? v) => _loopB = v;
 
+  // 反复展开反查表（KS 路径；load 时由 renderScore 展开序填充由外部）。
+  @override
+  double? linearBeatAt(double playBeat) {
+    final order = lastOrder, starts = lastOrderStarts;
+    if (order == null || starts == null || order.isEmpty) return null;
+    var k = starts.length - 1;
+    while (k > 0 && starts[k] > playBeat + 1e-9) {
+      k--;
+    }
+    final inMeasure = (playBeat - starts[k]).clamp(0.0, beatsPerBarCache.toDouble());
+    return order[k] * beatsPerBarCache + inMeasure;
+  }
+
+  /// renderScore 展开元数据（load 时从 RenderedScore 复制）。
+  List<int>? lastOrder;
+  List<double>? lastOrderStarts;
+  int beatsPerBarCache = 4;
+  double _tempo = 90;
+
+  /// 线性小节 → 展开轴起播秒（点音起播；该小节首次出现的遍次）。
+  @override
+  double? startSecondsForMeasure(int measureIndex) {
+    final order = lastOrder, starts = lastOrderStarts;
+    if (order == null || starts == null || order.isEmpty) return null;
+    final k = order.indexOf(measureIndex);
+    if (k < 0) return null;
+    return starts[k] * 60.0 / _tempo;
+  }
+
   @override
   double durationSeconds = 0;
   @override
@@ -107,6 +144,11 @@ class ScorePlayer implements ScorePlayback {
     _src = await _sound.loadPcm(r.pcm);
     // 加载成功才定长：loadPcm 失败时不留脏时长。
     durationSeconds = r.seconds;
+    // 反复展开元数据（播放头反查；renderScore 无结构谱为 null）。
+    lastOrder = r.order;
+    lastOrderStarts = r.orderStarts;
+    beatsPerBarCache = r.beatsPerBar;
+    _tempo = r.tempo;
   }
 
   Future<void> start() async {

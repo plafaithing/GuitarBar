@@ -62,6 +62,36 @@ class SampleScorePlayer implements ScorePlayback {
   @override
   double? loopB;
 
+  // 反复展开（2026-11-02 GP8 复刻）：播放序元素起始拍 + 对应线性小节，
+  // 播放头反查谱面位置用。
+  final List<double> playbackOrderStarts = [];
+  final List<int> playbackOrderMeasures = [];
+  int _beatsPerBar = 4;
+  double _beatSeconds = 0;
+
+  /// 展开时间轴拍位 → 线性谱面拍位（播放头定位）。无展开结构时 null
+  ///（调用方走原式）。
+  @override
+  double? linearBeatAt(double playBeat) {
+    if (playbackOrderMeasures.isEmpty) return null;
+    var k = playbackOrderStarts.length - 1;
+    while (k > 0 && playbackOrderStarts[k] > playBeat + 1e-9) {
+      k--;
+    }
+    final inMeasure = (playBeat - playbackOrderStarts[k])
+        .clamp(0.0, _beatsPerBar.toDouble());
+    return playbackOrderMeasures[k] * _beatsPerBar + inMeasure;
+  }
+
+  /// 线性小节 → 展开轴起播秒（点音起播；该小节首次出现的遍次）。
+  @override
+  double? startSecondsForMeasure(int measureIndex) {
+    if (playbackOrderMeasures.isEmpty || _beatSeconds == 0) return null;
+    final k = playbackOrderMeasures.indexOf(measureIndex);
+    if (k < 0) return null;
+    return playbackOrderStarts[k] * _beatSeconds;
+  }
+
   /// 活动滑音 ramp（handle → PitchShift 逐 tick 推进）。
   final List<_SlideRamp> _slides = [];
 
@@ -178,19 +208,32 @@ class SampleScorePlayer implements ScorePlayback {
   }
 
   /// IR → 事件 + 时长。失败（调弦解析/空事件）返回 false。
+  /// 播放按 **反复展开序列**（expandMeasures，2026-11-02 GP8 复刻）：
+  /// 曲内反复跳回、结尾按遍数走向；时间轴 = 展开序累计拍位。
   bool _collectEvents(ScoreIr ir) {
     _pending.clear();
     if (ir.tuning.length != 6) return false; // 钢弦采样库按 6 弦录制
     final tunings = [for (final s in ir.tuning) Note.parse(s)];
     final beatsPerBar = int.tryParse(ir.timeSignature.split('/')[0]) ?? 4;
+    _beatsPerBar = beatsPerBar;
     final beatSeconds = 60.0 / ir.tempo;
+    _beatSeconds = beatSeconds;
+    final measures = ir.tracks.first.measures;
+    final order = expandMeasures(measures);
+    // 展开序各元素起始拍（播放头反查用）。
+    playbackOrderStarts
+      ..clear()
+      ..addAll([for (var k = 0; k < order.length; k++) k * beatsPerBar.toDouble()]);
+    playbackOrderMeasures
+      ..clear()
+      ..addAll(order);
     var endBeat = 0.0;
     // 交替拨弦（2026-11-01 技法音效）：同弦出音轮换 Up/Down 层。
     final strokeFlip = <int, bool>{};
-    for (final t in ir.tracks) {
-      for (final m in t.measures) {
-        if (m.failed) continue;
-        for (final n in m.notes) {
+    for (var k = 0; k < order.length; k++) {
+      final m = measures[order[k]];
+      final baseBeat = k * beatsPerBar.toDouble();
+      for (final n in m.notes) {
           if (n.tieEnd) continue; // tie 续接端不出音（时长已累计回链首）
           // 弦号映射与渲染器同款：string 1（最细）→ tunings[5]；
           // 发声 MIDI 按通道语义（渲染器同款 capoApplied 公式）：
@@ -207,7 +250,8 @@ class SampleScorePlayer implements ScorePlayback {
               technique: n.technique,
               downstroke: down);
           if (r == null) continue; // 弦号越界的坏数据：跳过该音
-          final absBeat = m.index * beatsPerBar + n.beat;
+          // 展开序拍位（反复第二遍的同一小节播在后续时间轴上）。
+          final absBeat = baseBeat + n.beat;
           // 采样时长 = 音符时值 + 极短余振（0.08s，2026-10-31 二轮收窄：
           // 0.15s 在 82bpm 快速指弹中仍叠出"抢拍"感）。
           final noteSeconds = n.duration * beatSeconds + 0.08;
@@ -229,52 +273,30 @@ class SampleScorePlayer implements ScorePlayback {
           final e = absBeat + n.duration;
           if (e > endBeat) endBeat = e;
         }
-      }
+      // failed 小节：不出音但拍位照占（展开轴连续，静音小节）。
     }
     if (_pending.isEmpty) return false;
-    _attachSlideTargets(ir, beatsPerBar, tunings);
+    _pending.sort((a, b) => a.time.compareTo(b.time));
+    _attachSlideTargets();
     // 时长含尾音（与渲染器同款 1.2s）：末音采样自然衰减不受限，
     // 越线余振由下一轮 play/stop 收割（见 stop）。变速后秒（rate 换算）。
     durationSeconds = endBeat * beatSeconds / _rate + 1.2;
-    _pending.sort((a, b) => a.time.compareTo(b.time));
     return true;
   }
 
-  /// 滑音接线（2026-11-01 技法音效）：slide 起音事件补终点速度——同弦
-  /// 下一出音音的重移调 speed。起音按起点音高起播（scale = 起点 speed），
-  /// 起播后 PitchShift 逐 tick 从 1.0 ramp 到 终/起 比率，音高连续滑向
-  /// 终点（pitchShift 保时长）。
-  void _attachSlideTargets(
-      ScoreIr ir, int beatsPerBar, List<Note> tunings) {
-    final capoShift = ir.capoApplied ? 0 : ir.capo;
-    for (final t in ir.tracks) {
-      for (final m in t.measures) {
-        if (m.failed) continue;
-        // 小节内同弦出音序列，标 slide 起音与其后继。
-        final seq = <NoteIr, NoteIr>{}; // slide 起音 → 同弦下一出音
-        NoteIr? prev;
-        for (final n in m.notes) {
-          if (n.tieEnd) continue;
-          if (prev != null && prev.slide != null && prev.string == n.string) {
-            seq[prev] = n;
-          }
-          prev = n;
-        }
-        for (final entry in seq.entries) {
-          final targetMidi =
-              tunings[6 - entry.value.string].midi + capoShift + entry.value.fret;
-          final targetSpeed = SteelSampleBank.speedOf(
-              string: entry.value.string, soundingMidi: targetMidi);
-          // 匹配起音事件（绝对拍 + 弦定位）。
-          for (final e in _pending) {
-            if (!e.slide ||
-                e.string != entry.key.string ||
-                e.absBeat !=
-                    m.index * beatsPerBar + entry.key.beat) {
-              continue;
-            }
-            e.slideEndSpeed = targetSpeed;
-          }
+  /// 滑音接线（2026-11-01 技法音效）：slide 起音事件补终点速度——
+  /// **播放序**（排序后的 _pending）中同弦下一个出音事件的 speed。
+  /// 起音按起点音高起播（scale = 起点 speed），起播后 PitchShift 逐
+  /// tick 从 1.0 ramp 到 终/起 比率，音高连续滑向终点（pitchShift 保
+  /// 时长）。展开序下第二遍的滑音同样自然接线。
+  void _attachSlideTargets() {
+    for (var i = 0; i < _pending.length; i++) {
+      final e = _pending[i];
+      if (!e.slide) continue;
+      for (var j = i + 1; j < _pending.length; j++) {
+        if (_pending[j].string == e.string) {
+          e.slideEndSpeed = _pending[j].speed;
+          break;
         }
       }
     }

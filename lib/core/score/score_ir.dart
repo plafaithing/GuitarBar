@@ -102,6 +102,7 @@ class MeasureIr {
     required this.notes,
     this.repeatStart = false,
     this.repeatEnd = false,
+    this.repeatCount = 0,
     this.endings = const [],
   });
 
@@ -112,9 +113,12 @@ class MeasureIr {
 
   // 反复记号（2026-11-02 走查：GP8 显示反复双竖线+圆点，v1 缺失）。
   // gpif MasterBar 的 Repeat start="true"/end="true"（count 为重复次数，
-  // 播放展开 v1 未做——只显示记号）。
+  // 0/缺省 = 音乐惯例 2 遍；播放展开见 score_ir.expandMeasures）。
   final bool repeatStart;
   final bool repeatEnd;
+
+  /// 反复遍数（repeatEnd 小节上的 gpif Repeat count；0 = 缺省 2 遍）。
+  final int repeatCount;
 
   // 结尾跳房子标记（2026-11-02 走查：GP8 "1."/"2." 括号，v1 缺失）——
   // gpif AlternativeEndings/Ending 的 number（该小节属于第 N 结尾）。
@@ -127,6 +131,7 @@ class MeasureIr {
         'notes': [for (final n in notes) n.toJson()],
         if (repeatStart) 'repeatStart': true,
         if (repeatEnd) 'repeatEnd': true,
+        if (repeatCount > 0) 'repeatCount': repeatCount,
         if (endings.isNotEmpty) 'endings': endings,
       };
 
@@ -140,6 +145,7 @@ class MeasureIr {
         ],
         repeatStart: j['repeatStart'] as bool? ?? false,
         repeatEnd: j['repeatEnd'] as bool? ?? false,
+        repeatCount: (j['repeatCount'] as num?)?.toInt() ?? 0,
         endings: [
           if (j['endings'] case final List l)
             for (final n in l) (n as num).toInt()
@@ -153,6 +159,78 @@ class MeasureIr {
 
   @override
   int get hashCode => jsonEncode(toJson()).hashCode;
+}
+
+/// 播放反复展开（2026-11-02 走查：复刻 GP8 播放结构——反复跳回 + 结尾
+/// 走向）。返回**播放顺序的小节 index 序列**：
+/// - repeatEnd（count 次，缺省 2）：未满遍数跳回最近未闭合 repeatStart
+/// - 结尾跳房子：第 pass 遍只播 endings 含 pass 的小节（pass = 最近
+///   repeatEnd 的已过遍数 + 1），不匹配的结尾段整体跳过
+/// - 无结构的谱返回 0..n-1（恒等）
+/// 谱面显示保持线性不动；播放时间轴按此序列累计拍位。
+List<int> expandMeasures(List<MeasureIr> measures) {
+  final n = measures.length;
+  if (n == 0) return const [];
+  final hasStructure = measures
+      .any((m) => m.repeatStart || m.repeatEnd || m.endings.isNotEmpty);
+  if (!hasStructure) return [for (var i = 0; i < n; i++) i];
+
+  int lastEndBefore(int i) {
+    for (var j = i - 1; j >= 0; j--) {
+      if (measures[j].repeatEnd) return j;
+    }
+    return -1;
+  }
+
+  final out = <int>[];
+  var i = 0;
+  var openStart = 0; // 最近未闭合 repeatStart（start 缺失容错回 0）
+  final endPass = <int, int>{}; // repeatEnd 小节 index → 已过遍数
+
+  /// 当前反复段（openStart 起）的结束 end：从 openStart 向后扫第一个
+  /// repeatEnd。结尾段的"当前遍次"由它计数（结尾段在 end 之前，往
+  /// 前找会漏；2026-11-02 测试实证修正）。
+  int segmentEnd() {
+    for (var j = openStart; j < n; j++) {
+      if (measures[j].repeatEnd) return j;
+    }
+    return -1;
+  }
+
+  while (i < n) {
+    final m = measures[i];
+    // 结尾走向：当前遍次不在本小节结尾集 → 整段跳过（连续同结尾号的
+    // 小节）。遍次语义分两段（2026-11-02 测试实证）：end **之前**的结尾
+    // 段 = end 已过遍数 + 1（当前遍进行中）；end **之后**（如结尾 2）=
+    // end 已完成遍数（第二遍 end 走完时计数已是 2，结尾 2 属于该遍）。
+    if (m.endings.isNotEmpty) {
+      final seg = segmentEnd();
+      var pass = seg >= 0 ? (endPass[seg] ?? 0) : 0;
+      if (seg < 0 || i <= seg) pass += 1;
+      if (!m.endings.contains(pass)) {
+        var j = i;
+        while (j < n &&
+            measures[j].endings.isNotEmpty &&
+            measures[j].endings.join(',') == m.endings.join(',')) {
+          j++;
+        }
+        i = j;
+        continue;
+      }
+    }
+    out.add(i);
+    if (m.repeatStart) openStart = i;
+    if (m.repeatEnd) {
+      final pass = endPass[i] = (endPass[i] ?? 0) + 1;
+      final count = m.repeatCount > 0 ? m.repeatCount : 2;
+      if (pass < count) {
+        i = openStart; // 跳回反复起始（重播段内）
+        continue;
+      }
+    }
+    i++;
+  }
+  return out;
 }
 
 class NoteIr {

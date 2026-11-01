@@ -220,6 +220,8 @@ ScoreIr parseGpif(String xml) {
     final repeatEl = masterBar.findElements('Repeat').firstOrNull;
     final repeatStart = repeatEl?.getAttribute('start')?.toLowerCase() == 'true';
     final repeatEnd = repeatEl?.getAttribute('end')?.toLowerCase() == 'true';
+    final repeatCount =
+        repeatEl == null ? 0 : (int.tryParse(repeatEl.getAttribute('count') ?? '') ?? 0);
     // 结尾跳房子（GP8 "1."/"2." 括号）：AlternateEndings（注意是
     // Alternate 不是 Alternative）。GP6 schema 变体实测（月下之恋）：
     // **innerText 直接是编号**（"1" / "2"，可能逗号分隔多值），无 Ending
@@ -254,6 +256,7 @@ ScoreIr parseGpif(String xml) {
         notes: notes,
         repeatStart: repeatStart,
         repeatEnd: repeatEnd,
+        repeatCount: repeatCount,
         endings: endings));
   }
   if (measures.isEmpty) throw const FormatException('gpif 无小节');
