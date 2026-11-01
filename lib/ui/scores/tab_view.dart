@@ -380,11 +380,15 @@ class _ScorePainter extends CustomPainter {
             }
           }
           final span = math.max(yMax - yMin, TabLayout.stringGap.toDouble());
+          // 竖标 x：音群左侧 10px，但**不得压小节左竖线**（2026-11-01
+          // 走查：拍位 0 音群的 xMin-10 恰在小节线上）——钳到线内 4px。
+          final barX = layout.measureX(f.mIdx, rowWidth);
+          final x = math.max(xMin - 10, barX + 4);
           if (n.arpeggio != null) {
-            _wavyLine(canvas, xMin - 10, yMin - 6, yMin - 6 + span + 12,
+            _wavyLine(canvas, x, yMin - 6, yMin - 6 + span + 12,
                 up: n.arpeggio == 'up');
           } else if (n.brush != null) {
-            _arrowLine(canvas, xMin - 10, yMin - 6, yMin - 6 + span + 12,
+            _arrowLine(canvas, x, yMin - 6, yMin - 6 + span + 12,
                 down: n.brush == 'down');
           }
           if (n.pickStroke != null) {
