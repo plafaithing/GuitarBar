@@ -29,6 +29,9 @@ const _sevenths = ChordCategory('七和弦', [
   ChordSubtype('m7', '小七', [0, 3, 7, 10]),
   ChordSubtype('maj7', '大七', [0, 4, 7, 11]),
   ChordSubtype('m7b5', '半减七', [0, 3, 6, 10]),
+  // 2026-11-01 扩充（对齐 zhibojiaoshi 216 和弦 = 18 类型 × 12 根音）。
+  ChordSubtype('dim7', '减七', [0, 3, 6, 9]),
+  ChordSubtype('mMaj7', '小大七', [0, 3, 7, 11]),
 ]);
 
 const _suspended = ChordCategory('挂留和弦', [

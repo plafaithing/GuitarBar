@@ -28,8 +28,15 @@ class _ChordPageState extends State<ChordPage> {
   late TuningState _tuning;
   String? _lastTuningId;
 
-  // 浏览模式（设计 §13.1）：分类 → 子类 → 根音三层点选，选根音即出指法。
-  bool _browseMode = false;
+  // 当前查询的显示名（结果卡片标题；输入/浏览两模式统一回显）。
+  String _displayName = 'Am7';
+
+  // 当前子类中文名（浏览模式有值；输入模式经解析器无目录映射，不显示）。
+  String? _chordTypeName;
+
+  // 浏览模式（设计 §13.1）：默认进入浏览（2026-11-01 走查：新手查阅是
+  // 主路径）；分类 → 子类 → 根音三级**级联下拉**（走查：chips 平铺占屏）。
+  bool _browseMode = true;
   String _categoryName = '三和弦';
   String _suffix = ''; // 当前子类后缀（默认大三）。
   int? _rootPc; // 选定根音；null = 未选。
@@ -98,8 +105,9 @@ class _ChordPageState extends State<ChordPage> {
   }
 
   /// 公共查询：ParsedChord → 指法（输入解析与浏览枚举两条路汇于此）。
-  void _query(ParsedChord c) {
+  void _query(ParsedChord c, {String? displayName}) {
     final state = context.read<TuningState>();
+    if (displayName != null) _displayName = displayName;
     _voicings = FingeringGenerator(state.current.strings)
         .generate(rootPc: c.rootPc, toneClasses: chordToneClasses(c));
     _error = null;
@@ -110,7 +118,9 @@ class _ChordPageState extends State<ChordPage> {
     try {
       // 输入模式专属：字符串解析失败要回显错误；浏览路径 suffix 来自
       // 目录恒有效，不经此 try/catch。
-      _query(parseChord(_input.text));
+      _chordTypeName = null; // 输入名无目录映射，卡片不显中文名
+      _query(parseChord(_input.text),
+          displayName: _input.text.trim());
     } on ArgumentError catch (e) {
       _voicings = [];
       _error = e.message?.toString() ?? '解析失败';
@@ -118,13 +128,15 @@ class _ChordPageState extends State<ChordPage> {
     }
   }
 
-  // ---- 浏览模式（设计 §13.1）：三层 chips 点选，选定即查询 ----
+  // ---- 浏览模式（设计 §13.1）：三级级联下拉，选定根音即查询 ----
 
   void _browseSelect(int rootPc) {
     setState(() => _rootPc = rootPc);
     // 名字写回输入框，切回输入模式沿用。
     _input.text = chordDisplayName(rootPc, _suffix);
-    _query(browseChord(rootPc, _suffix));
+    _chordTypeName = _typeNameOf(_suffix);
+    _query(browseChord(rootPc, _suffix),
+        displayName: _input.text);
   }
 
   void _selectSubtype(String suffix) {
@@ -132,8 +144,18 @@ class _ChordPageState extends State<ChordPage> {
     final root = _rootPc;
     if (root != null) {
       _input.text = chordDisplayName(root, suffix);
-      _query(browseChord(root, suffix));
+      _chordTypeName = _typeNameOf(suffix);
+      _query(browseChord(root, suffix), displayName: _input.text);
     }
+  }
+
+  String? _typeNameOf(String suffix) {
+    for (final cat in chordCategories) {
+      for (final sub in cat.subtypes) {
+        if (sub.suffix == suffix) return sub.name;
+      }
+    }
+    return null;
   }
 
   void _selectCategory(String name) {
@@ -160,46 +182,59 @@ class _ChordPageState extends State<ChordPage> {
         .then((_) => SoundEngine.I.disposeSource(src)));
   }
 
-  /// 浏览面板：分类 / 子类 / 根音三行 Wrap，点选即查（结果区复用输入模式）。
+  /// 浏览面板：三级级联下拉（大类 → 子类 → 根音），选定根音即查
+  /// （结果区复用输入模式）。2026-11-01 走查：chips 三行平铺占屏改下拉。
   List<Widget> _browsePanel(GuitarBarPalette p) {
     final category =
         chordCategories.firstWhere((c) => c.name == _categoryName);
+    // 级联子类下拉显示"中文名（后缀示例）"。
+    String subLabel(ChordSubtype s) =>
+        s.suffix.isEmpty ? s.name : '${s.name}（${s.suffix}）';
     return [
-      Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          children: [
-            for (final cat in chordCategories)
-              ChoiceChip(
-                  label: Text(cat.name),
-                  selected: cat.name == _categoryName,
-                  onSelected: (_) => _selectCategory(cat.name)),
-          ]),
+      Row(children: [
+        Expanded(
+          child: DropdownButtonFormField<String>(
+            key: const Key('chord-cat'),
+            initialValue: _categoryName,
+            decoration: const InputDecoration(labelText: '和弦分类'),
+            items: [
+              for (final cat in chordCategories)
+                DropdownMenuItem(value: cat.name, child: Text(cat.name)),
+            ],
+            onChanged: (v) => _selectCategory(v!),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: DropdownButtonFormField<String>(
+            key: const Key('chord-type'),
+            initialValue: _suffix,
+            decoration: const InputDecoration(labelText: '和弦类型'),
+            items: [
+              for (final sub in category.subtypes)
+                DropdownMenuItem(
+                    value: sub.suffix, child: Text(subLabel(sub))),
+            ],
+            onChanged: (v) => _selectSubtype(v!),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: DropdownButtonFormField<int>(
+            key: const Key('chord-root'),
+            initialValue: _rootPc,
+            decoration: const InputDecoration(labelText: '根音'),
+            items: [
+              for (final e in rootNames.entries)
+                DropdownMenuItem(value: e.value, child: Text(e.key)),
+            ],
+            onChanged: (v) => _browseSelect(v!),
+          ),
+        ),
+      ]),
       const SizedBox(height: 8),
-      Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          children: [
-            for (final sub in category.subtypes)
-              ChoiceChip(
-                  label: Text(sub.name),
-                  selected: sub.suffix == _suffix,
-                  onSelected: (_) => _selectSubtype(sub.suffix)),
-          ]),
-      const SizedBox(height: 8),
-      Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          children: [
-            for (final e in rootNames.entries)
-              ChoiceChip(
-                  label: Text(e.key),
-                  selected: _rootPc == e.value,
-                  onSelected: (_) => _browseSelect(e.value)),
-          ]),
-      const SizedBox(height: 4),
       if (_rootPc == null)
-        Text('选定根音后显示指法',
+        Text('选定根音后显示指法（${category.name}共 ${category.subtypes.length} 类 × 12 根音）',
             style: TextStyle(fontSize: 12, color: p.muted)),
       const SizedBox(height: 8),
     ];
@@ -262,6 +297,28 @@ class _ChordPageState extends State<ChordPage> {
                 child: Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(children: [
+                    // 卡片标题（2026-11-01 走查）：拼音名 + 中文类型名，
+                    // 多张指法卡一眼可辨（参考 zhibojiaoshi 卡片结构）。
+                    Text.rich(
+                      TextSpan(children: [
+                        TextSpan(
+                            text: _displayName,
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: palette.ink)),
+                        if (_chordTypeName != null)
+                          TextSpan(
+                              text: '  ${_chordTypeName!}',
+                              style: TextStyle(
+                                  fontSize: 12, color: palette.muted)),
+                        TextSpan(
+                            text: '  指法 ${i + 1}',
+                            style: TextStyle(
+                                fontSize: 12, color: palette.muted)),
+                      ]),
+                    ),
+                    const SizedBox(height: 4),
                     SizedBox(
                         width: 220,
                         height: 180,

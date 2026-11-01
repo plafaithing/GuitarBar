@@ -3,9 +3,9 @@ import 'package:guitarbar/core/music/chord_catalog.dart';
 import 'package:guitarbar/core/music/chord_parser.dart';
 
 void main() {
-  // 注：计划文档写"17 种"系笔误——chord_parser 的 _qualities 实为 16 种
-  //（设计文档 §13.1 提到的"减七"不在解析器表内），目录与其同源故为 16。
-  test('四大分类覆盖全部 16 种子类、无重复', () {
+  // 注：2026-11-01 扩充对齐 zhibojiaoshi 216 和弦 = 18 类型 × 12 根音
+  //（新增 dim7/mMaj7），目录与解析器 _qualities 同源故为 18。
+  test('四大分类覆盖全部 18 种子类、无重复', () {
     final all = <String>{};
     for (final cat in chordCategories) {
       for (final sub in cat.subtypes) {
@@ -14,10 +14,18 @@ void main() {
         all.add(sub.suffix);
       }
     }
-    expect(all.length, 16);
+    expect(all.length, 18);
     expect(chordCategories.length, 4);
     expect(chordCategories.map((c) => c.name),
         ['三和弦', '七和弦', '挂留和弦', '加音与扩展']);
+  });
+
+  test('全目录枚举 = 216 和弦（18 类型 × 12 根音，对齐参考站）', () {
+    var total = 0;
+    for (final cat in chordCategories) {
+      total += cat.subtypes.length * rootNames.length;
+    }
+    expect(total, 216);
   });
 
   test('目录与解析器一致：每个 (根音, 后缀) 拼名走 parseChord 结果相同', () {
