@@ -314,22 +314,49 @@ class _ScorePainter extends CustomPainter {
         }
         lastXAtString[fl.note.string] = fl.x;
       }
-      // 文字层（修正后坐标）：品数字 + 技法字母。
+      // 文字层（修正后坐标）：品数字 + 技法标注（2026-11-02 GP8 对齐整改）。
       for (final fl in flow) {
         final n = fl.note;
-        // ghost（AntiAccent）：GP8 括号品数字 (3)；tie 续接端也画数字
-        // （真实按住的位置，GP 同款），只是不发声。
-        final label = n.ghost ? '(${n.fret})' : '${n.fret}';
-        _text(canvas, label, Offset(fl.x, fl.y),
-            TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: fretText,
-                fontFeatures: [FontFeature.tabularFigures()]));
-        // 技法字母标注：H=泛音 s=滑音 x=闷 b=弯，点弦 T 兜底（击勾/连滑
-        // 由弧线表达不写 h/p 字母）——品数字右上角小字。
-        final tech = n.technique ?? (n.tap ? 'T' : null);
-        if (tech != null) {
+        // 闷击（gpif Muted）：GP8 用 "x" **替代**品数字（非数字+角标）。
+        // ghost（AntiAccent）：括号品数字 (3)。
+        // tie 续接端：GP8 **不印品数字**（延续音无新按弦，弧线到空位）；
+        // 击勾目标音（hopoEnd）照常印（重新发声）。
+        final String label;
+        if (n.technique == 'x') {
+          label = 'x';
+        } else if (n.ghost) {
+          label = '(${n.fret})';
+        } else if (n.tieEnd && !n.hopoEnd) {
+          label = '';
+        } else {
+          label = '${n.fret}';
+        }
+        if (label.isNotEmpty) {
+          _text(canvas, label, Offset(fl.x, fl.y),
+              TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: fretText,
+                  fontFeatures: [FontFeature.tabularFigures()]));
+        }
+        // 自然泛音（HarmonicType）：GP8 = 品数字**正上方小圆圈**（替代
+        // 早期 H 角标）；点弦 T 在数字正上方（GP8 同款）。AI 通道的
+        // h/p/s/b 字母保持右上角（gpx 通道由弧线/箭头表达不产字母）。
+        if (n.technique == 'H') {
+          canvas.drawCircle(
+              Offset(fl.x, fl.y - 13),
+              3,
+              Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 1.2
+                ..color = fretText);
+        }
+        if (n.tap) {
+          _text(canvas, 'T', Offset(fl.x, fl.y - 13),
+              TextStyle(fontSize: 10, color: fretText));
+        }
+        final tech = n.technique;
+        if (tech != null && tech != 'x' && tech != 'H') {
           _text(canvas, tech, Offset(fl.x + 9, fl.y - 8),
               TextStyle(fontSize: 9, color: pageNum));
         }
