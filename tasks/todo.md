@@ -17,3 +17,11 @@ GP8 GPCore.dll strings 侦察确认 gpif 属性名全集（含 LegatoOrigin/Tril
 - GP8 深度逆向边界：GPCore.dll strings 侦察全命中（含 LegatoOrigin/Trill），数据语义层确认无遗漏；渲染几何参数未反汇编（无 Ghidra），画法按 GP 惯例实现，待用户 GP8 对照走查校准
 - technique 参数改可选（新标注字段全可选，required 无理据）；gpx 通道不再写 h/p/s 字母（弧线表达），AI 通道 technique 不受影响
 - tie 缺口：月下の恋 40 origin vs 41 dest（跨引用链首缺失 1 处），该弧线不画仅显数字，可接受
+
+## GP8 渲染逆向进行中（Ghidra headless，2026-11-01）
+- 工具链：Ghidra 12.1.2 装于 D:\software\ghidra_12.1.2_PUBLIC，工程 D:\ghidra_projects\{gpcore,painting}
+- GPCore.dll（11MB）已全量分析；**带完整导出符号**（gp::core::view::* 类名/源码路径全可见）
+- 架构判定：GPCore = 布局数据层（view protobuf：SlurView/HarmonicView/HoPoSlurView/NoteSlurView/BeatSlurView/ErrorSlurView/TabOctavadoHarmonicView），AMPainting.dll = 绘制执行层（图元协议 am.painting.protobuf.{Point,Line,Slur,Parenthesis,FormattedText,...}）
+- 击勾弦弧线 = HoPoSlurView（继承 NoteSlurView→SlurViewBase）；幽灵音括号有专用图元 Parenthesis
+- 待办：painting 分析完成后反编译 Slur 图元绘制函数 → 抠弧线贝塞尔几何/H/P 字母偏移/L.R.·P.M. 虚线 y/波形参数 → 校准 TabView _paintMarks
+- 反编译产出：D:\ghidra_projects\decomp_out（锚点法，部分命中音频效果链为噪声）、decomp_slur（符号法）

@@ -325,18 +325,32 @@ class _ScorePainter extends CustomPainter {
       final clipped = x1.clamp(f.x + 8, endX);
 
       // —— 弧线族：tie / 击勾弦 / 连滑音 ——
+      // GP8 am::painting::Slur 模型逆向转写（AMPainting.dll computeIdealSlurControl
+      // Points/makeSlur 反编译）：三次贝塞尔，p0/p1=音符中心；控制点沿连线内缩
+      // max(0.05×dx, 0.36×dx×e^(-0.0144dx))；弧高系数同弦 0.36、跨弦 0.426
+      // （0.36+0.14×e^(-0.75)，SlurParameters{0.36,0.5,0.05,0.04} 默认值）× 弦距；
+      // 弧顶=0.75×弧高≈4.9px，明显浅于早期手调的 9px（GP8 实测更浅更平）。
       if (n.tieStart || n.hopoStart || n.legatoStart) {
+        final next = nextSameString;
+        final xEnd = (next?.x ?? f.x + 22).clamp(f.x + 8, endX).toDouble();
+        final yEnd = next?.y ?? f.y;
+        final dx = (xEnd - f.x).abs().toDouble();
+        final dy = (yEnd - f.y).abs().toDouble();
+        final unit = TabLayout.stringGap.toDouble();
+        final h =
+            (dy > 0.25 ? 0.36 + 0.14 * math.exp(-0.75) : 0.36) * unit;
+        final inset = math
+            .max(0.05 * dx, 0.36 * dx * math.exp(-0.0144 * dx))
+            .clamp(0.0, dx / 3);
         final path = Path()
-          ..moveTo(f.x + 5, f.y + 6.5)
-          ..quadraticBezierTo((f.x + clipped) / 2, f.y + 11.5,
-              clipped - 5, f.y + 6.5);
+          ..moveTo(f.x, f.y)
+          ..cubicTo(f.x + inset, f.y + h, xEnd - inset, yEnd + h, xEnd, yEnd);
         canvas.drawPath(path, line);
         // 击勾弦字母：品升 H / 品降 P（连滑音弧线无字母，GP8 同款）。
         if (n.hopoStart) {
-          final dest = nextSameString?.note;
+          final dest = next?.note;
           final letter = dest == null ? 'H' : (dest.fret > n.fret ? 'H' : 'P');
-          _text(canvas, letter,
-              Offset((f.x + clipped) / 2, f.y + 13),
+          _text(canvas, letter, Offset((f.x + xEnd) / 2, f.y + 13),
               TextStyle(fontSize: 9, color: fretText));
         }
       }
