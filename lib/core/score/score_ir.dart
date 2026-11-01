@@ -175,13 +175,6 @@ List<int> expandMeasures(List<MeasureIr> measures) {
       .any((m) => m.repeatStart || m.repeatEnd || m.endings.isNotEmpty);
   if (!hasStructure) return [for (var i = 0; i < n; i++) i];
 
-  int lastEndBefore(int i) {
-    for (var j = i - 1; j >= 0; j--) {
-      if (measures[j].repeatEnd) return j;
-    }
-    return -1;
-  }
-
   final out = <int>[];
   var i = 0;
   var openStart = 0; // 最近未闭合 repeatStart（start 缺失容错回 0）
