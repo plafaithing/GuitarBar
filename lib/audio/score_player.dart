@@ -21,6 +21,16 @@ abstract interface class ScorePlayback {
   /// 定位到 [s] 秒（2026-11-01 走查：进度条拖动 + 点音起播）：
   /// 播放中即时跳转（现场声部切清重排），未播放则记住起点、start 后生效。
   Future<void> seekToSecond(double s);
+
+  /// 速度倍率（2026-11-01 跟练三件套：0.25-3.0，1.0 = 原速）。
+  double get rate;
+  set rate(double r);
+
+  /// AB 循环区间（秒；任一为 null = 不循环）。pos ≥ b 时重锚回 a。
+  double? get loopA;
+  double? get loopB;
+  set loopA(double? v);
+  set loopB(double? v);
 }
 
 /// 自动演奏播放：渲染 PCM → loadPcm → play。
@@ -40,6 +50,26 @@ class ScorePlayer implements ScorePlayback {
 
   /// 未播放时的 seek 记忆：start 后立即定位到该处（点音起播用）。
   double? _pendingSeek;
+
+  // —— 跟练：变速 + AB（KS 路径的变速在下次 start 生效——重渲染需
+  // Isolate 级重算，降级路径少用不做在线重锚；AB 走 position 轮询截断）。
+  double _rate = 1.0;
+  @override
+  double get rate => _rate;
+  @override
+  set rate(double r) => _rate = r.clamp(0.25, 3.0);
+
+  double? _loopA;
+  @override
+  double? get loopA => _loopA;
+  @override
+  set loopA(double? v) => _loopA = v;
+
+  double? _loopB;
+  @override
+  double? get loopB => _loopB;
+  @override
+  set loopB(double? v) => _loopB = v;
 
   @override
   double durationSeconds = 0;
@@ -122,6 +152,11 @@ class ScorePlayer implements ScorePlayback {
     }
     final pos = _sound.position(h).inMicroseconds / 1e6;
     positionSeconds.value = pos.clamp(0.0, durationSeconds).toDouble();
+    // AB 循环（2026-11-01 跟练）：越 B 点跳回 A（A/B 均设才生效）。
+    final a = _loopA, b = _loopB;
+    if (a != null && b != null && b > a && pos >= b) {
+      unawaited(seekToSecond(a));
+    }
   }
 
   @override

@@ -293,6 +293,59 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     if (mounted) setState(() {});
   }
 
+  /// 速度切换（2026-11-01 跟练三件套）：采样路径在线重锚无缝变速；
+  /// KS 路径重渲染接续（保音调，beat 换算 ×rate）。
+  Future<void> _onRateChanged(double r) async {
+    final ir = _ir;
+    if (ir == null || _rendering) return;
+    final active = _activePlayer;
+    if (identical(active, _samplePlayer) &&
+        (active.playing || active.paused)) {
+      _samplePlayer.setRate(r);
+    } else if (active.playing || active.paused) {
+      // KS 路径：停 → 新速率重渲染 → 保持进度接续。
+      final pos = active.positionSeconds.value;
+      final wasPaused = active.paused;
+      await active.stop();
+      _player.rate = r;
+      setState(() => _rendering = true);
+      await WidgetsBinding.instance.endOfFrame;
+      try {
+        _player.load(renderScore(ir, rate: r));
+        await _player.start();
+        await _player.seekToSecond(pos);
+        if (wasPaused) _player.pause();
+      } finally {
+        if (mounted) setState(() => _rendering = false);
+      }
+    } else {
+      _player.rate = r;
+      _samplePlayer.rate = r;
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// AB 打点：A=当前位记起点，B=当前位记终点；再点同钮清除。
+  /// B < A 时交换（误序容错）。两钮均设 = 循环中。
+  void _onLoopA() => _setLoop(isA: true);
+
+  void _onLoopB() => _setLoop(isA: false);
+
+  void _setLoop({required bool isA}) {
+    final active = _activePlayer;
+    if (isA) {
+      active.loopA = active.loopA == null ? active.positionSeconds.value : null;
+    } else {
+      active.loopB = active.loopB == null ? active.positionSeconds.value : null;
+    }
+    final a = active.loopA, b = active.loopB;
+    if (a != null && b != null && b < a) {
+      active.loopA = b;
+      active.loopB = a;
+    }
+    setState(() {});
+  }
+
   /// 停止按钮：归零回开头（暂停只是冻结位置，停止才是归零）。
   Future<void> _stopPlay() async {
     await _activePlayer.stop();
@@ -395,7 +448,13 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                   busy: _rendering,
                   onToggle: () => _togglePlay(),
                   onStop: _stopPlay,
-                  onSeek: _onSeek),
+                  onSeek: _onSeek,
+                  rate: _activePlayer.rate,
+                  onRateChanged: _onRateChanged,
+                  loopA: _activePlayer.loopA,
+                  loopB: _activePlayer.loopB,
+                  onLoopA: _onLoopA,
+                  onLoopB: _onLoopB),
             ),
     );
   }

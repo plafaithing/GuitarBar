@@ -14,10 +14,12 @@ class RenderedScore {
 
 /// 渲染式自动演奏（设计文档 §7.1）：整曲 IR → 离线 PCM。
 /// beat→sample 按 tempo 换算；音符 = KS pluck 叠加进时间线；
-/// 闷音 x 短衰减；failed 小节跳过；变速 = 改 tempo 重渲染（M5）。
+/// 闷音 x 短衰减；failed 小节跳过。
+/// [rate] 速度倍率（2026-11-01 跟练：1.0 = 原速；>1 加速）——tempo×rate
+/// 保音调变速（KS 路径，采样路径走调度时间轴缩放）。
 RenderedScore renderScore(ScoreIr ir,
-    {int sampleRate = 44100, double a4 = 440}) {
-  final beatSamples = 60.0 / ir.tempo * sampleRate;
+    {int sampleRate = 44100, double a4 = 440, double rate = 1.0}) {
+  final beatSamples = 60.0 / (ir.tempo * rate) * sampleRate;
   const tailSeconds = 1.2;
   final beatsPerBar = int.tryParse(ir.timeSignature.split('/')[0]) ?? 4;
 

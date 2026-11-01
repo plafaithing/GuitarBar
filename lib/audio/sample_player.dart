@@ -45,6 +45,75 @@ class SampleScorePlayer implements ScorePlayback {
   /// 未播放时的 seek 记忆：play 后从该处起播（点音起播用）。
   double? _pendingSeek;
 
+  // —— 跟练三件套（2026-11-01 走查定案：变速 + AB 循环；多音轨指弹用不上）——
+
+  /// 速度倍率（1.0 = 原速）。事件时间轴（_pending.time）始终是**原速秒**，
+  /// 调度/位置读数按 rate 换算：engine 时刻 = t0 + time/rate，
+  /// 位置 = (now-t0)。变速即重锚时间轴（保持当前位置无缝续走）。
+  double _rate = 1.0;
+  @override
+  double get rate => _rate;
+  @override
+  set rate(double r) => setRate(r);
+
+  /// AB 循环区间（变速后秒，null = 未设）。pos ≥ b 时重锚回 a。
+  @override
+  double? loopA;
+  @override
+  double? loopB;
+
+  /// 活动滑音 ramp（handle → PitchShift 逐 tick 推进）。
+  final List<_SlideRamp> _slides = [];
+
+  /// 滑音 ramp 推进（50ms 步进，pitchShift 保时长只变音高）。
+  void _advanceSlides() {
+    if (_slides.isEmpty) return;
+    _slides.removeWhere((s) {
+      // 句柄已失效（播完/被切）：直接清除。
+      if (!_sound.getIsValidVoiceHandle(s.handle)) return true;
+      s.step++;
+      final t = s.step / s.steps;
+      final v = s.from + (s.to - s.from) * t;
+      _sound.setPitchShift(s.src, s.handle, v);
+      return s.step >= s.steps; // ramp 完成后保持终值到 voice 自然结束
+    });
+  }
+
+  /// 变速：播放/暂停中重锚时间轴保持当前位置；未播放直接生效。
+  void setRate(double r) {
+    final pos = _playing ? _positionSeconds() : (_pendingSeek ?? 0);
+    _rate = r.clamp(0.25, 3.0);
+    if (_playing) {
+      _reanchor(pos, keepPause: _paused);
+    } else {
+      _pendingSeek = pos;
+    }
+  }
+
+  /// 时间轴重锚：当前位置 [pos]（变速后秒）不变，零点/指针重排。
+  /// [keepPause] 暂停中只重排暂停点（恢复时按新零点续走）。
+  void _reanchor(double pos, {required bool keepPause}) {
+    _killVoices(); // 现场 + 预调度声部全切（重排后重调度）
+    if (keepPause) {
+      _pausedAt = pos;
+    } else {
+      _t0 = _sound.engineNow() -
+          Duration(microseconds: (pos * 1e6).round());
+    }
+    final rawPos = pos * _rate; // 事件轴（原速秒）
+    while (_pointer > 0 && _pending[_pointer - 1].time >= rawPos - 1e-9) {
+      _pointer--;
+    }
+    while (_pointer < _pending.length &&
+        _pending[_pointer].time < rawPos - 1e-9) {
+      _pointer++;
+    }
+    if (!keepPause) {
+      positionSeconds.value = pos;
+      onTick(); // 立即调度 pos 起的音（不等 50ms tick）
+    }
+  }
+
   @override
   double durationSeconds = 0;
   @override
@@ -78,6 +147,9 @@ class SampleScorePlayer implements ScorePlayback {
       if (gen != _gen) return false; // 预载期间被 stop：放弃起播
       if (src == null) return false; // 采样缺失是系统性问题：整曲降级
       e.src = src;
+      // PitchShift 滤镜激活（source 级一次性，滑音 ramp 用；未设句柄
+      // shift 默认 1.0 = 不移调，非滑音 voice 无感）。
+      _sound.activatePitchShift(src);
     }
 
     _sound.setMaxActiveVoiceCount(64);
@@ -88,8 +160,10 @@ class SampleScorePlayer implements ScorePlayback {
     if (seek != null) {
       _t0 = _sound.engineNow() -
           Duration(microseconds: (seek * 1e6).round());
+      // 事件轴原速秒 = 变速后秒 × rate。
+      final rawSeek = seek * _rate;
       while (_pointer < _pending.length &&
-          _pending[_pointer].time < seek - 1e-9) {
+          _pending[_pointer].time < rawSeek - 1e-9) {
         _pointer++;
       }
     } else {
@@ -111,6 +185,8 @@ class SampleScorePlayer implements ScorePlayback {
     final beatsPerBar = int.tryParse(ir.timeSignature.split('/')[0]) ?? 4;
     final beatSeconds = 60.0 / ir.tempo;
     var endBeat = 0.0;
+    // 交替拨弦（2026-11-01 技法音效）：同弦出音轮换 Up/Down 层。
+    final strokeFlip = <int, bool>{};
     for (final t in ir.tracks) {
       for (final m in t.measures) {
         if (m.failed) continue;
@@ -122,57 +198,135 @@ class SampleScorePlayer implements ScorePlayback {
           final capoShift = ir.capoApplied ? 0 : ir.capo;
           final soundingMidi =
               tunings[6 - n.string].midi + capoShift + n.fret;
+          final down = !(strokeFlip[n.string] ?? false);
+          strokeFlip[n.string] = down;
           final r = SteelSampleBank.resolve(
               string: n.string,
               fret: n.fret,
               soundingMidi: soundingMidi,
-              technique: n.technique);
+              technique: n.technique,
+              downstroke: down);
           if (r == null) continue; // 弦号越界的坏数据：跳过该音
           final absBeat = m.index * beatsPerBar + n.beat;
           // 采样时长 = 音符时值 + 极短余振（0.08s，2026-10-31 二轮收窄：
           // 0.15s 在 82bpm 快速指弹中仍叠出"抢拍"感）。
           final noteSeconds = n.duration * beatSeconds + 0.08;
+          // 力度（2026-11-01 技法音效，GP8 无独立采样靠力度近似——其
+          // 内部同为采样+处理）：击勾端弱击 0.75、闷音暗弱 0.7。
+          final volume = (n.hopoEnd || n.hopoStart)
+              ? 0.75
+              : (n.technique == 'x' ? 0.7 : 1.0);
           _pending.add(_PendingEvent(
               time: absBeat * beatSeconds,
               file: r.file,
               speed: r.speed,
               muted: n.technique == 'x',
-              noteSeconds: noteSeconds));
+              noteSeconds: noteSeconds,
+              volume: volume,
+              slide: n.slide != null,
+              string: n.string,
+              absBeat: absBeat));
           final e = absBeat + n.duration;
           if (e > endBeat) endBeat = e;
         }
       }
     }
     if (_pending.isEmpty) return false;
+    _attachSlideTargets(ir, beatsPerBar, tunings);
     // 时长含尾音（与渲染器同款 1.2s）：末音采样自然衰减不受限，
-    // 越线余振由下一轮 play/stop 收割（见 stop）。
-    durationSeconds = endBeat * beatSeconds + 1.2;
+    // 越线余振由下一轮 play/stop 收割（见 stop）。变速后秒（rate 换算）。
+    durationSeconds = endBeat * beatSeconds / _rate + 1.2;
     _pending.sort((a, b) => a.time.compareTo(b.time));
     return true;
+  }
+
+  /// 滑音接线（2026-11-01 技法音效）：slide 起音事件补终点速度——同弦
+  /// 下一出音音的重移调 speed。起音按起点音高起播（scale = 起点 speed），
+  /// 起播后 PitchShift 逐 tick 从 1.0 ramp 到 终/起 比率，音高连续滑向
+  /// 终点（pitchShift 保时长）。
+  void _attachSlideTargets(
+      ScoreIr ir, int beatsPerBar, List<Note> tunings) {
+    final capoShift = ir.capoApplied ? 0 : ir.capo;
+    for (final t in ir.tracks) {
+      for (final m in t.measures) {
+        if (m.failed) continue;
+        // 小节内同弦出音序列，标 slide 起音与其后继。
+        final seq = <NoteIr, NoteIr>{}; // slide 起音 → 同弦下一出音
+        NoteIr? prev;
+        for (final n in m.notes) {
+          if (n.tieEnd) continue;
+          if (prev != null && prev.slide != null && prev.string == n.string) {
+            seq[prev] = n;
+          }
+          prev = n;
+        }
+        for (final entry in seq.entries) {
+          final targetMidi =
+              tunings[6 - entry.value.string].midi + capoShift + entry.value.fret;
+          final targetSpeed = SteelSampleBank.speedOf(
+              string: entry.value.string, soundingMidi: targetMidi);
+          // 匹配起音事件（绝对拍 + 弦定位）。
+          for (final e in _pending) {
+            if (!e.slide ||
+                e.string != entry.key.string ||
+                e.absBeat !=
+                    m.index * beatsPerBar + entry.key.beat) {
+              continue;
+            }
+            e.slideEndSpeed = targetSpeed;
+          }
+        }
+      }
+    }
   }
 
   /// 50ms tick 一步。公开为可直测（Timer 周期在测试里难控）。
   @visibleForTesting
   void onTick() {
     if (!_playing || _paused) return;
+    _advanceSlides();
     final pos = _positionSeconds();
-    // 前瞻调度：窗口内事件全部钉到引擎时钟（t0 + 绝对时刻）。
-    final horizon = pos + _horizonSeconds;
-    while (_pointer < _pending.length && _pending[_pointer].time <= horizon) {
+    // AB 循环（2026-11-01 跟练）：越 B 点重锚回 A（A/B 均设才生效）。
+    final a = loopA, b = loopB;
+    if (a != null && b != null && b > a && pos >= b) {
+      _reanchor(a, keepPause: false);
+      return;
+    }
+    // 前瞻调度：窗口内事件全部钉到引擎时钟（事件轴原速秒 → engine 时刻
+    // = t0 + time/rate）。
+    final rawHorizon = (pos + _horizonSeconds) * _rate;
+    while (_pointer < _pending.length && _pending[_pointer].time <= rawHorizon) {
       final e = _pending[_pointer];
       _pointer++;
       final src = e.src;
       if (src == null) continue; // 理论不可达：play 已确保全部预载
       try {
-        _voices.add(_sound.scheduleAt(
+        final h = _sound.scheduleAt(
           src,
-          atTime: _t0 + Duration(microseconds: (e.time * 1e6).round()),
+          atTime: _t0 +
+              Duration(microseconds: (e.time / _rate * 1e6).round()),
           scale: e.speed,
           duration: e.muted
               ? Duration(milliseconds: (_mutedSeconds * 1000).round())
               : Duration(
-                  microseconds: (e.noteSeconds * 1e6).round()),
-        ));
+                  microseconds: (e.noteSeconds / _rate * 1e6).round()),
+          volume: e.volume,
+        );
+        _voices.add(h);
+        // 滑音起音：注册 PitchShift ramp（终点速度接线过才 ramp）。
+        if (e.slide && e.slideEndSpeed != null) {
+          final steps =
+              ((e.noteSeconds / _rate).clamp(0.08, 0.45) * 1000 / 50)
+                  .round()
+                  .clamp(2, 9);
+          _slides.add(_SlideRamp(
+              src: src,
+              handle: h,
+              from: 1.0,
+              to: e.slideEndSpeed! / e.speed,
+              step: 0,
+              steps: steps));
+        }
       } catch (_) {
         // 单音调度失败不致命：跳过该音。
       }
@@ -200,24 +354,7 @@ class SampleScorePlayer implements ScorePlayback {
       _pendingSeek = clamped;
       return;
     }
-    _killVoices(); // 现场 + 预调度声部全切
-    if (_paused) {
-      _pausedAt = clamped;
-    } else {
-      _t0 = _sound.engineNow() -
-          Duration(microseconds: (clamped * 1e6).round());
-    }
-    // 指针重排：跳过 s 前的事件（已被切，不重放）。
-    while (_pointer > 0 && _pending[_pointer - 1].time >= clamped - 1e-9) {
-      _pointer--;
-    }
-    while (_pointer < _pending.length && _pending[_pointer].time < clamped - 1e-9) {
-      _pointer++;
-    }
-    if (!_paused) {
-      positionSeconds.value = clamped;
-      onTick(); // 立即调度 s 起的音（不等 50ms tick）
-    }
+    _reanchor(clamped, keepPause: _paused);
   }
 
   @override
@@ -236,8 +373,10 @@ class SampleScorePlayer implements ScorePlayback {
     // 时间轴零点搬到现在-暂停点：调度与位置读数无缝续走。
     _t0 =
         _sound.engineNow() - Duration(microseconds: (_pausedAt * 1e6).round());
-    // 指针回卷：暂停时窗口内已排事件被切，恢复需从暂停点起重排。
-    while (_pointer > 0 && _pending[_pointer - 1].time >= _pausedAt - 1e-9) {
+    // 指针回卷：暂停时窗口内已排事件被切，恢复需从暂停点起重排
+    //（事件轴原速秒 = 变速后秒 × rate）。
+    final rawPos = _pausedAt * _rate;
+    while (_pointer > 0 && _pending[_pointer - 1].time >= rawPos - 1e-9) {
       _pointer--;
     }
     _paused = false;
@@ -260,6 +399,7 @@ class SampleScorePlayer implements ScorePlayback {
 
   /// 停掉全部活动句柄（预调度中 + 余振）。已自然失效的句柄跳过。
   void _killVoices() {
+    _slides.clear(); // 滑音 ramp 随声部全切
     final voices = List.of(_voices);
     _voices.clear();
     for (final h in voices) {
@@ -282,11 +422,37 @@ class _PendingEvent {
       required this.file,
       required this.speed,
       required this.muted,
-      required this.noteSeconds});
+      required this.noteSeconds,
+      this.volume = 1,
+      this.slide = false,
+      required this.string,
+      required this.absBeat});
   final double time;
   final String file;
   final double speed;
   final bool muted;
   final double noteSeconds; // 采样时长限制（音符时值+0.15s 余振）
+  final double volume; // 力度（击勾弱击/闷音暗弱）
+  final bool slide; // 滑音起音（起播后 PitchShift ramp 向终点）
+  double? slideEndSpeed; // 滑音终点的重移调 speed（_attachSlideTargets 回填）
+  final int string;
+  final double absBeat;
   AudioSource? src;
+}
+
+/// 滑音 ramp：handle 的 PitchShift 从 from 到 to 分 steps 步推进。
+class _SlideRamp {
+  _SlideRamp(
+      {required this.src,
+      required this.handle,
+      required this.from,
+      required this.to,
+      required this.step,
+      required this.steps});
+  final AudioSource src;
+  final SoundHandle handle;
+  final double from;
+  final double to;
+  int step;
+  final int steps;
 }

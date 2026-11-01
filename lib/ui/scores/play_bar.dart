@@ -15,6 +15,12 @@ class PlayBar extends StatefulWidget {
       required this.onToggle,
       required this.onStop,
       required this.onSeek,
+      required this.rate,
+      required this.onRateChanged,
+      this.loopA,
+      this.loopB,
+      required this.onLoopA,
+      required this.onLoopB,
       this.busy = false});
   final bool playing;
 
@@ -32,6 +38,16 @@ class PlayBar extends StatefulWidget {
   /// 拖动定位（松手回调，参数为目标秒；未播放时调用方负责起播）。
   final void Function(double seconds) onSeek;
 
+  /// 速度倍率与回调（2026-11-01 跟练：变速播放）。
+  final double rate;
+  final void Function(double rate) onRateChanged;
+
+  /// AB 循环：A=当前位打起点、B=当前位打终点；再点同钮清除。
+  final double? loopA;
+  final double? loopB;
+  final VoidCallback onLoopA;
+  final VoidCallback onLoopB;
+
   /// 渲染/加载忙碌（真实谱 0.3-1s，Task 15 备案）：按钮换 16×16 spinner
   /// 并禁点（onPressed: null），视觉与交互一致。
   final bool busy;
@@ -44,6 +60,27 @@ class _PlayBarState extends State<PlayBar> {
   /// 拖动中的临时值（0-1 比例）：非空时进度条显示它而非实时 position，
   /// 50ms tick 的回拉被压制；松手 seek 后清空回归实时。
   double? _dragRatio;
+
+  /// 速度下拉（0.5-1.5 五档；KS 降级路径在 detail page 里重渲染接续）。
+  Widget _speedDropdown(
+      BuildContext context, PlayBar w, GuitarBarPalette p) {
+    const rates = [0.5, 0.75, 1.0, 1.25, 1.5];
+    return DropdownButton<double>(
+      value: rates.contains(w.rate) ? w.rate : 1.0,
+      underline: const SizedBox.shrink(),
+      isDense: true,
+      items: [
+        for (final r in rates)
+          DropdownMenuItem(
+              value: r,
+              child: Text('${r}x',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: r == w.rate ? p.dataHue : p.muted))),
+      ],
+      onChanged: w.busy ? null : (v) => w.onRateChanged(v!),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -92,6 +129,27 @@ class _PlayBarState extends State<PlayBar> {
               activeColor: p.dataHue,
             ),
           ),
+          // 速度（2026-11-01 跟练三件套）：变速播放，慢练主用。
+          _speedDropdown(context, w, p),
+          // AB 循环：A 打起点、B 打终点，两钮同亮 = 循环中；点亮的再点清除。
+          IconButton(
+              tooltip: 'A 点（循环起点）',
+              visualDensity: VisualDensity.compact,
+              onPressed: w.onLoopA,
+              icon: Text('A',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: w.loopA != null ? p.dataHue : p.muted))),
+          IconButton(
+              tooltip: 'B 点（循环终点）',
+              visualDensity: VisualDensity.compact,
+              onPressed: w.onLoopB,
+              icon: Text('B',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: w.loopB != null ? p.dataHue : p.muted))),
           Text(
             '${w.positionSeconds.toStringAsFixed(1)}/${w.durationSeconds.toStringAsFixed(1)}s',
             style: TextStyle(

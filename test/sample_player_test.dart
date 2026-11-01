@@ -55,7 +55,8 @@ void main() {
     final ok = await player.play(fourNotes());
     expect(ok, isTrue);
     expect(player.playing, isTrue);
-    expect(engine.oggCount, 1); // 四枚同弦空弦 → 唯一采样只载一次
+    // 四枚同弦空弦 → 交替拨弦 Up/Down 两文件各载一次（2026-11-01 技法音效）。
+    expect(engine.oggCount, 2);
     // 窗口 0.5s：仅 beat 0 入队。
     expect(engine.scheduleCount, 1);
     expect(engine.lastAt, Duration.zero);
@@ -166,10 +167,11 @@ void main() {
     expect(player.playing, isFalse);
     expect(player.positionSeconds.value, 0);
     expect(engine.stopCount, 1); // beat 0 句柄被收割
-    // 重播：预载命中缓存（oggCount 不增），调度重新开始。
+    // 重播：预载命中缓存（oggCount 不增——首遍已载 Up/Down 两文件），
+    // 调度重新开始。
     final ok = await player.play(fourNotes());
     expect(ok, isTrue);
-    expect(engine.oggCount, 1);
+    expect(engine.oggCount, 2);
     expect(engine.scheduleCount, 2);
     await player.stop();
   });

@@ -77,11 +77,14 @@ class SteelSampleBank {
   /// （调弦+夹+品，渲染器同款公式）。泛音采样只覆盖 5/7/12 品：命中则用
   /// 泛音录音（12 品恰为八度，速度恰 1.0）；其余泛音位按普通拨弦发声，
   /// 音高正确优先。
+  /// [downstroke] 下拨采样（2026-11-01 技法音效：GP8 库有 Up/Down 双层，
+  /// 拨弦交替轮换更贴真实演奏；null/不传 = 沿用 Up 层）。
   static ({String file, double speed})? resolve({
     required int string,
     required int fret,
     required int soundingMidi,
     String? technique,
+    bool? downstroke,
   }) {
     final base = _stringBaseMidi[string];
     if (base == null) return null;
@@ -105,7 +108,7 @@ class SteelSampleBank {
       }
     }
     return (
-      file: _pluckFile(string, base + best),
+      file: _pluckFile(string, base + best, downstroke: downstroke),
       speed: _speed(soundingMidi, base + best),
     );
   }
@@ -113,10 +116,26 @@ class SteelSampleBank {
   static double _speed(int targetMidi, int sampleMidi) =>
       math.pow(2, (targetMidi - sampleMidi) / 12).toDouble();
 
+  /// 目标音的重移调 speed（滑音终点换算用，与 resolve 内部同公式）。
+  static double speedOf({required int string, required int soundingMidi}) {
+    final base = _stringBaseMidi[string];
+    if (base == null) return 1;
+    var best = _pluckOffsets[0];
+    for (final o in _pluckOffsets) {
+      if ((soundingMidi - (base + o)).abs() <
+          (soundingMidi - (base + best)).abs()) {
+        best = o;
+      }
+    }
+    return _speed(soundingMidi, base + best);
+  }
+
   /// 文件名与 .gp7bank 解出物一一对应：拨弦品的 MIDI 三位补零，
-  /// 泛音文件名里泛音位两位、空弦 MIDI 原样。
-  static String _pluckFile(int string, int sampleMidi) =>
-      'Mrg12-Pck-Sus-Up-01-${_stringId[string]}${_stringBaseMidi[string]}'
+  /// 泛音文件名里泛音位两位、空弦 MIDI 原样。拨层 Up/Down（力层固定 01）。
+  static String _pluckFile(int string, int sampleMidi,
+          {bool? downstroke}) =>
+      'Mrg12-Pck-Sus-${downstroke == true ? 'Down' : 'Up'}-01-'
+      '${_stringId[string]}${_stringBaseMidi[string]}'
       '-${sampleMidi.toString().padLeft(3, '0')}-none-none.ogg';
 
   static String _harmonicFile(int string, int fret, int base) =>

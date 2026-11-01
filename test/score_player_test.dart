@@ -64,7 +64,10 @@ class FakeEngine implements SoundEngine {
 
   @override
   SoundHandle scheduleAt(AudioSource src,
-      {required Duration atTime, double scale = 1, Duration? duration}) {
+      {required Duration atTime,
+      double scale = 1,
+      Duration? duration,
+      double volume = 1}) {
     scheduleCount++;
     lastAt = atTime;
     lastScale = scale;
@@ -98,6 +101,16 @@ class FakeEngine implements SoundEngine {
 
   @override
   void seek(SoundHandle h, Duration time) => lastSeek = time;
+
+  int pitchActivateCount = 0;
+  final Map<int, double> lastPitchShift = {};
+
+  @override
+  void activatePitchShift(AudioSource src) => pitchActivateCount++;
+
+  @override
+  void setPitchShift(AudioSource src, SoundHandle h, double v) =>
+      lastPitchShift[h.hashCode] = v;
 
   @override
   Future<void> init() async {}

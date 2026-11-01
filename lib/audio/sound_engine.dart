@@ -79,14 +79,16 @@ class SoundEngine {
   /// 绝对引擎时刻起播（第 12 个成员）：采样精确的节奏性调度；scale =
   /// 相对播放速度（重移调 2^(半音差/12)），出生时原子生效无音高滑变；
   /// duration 非空时到点自动停（闷音短音用）。atTime 已过则尽快起播。
+  /// [volume] 0-1（击勾弱击/闷音暗音色的力度层用）。
   SoundHandle scheduleAt(
     AudioSource src, {
     required Duration atTime,
     double scale = 1,
     Duration? duration,
+    double volume = 1,
   }) =>
       SoLoud.instance.playScheduled(src, atTime,
-          scale: scale, duration: duration ?? Duration.zero);
+          volume: volume, scale: scale, duration: duration ?? Duration.zero);
 
   /// 活跃声部上限（第 13 个成员，默认 16）：逐音采样 + 自然衰减会并发
   /// 叠加多条余振，16 不够（KS 路径是单条 PCM 流无此约束）。
@@ -96,4 +98,22 @@ class SoundEngine {
   /// 句柄内定位（第 14 个成员，进度条拖动/点音起播用）：KS 路径 PCM 流
   /// 直接跳位；暂停中 seek 后 position 冻结在新位置。
   void seek(SoundHandle h, Duration time) => SoLoud.instance.seek(h, time);
+
+  /// 激活音源的 PitchShift 滤镜（第 15 个成员，滑音音效用）：激活是
+  /// source 级一次性；shift 参数按句柄独立设置（未设句柄默认 1.0 = 不移调，
+  /// 非滑音 voice 无感）。
+  void activatePitchShift(AudioSource src) {
+    try {
+      src.filters.pitchShiftFilter.activate();
+    } catch (_) {}
+  }
+
+  /// 设置某句柄的 PitchShift 值（1.0 = 不移调；滑音 ramp 用）。
+  void setPitchShift(AudioSource src, SoundHandle h, double v) {
+    try {
+      src.filters.pitchShiftFilter
+          .shift(soundHandle: h)
+          .value = v.clamp(0.0, 3.0);
+    } catch (_) {}
+  }
 }
