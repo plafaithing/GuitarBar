@@ -168,6 +168,8 @@ class MeasureIr {
 ///   repeatEnd 的已过遍数 + 1），不匹配的结尾段整体跳过
 /// - 无结构的谱返回 0..n-1（恒等）
 /// 谱面显示保持线性不动；播放时间轴按此序列累计拍位。
+/// 限制声明（dsh 交叉测试记录）：不支持嵌套反复（openStart 单变量，GP
+/// 本身不产生嵌套）；无 start 的孤立 end 容错回 0 号小节。
 List<int> expandMeasures(List<MeasureIr> measures) {
   final n = measures.length;
   if (n == 0) return const [];
@@ -178,11 +180,11 @@ List<int> expandMeasures(List<MeasureIr> measures) {
   final out = <int>[];
   var i = 0;
   var openStart = 0; // 最近未闭合 repeatStart（start 缺失容错回 0）
-  final endPass = <int, int>{}; // repeatEnd 小节 index → 已过遍数
+  var passCounter = 1; // 当前段遍次（显式计数：跳回 +1，遇新段重置）
+  var justJumped = false; // 跳回落点标记：段首重置被抑制一次
 
   /// 当前反复段（openStart 起）的结束 end：从 openStart 向后扫第一个
-  /// repeatEnd。结尾段的"当前遍次"由它计数（结尾段在 end 之前，往
-  /// 前找会漏；2026-11-02 测试实证修正）。
+  /// repeatEnd（结尾段管辖判定用）。
   int segmentEnd() {
     for (var j = openStart; j < n; j++) {
       if (measures[j].repeatEnd) return j;
@@ -192,27 +194,28 @@ List<int> expandMeasures(List<MeasureIr> measures) {
 
   while (i < n) {
     final m = measures[i];
-    // 结尾走向：当前遍次不在本小节结尾集 → 跳过整个结尾段管辖区（到
-    // 反复结束线含）直达下一结尾。遍次 = 反复起始小节在已输出序列中的
-    // 出现次数（跳回即 +1；一条规则统一"段前 +1/段后不加"的旧分裂——
-    // 2026-11-02 新跳法下 end 不再被第二遍走过，endPass 计数失效，改用
-    // 出现次数）。
+    // 结尾走向：当前遍次（显式 passCounter）不在本小节结尾集 → 跳过整个
+    // 结尾段管辖区（到反复结束线含）直达下一结尾；落点不匹配则前进。
+    // 防死循环：i 已在 end 之后时只能前进（seg+1 回退会原地打转）。
     if (m.endings.isNotEmpty) {
       final seg = segmentEnd();
-      final pass = out.where((x) => x == openStart).length;
-      if (!m.endings.contains(pass)) {
-        // 防死循环：i 已在 end 之后时只能前进（seg+1 回退会原地打转）。
+      if (!m.endings.contains(passCounter)) {
         i = seg + 1 > i ? seg + 1 : i + 1;
+        justJumped = false;
         continue;
       }
     }
     out.add(i);
-    if (m.repeatStart) openStart = i;
+    if (m.repeatStart && !justJumped) {
+      openStart = i; // 新反复段（非跳回落点）：遍次归 1
+      passCounter = 1;
+    }
+    justJumped = false;
     if (m.repeatEnd) {
-      final pass = endPass[i] = (endPass[i] ?? 0) + 1;
-      final count = m.repeatCount > 0 ? m.repeatCount : 2;
-      if (pass < count) {
+      if (passCounter < (m.repeatCount > 0 ? m.repeatCount : 2)) {
+        passCounter++; // 进入下一遍
         i = openStart; // 跳回反复起始（重播段内）
+        justJumped = true;
         continue;
       }
     }

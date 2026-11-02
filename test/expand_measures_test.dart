@@ -81,4 +81,17 @@ void main() {
     // 结尾 2（m44）只播第二遍（1 次）。
     expect(order.where((i) => i == 43), hasLength(1));
   });
+
+  test('dsh P1 边界：起始小节自身带 endings，第二遍不重播', () {
+    // |:[A(1)] B :‖ [C(2)] D —— A 是段首兼结尾 1：第二遍跳回后 pass=2
+    // 不含 1 → 跳过 A 直达 C（dsh 交叉测试指出的重播缺陷回归网）。
+    final ms = [
+      m(0, start: true, endings: [1]),
+      m(1),
+      m(2, end: true),
+      m(3, endings: [2]),
+      m(4),
+    ];
+    expect(expandMeasures(ms), [0, 1, 2, 3, 4]);
+  });
 }

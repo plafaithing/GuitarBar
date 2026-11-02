@@ -15,8 +15,9 @@ class TabLayout {
   // 弦距（2026-11-01 走查 18→22 弧线字母净空；2026-11-02 走查回调
   // 22→20——用户反馈太宽；20 下弧顶/字母/上弦数字恰好互不侵入）。
   static const stringGap = 20.0;
-  // 34 = 28 + 6：结尾跳房子横线（"1."/"2." 括号，谱最上层）让位。
-  static const topPad = 34.0;
+  // 40 = 28 + 12：谱上方三层布局（跳房子括号 / 小节号 / L.R.·P.M. 虚线）
+  // 各层净空——L.R. 虚线抬高后不遮挡 1 弦品数字（2026-11-02 走查）。
+  static const topPad = 40.0;
   static const bottomPad = 20.0;
   static const leftPad = 16.0;
   // 标准拍距（2026-11-01 走查二轮：52→64——Like A Star m71 "12×6" 同弦
