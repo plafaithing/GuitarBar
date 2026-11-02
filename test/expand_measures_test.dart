@@ -94,4 +94,19 @@ void main() {
     ];
     expect(expandMeasures(ms), [0, 1, 2, 3, 4]);
   });
+
+  test('dsh P3 边界：相邻两段"段首兼结尾"，第二段状态正确重置', () {
+    // |:[A(1)] B :‖ [C(2)] |:[D(1)] E :‖ [F(2)] —— 段状态互相独立。
+    final ms = [
+      m(0, start: true, endings: [1]),
+      m(1),
+      m(2, end: true),
+      m(3, endings: [2]),
+      m(4, start: true, endings: [1]),
+      m(5),
+      m(6, end: true),
+      m(7, endings: [2]),
+    ];
+    expect(expandMeasures(ms), [0, 1, 2, 3, 4, 5, 6, 7]);
+  });
 }

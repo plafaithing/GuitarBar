@@ -194,6 +194,13 @@ List<int> expandMeasures(List<MeasureIr> measures) {
 
   while (i < n) {
     final m = measures[i];
+    // 新反复段（非跳回落点）：重置段状态（openStart/遍次）——必须在
+    // endings 判定**之前**（dsh 交叉测试 P3：相邻两段"段首兼结尾"的谱，
+    // 第二段段首若先被上一段的遍次判定跳过，段状态永远不重置）。
+    if (m.repeatStart && !justJumped) {
+      openStart = i;
+      passCounter = 1;
+    }
     // 结尾走向：当前遍次（显式 passCounter）不在本小节结尾集 → 跳过整个
     // 结尾段管辖区（到反复结束线含）直达下一结尾；落点不匹配则前进。
     // 防死循环：i 已在 end 之后时只能前进（seg+1 回退会原地打转）。
@@ -206,11 +213,9 @@ List<int> expandMeasures(List<MeasureIr> measures) {
       }
     }
     out.add(i);
-    if (m.repeatStart && !justJumped) {
-      openStart = i; // 新反复段（非跳回落点）：遍次归 1
-      passCounter = 1;
+    if (m.repeatStart && justJumped) {
+      justJumped = false; // 跳回落点：段状态保留（遍次延续），清标记
     }
-    justJumped = false;
     if (m.repeatEnd) {
       if (passCounter < (m.repeatCount > 0 ? m.repeatCount : 2)) {
         passCounter++; // 进入下一遍
