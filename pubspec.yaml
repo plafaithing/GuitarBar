@@ -51,6 +51,9 @@ dependencies:
   # GTP (.gpx/.gp) 导入：GP7 zip 容器 + gpif XML 解析（原为传递依赖，版本与 lock 一致）
   archive: ^4.5.2
   xml: ^6.6.1
+  # GP5 导入：元数据按 GBK 解码。gbk_codec 0.4.0 SDK 约束 <3.0.0 无法在 Dart 3
+  # 解析，用 enough_convert 的 GbkCodec（fast_gbk 分支，零运行时依赖）。
+  enough_convert: ^1.7.1
 
 dev_dependencies:
   flutter_test:

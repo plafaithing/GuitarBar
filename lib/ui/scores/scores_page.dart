@@ -75,7 +75,7 @@ class _ScoresPageState extends State<ScoresPage> {
     final file = await openFile(acceptedTypeGroups: [
       const XTypeGroup(
           label: '乐谱文件（GTP/PDF/图片）',
-          extensions: ['gpx', 'pdf', 'png', 'jpg', 'jpeg', 'webp']),
+          extensions: ['gpx', 'gp5', 'pdf', 'png', 'jpg', 'jpeg', 'webp']),
     ]);
     if (file == null || !mounted) return;
     final name = file.name.replaceFirst(RegExp(r'\.[^.]+$'), '');
@@ -170,7 +170,7 @@ class _ScoresPageState extends State<ScoresPage> {
               menuChildren: [
                 MenuItemButton(
                     onPressed: repo == null || _busy ? null : _importFile,
-                    child: const Text('导入文件（gpx/PDF/图片）')),
+                    child: const Text('导入文件（gpx/gp5/PDF/图片）')),
                 MenuItemButton(
                     onPressed: repo == null || _busy ? null : _importFolder,
                     child: const Text('导入文件夹（多图合成多页）')),

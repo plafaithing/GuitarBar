@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../data/database.dart';
+import 'gp5_parser.dart';
 import 'gtp_parser.dart';
 import 'image_normalize.dart';
 import 'pdf_raster.dart';
@@ -48,7 +49,8 @@ class ScoreRepository {
   Future<Score> importScore({required String title, required File source}) async {
     final ext = p.extension(source.path).replaceFirst('.', '').toLowerCase();
     final isPdf = ext == 'pdf';
-    final isGtp = ext == 'gpx';
+    // GTP 系：gpx（GP6/7 容器）与 gp5（Guitar Pro 5 二进制）。
+    final isGtp = ext == 'gpx' || ext == 'gp5';
     if (!isPdf && !isGtp && !imageExts.contains(ext)) {
       throw ArgumentError('不支持的曲谱文件类型: .$ext');
     }
@@ -62,7 +64,9 @@ class ScoreRepository {
       if (isGtp) {
         // GTP 精确导入（设计 §13.3）：解析即入库，confidence 全 null
         // （确定性数据无 AI 置信度）；无页图（谱面就是数据本身）。
-        final ir = parseGpxBytes(await source.readAsBytes());
+        final bytes = await source.readAsBytes();
+        final ir =
+            ext == 'gp5' ? parseGp5Bytes(bytes) : parseGpxBytes(bytes);
         await (_db.update(_db.scores)..where((s) => s.id.equals(id))).write(
             ScoresCompanion(
                 irJson: Value(jsonEncode(ir.toJson())),
