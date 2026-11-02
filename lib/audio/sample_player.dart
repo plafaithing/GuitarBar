@@ -257,9 +257,42 @@ class SampleScorePlayer implements ScorePlayback {
           final noteSeconds = n.duration * beatSeconds + 0.08;
           // 力度（2026-11-01 技法音效，GP8 无独立采样靠力度近似——其
           // 内部同为采样+处理）：击勾端弱击 0.75、闷音暗弱 0.7。
-          final volume = (n.hopoEnd || n.hopoStart)
+          var volume = (n.hopoEnd || n.hopoStart)
               ? 0.75
               : (n.technique == 'x' ? 0.7 : 1.0);
+          // Dynamic 力度映射（2026-11-02 gp8 播放复刻）：力度记号影响
+          // 发声音量（GP8 同款——ff 到 pp 的 MIDI 力度带）。
+          volume *= _dynamicVolume(n.dynamicMark);
+          // Note Velocity（MIDI 0-127）：线性映射夹 0.35-1.0。
+          if (n.velocity != null) {
+            volume *= ((n.velocity! / 127.0) * 0.65 + 0.35)
+                .clamp(0.35, 1.0);
+          }
+          // 震音拨（2026-11-02 gp8 播放复刻）：该音符时值内按 32 分
+          //（0.125 拍）快速重复发声（首音满时值，其余短音衰减）。
+          if (n.tremolo && n.duration > 0.15) {
+            const step = 0.125;
+            var t = n.beat;
+            var k = 0;
+            while (t < n.beat + n.duration - 1e-9) {
+              final seg = k == 0 ? step : step; // 等长 32 分颗粒
+              _pending.add(_PendingEvent(
+                  time: (baseBeat + t) * beatSeconds,
+                  file: r.file,
+                  speed: r.speed,
+                  muted: n.technique == 'x',
+                  noteSeconds: seg * beatSeconds + 0.08,
+                  volume: volume * (k == 0 ? 1.0 : 0.8),
+                  slide: false,
+                  string: n.string,
+                  absBeat: baseBeat + t));
+              t += seg;
+              k++;
+            }
+            final e2 = baseBeat + n.beat + n.duration;
+            if (e2 > endBeat) endBeat = e2;
+            continue;
+          }
           _pending.add(_PendingEvent(
               time: absBeat * beatSeconds,
               file: r.file,
@@ -269,7 +302,8 @@ class SampleScorePlayer implements ScorePlayback {
               volume: volume,
               slide: n.slide != null,
               string: n.string,
-              absBeat: absBeat));
+              absBeat: absBeat,
+              arpeggio: n.arpeggio));
           final e = absBeat + n.duration;
           if (e > endBeat) endBeat = e;
         }
@@ -277,11 +311,64 @@ class SampleScorePlayer implements ScorePlayback {
     }
     if (_pending.isEmpty) return false;
     _pending.sort((a, b) => a.time.compareTo(b.time));
+    _staggerArpeggios();
     _attachSlideTargets();
     // 时长含尾音（与渲染器同款 1.2s）：末音采样自然衰减不受限，
     // 越线余振由下一轮 play/stop 收割（见 stop）。变速后秒（rate 换算）。
     durationSeconds = endBeat * beatSeconds / _rate + 1.2;
     return true;
+  }
+
+  /// Dynamic 力度记号 → 发声音量系数（GP8 MIDI 力度带惯例）。无记号
+  /// 维持原音量 1.0（GP 默认力度=f）；显示层已画行底力度字，此处是发声
+  /// 映射。
+  static double _dynamicVolume(String? mark) {
+    switch (mark) {
+      case 'pp':
+        return 0.45;
+      case 'p':
+        return 0.55;
+      case 'mp':
+        return 0.68;
+      case 'mf':
+        return 0.85;
+      case 'f':
+        return 0.92;
+      case 'ff':
+        return 1.0;
+      default:
+        return 1.0;
+    }
+  }
+
+  /// 琶音依次发声（2026-11-02 三期待办，gp8 行为复刻）：琶音不是全部
+  /// 同响，而是按方向依次弹出对应琴弦——Up（↑）从低音弦（6）扫向高音
+  /// 弦（1），Down 反之。每弦错开 30ms（事件轴原速秒；gp8 听感 20-40ms
+  /// 量级）。Beat 级标注挂该拍全部音 → 同 absBeat 的琶音事件为一群。
+  void _staggerArpeggios() {
+    const step = 0.03;
+    var i = 0;
+    while (i < _pending.length) {
+      final e = _pending[i];
+      if (e.arpeggio == null) {
+        i++;
+        continue;
+      }
+      var j = i;
+      while (j < _pending.length &&
+          _pending[j].absBeat == e.absBeat &&
+          _pending[j].arpeggio != null) {
+        j++;
+      }
+      final group = _pending.sublist(i, j)
+        ..sort((a, b) => e.arpeggio == 'up'
+            ? b.string.compareTo(a.string) // Up：6 弦先响 → string 降序
+            : a.string.compareTo(b.string)); // Down：1 弦先响
+      for (var k = 0; k < group.length; k++) {
+        group[k].time += k * step;
+      }
+      i = j;
+    }
   }
 
   /// 滑音接线（2026-11-01 技法音效）：slide 起音事件补终点速度——
@@ -448,8 +535,9 @@ class _PendingEvent {
       this.volume = 1,
       this.slide = false,
       required this.string,
-      required this.absBeat});
-  final double time;
+      required this.absBeat,
+      this.arpeggio});
+  double time; // 可变：琶音依次发声的错开偏移（事件轴原速秒）
   final String file;
   final double speed;
   final bool muted;
@@ -459,6 +547,7 @@ class _PendingEvent {
   double? slideEndSpeed; // 滑音终点的重移调 speed（_attachSlideTargets 回填）
   final int string;
   final double absBeat;
+  final String? arpeggio; // 琶音方向（'up'|'down'，依次发声用）
   AudioSource? src;
 }
 

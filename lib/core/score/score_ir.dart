@@ -192,22 +192,17 @@ List<int> expandMeasures(List<MeasureIr> measures) {
 
   while (i < n) {
     final m = measures[i];
-    // 结尾走向：当前遍次不在本小节结尾集 → 整段跳过（连续同结尾号的
-    // 小节）。遍次语义分两段（2026-11-02 测试实证）：end **之前**的结尾
-    // 段 = end 已过遍数 + 1（当前遍进行中）；end **之后**（如结尾 2）=
-    // end 已完成遍数（第二遍 end 走完时计数已是 2，结尾 2 属于该遍）。
+    // 结尾走向：当前遍次不在本小节结尾集 → 跳过整个结尾段管辖区（到
+    // 反复结束线含）直达下一结尾。遍次 = 反复起始小节在已输出序列中的
+    // 出现次数（跳回即 +1；一条规则统一"段前 +1/段后不加"的旧分裂——
+    // 2026-11-02 新跳法下 end 不再被第二遍走过，endPass 计数失效，改用
+    // 出现次数）。
     if (m.endings.isNotEmpty) {
       final seg = segmentEnd();
-      var pass = seg >= 0 ? (endPass[seg] ?? 0) : 0;
-      if (seg < 0 || i <= seg) pass += 1;
+      final pass = out.where((x) => x == openStart).length;
       if (!m.endings.contains(pass)) {
-        var j = i;
-        while (j < n &&
-            measures[j].endings.isNotEmpty &&
-            measures[j].endings.join(',') == m.endings.join(',')) {
-          j++;
-        }
-        i = j;
+        // 防死循环：i 已在 end 之后时只能前进（seg+1 回退会原地打转）。
+        i = seg + 1 > i ? seg + 1 : i + 1;
         continue;
       }
     }
@@ -256,6 +251,8 @@ class NoteIr {
     this.dynamicMark,
     this.fadding,
     this.wah = false,
+    this.tremolo = false,
+    this.velocity,
   });
 
   final double beat; // 小节内拍位置，0 起
@@ -307,6 +304,12 @@ class NoteIr {
   final String? fadding; // 'in' | 'out'
   final bool wah;
 
+  // 播放行为映射（2026-11-02 gp8 编辑面板播放能力复刻）：
+  // - Tremolo 震音拨（Beat 属性）：该拍音符在时值内按 32 分快速重复发声
+  // - Velocity 音符力度（Note 属性 0-127，gp8 MIDI 力度）→ 发声音量映射
+  final bool tremolo;
+  final int? velocity;
+
   /// 有标注才写字段：无标注音符的 JSON 与旧格式一致（存量 irJson 兼容）。
   Map<String, dynamic> toJson() => {
         'beat': beat,
@@ -337,6 +340,8 @@ class NoteIr {
         if (dynamicMark != null) 'dynamicMark': dynamicMark,
         if (fadding != null) 'fadding': fadding,
         if (wah) 'wah': true,
+        if (tremolo) 'tremolo': true,
+        if (velocity != null) 'velocity': velocity,
       };
 
   static NoteIr fromJson(Map<String, dynamic> j) => NoteIr(
@@ -368,6 +373,8 @@ class NoteIr {
         dynamicMark: j['dynamicMark'] as String?,
         fadding: j['fadding'] as String?,
         wah: j['wah'] as bool? ?? false,
+        tremolo: j['tremolo'] as bool? ?? false,
+        velocity: (j['velocity'] as num?)?.toInt(),
       );
 
   NoteIr copyWith({

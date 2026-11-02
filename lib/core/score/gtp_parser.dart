@@ -378,12 +378,20 @@ void _readVoice(
         : (faddingRaw.contains('in') ? 'in' : 'out');
     final wah = beat.findElements('Wah').isNotEmpty;
     final grace = beat.findElements('GraceNotes').isNotEmpty;
+    // 震音拨（2026-11-02 gp8 播放复刻）：Beat 属性 Tremolo/TremoloPicking
+    //（GP6 schema；真实样本校准待遇——曲库暂无实例）。
+    final tremolo = beatProps != null &&
+        beatProps
+            .findElements('Property')
+            .any((p) =>
+                p.getAttribute('name') == 'Tremolo' ||
+                p.getAttribute('name') == 'TremoloPicking');
     for (final noteId in _refs(_childText(beat, 'Notes'))) {
       final noteEl = notesById[noteId];
       if (noteEl == null) {
         throw FormatException('gpif 引用了不存在的 note id $noteId');
       }
-      final (gpString, fret) = _noteProps(noteEl);
+      final (gpString, fret, velocity) = _noteProps(noteEl);
       if (gpString == null || fret == null) continue; // 无弦/品信息无法定位（v1 丢弃）
       final isTieDest = _isTieDestination(noteEl);
       // 标注解析（2026-10-31 GP8 逆向补齐）：gpif 属性/子元素 → NoteIr 标记。
@@ -418,6 +426,8 @@ void _readVoice(
           dynamicMark: dynamicMark,
           fadding: fadding,
           wah: wah,
+          tremolo: tremolo,
+          velocity: velocity,
         ));
         // 链式 tie（dest 再连下一 dest）时 dest 也登记为 origin（实测无此形态，兜底）。
         tieOrigins[(gpString, fret)] = (out, out.length - 1);
@@ -462,6 +472,8 @@ void _readVoice(
         dynamicMark: dynamicMark,
         fadding: fadding,
         wah: wah,
+        tremolo: tremolo,
+        velocity: velocity,
       ));
       tieOrigins[(gpString, fret)] = (out, out.length - 1);
     }
@@ -476,9 +488,10 @@ bool _isTieDestination(XmlElement note) =>
     'true';
 
 /// note 的 String/Fret 属性（GP6 schema：`<Property name="String"><String>N</String>`）。
-(int?, int?) _noteProps(XmlElement note) {
+(int?, int?, int?) _noteProps(XmlElement note) {
   int? gpString;
   int? fret;
+  int? velocity;
   final properties = _child(note, 'Properties');
   if (properties != null) {
     for (final prop in properties.findElements('Property')) {
@@ -489,10 +502,17 @@ bool _isTieDestination(XmlElement note) =>
         case 'Fret':
           fret = int.tryParse(_childText(prop, 'Fret')?.trim() ?? '');
           break;
+        // 音符力度（2026-11-02 gp8 播放复刻，MIDI 0-127；GP6 schema，
+        // 真实样本校准待遇）。
+        case 'Velocity':
+          velocity = double
+              .tryParse(_childText(prop, 'Velocity')?.trim() ?? '')
+              ?.round();
+          break;
       }
     }
   }
-  return (gpString, fret);
+  return (gpString, fret, velocity);
 }
 
 /// Rhythm 元素 → 时值（拍）。NoteValue + 附点（×1.5^n）+ 连音（×den/num）。
