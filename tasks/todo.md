@@ -32,3 +32,22 @@ GP8 GPCore.dll strings 侦察确认 gpif 属性名全集（含 LegatoOrigin/Tril
   - 幽灵音括号=专用图元 Parenthesis+parenthesisMargin——"(3)" 文字等效（记录在案）
   - 度量表常量（tabSlurHeight/Thickness 具体值）= SmuflFont 运行时从 GPBravura 字体解析，二进制无静态值（setFontName→SmuflFont 构造确证）——到此为止，属视觉微调项
 - 反编译产出：D:\ghidra_projects\decomp_out、decomp_slur、decomp_paint（脚本 D:\ghidra_projects\scripts，保留可续挖）
+
+## 曲谱库三件套（2026-11-03 用户需求）
+
+1. [x] 批量导入：importFiles（score_repository）+ openFiles 多选分流 + 进度/汇总 SnackBar
+2. [x] 实时搜索 + 类型筛选（GTP/PDF/图片）+ 一键清空（scores_page）
+3. [x] 链接备注：Scores.noteUrl 列（schema v3，v2→v3 addColumn 互斥分支）+ 详情页 AppBar 右上角编辑/打开按钮 + url_launcher
+4. [x] analyze 0 issue + 262 测试全绿（修复迁移测试 duplicate column）
+5. [ ] dsh 交叉复测（后台运行中）
+6. [ ] 用户验收后决定提交/推送
+
+## 曲谱库二轮走查（2026-11-04 用户反馈）
+
+1. [x] 删 GTP 行「打开原谱」（与点行同路径冗余）
+2. [x] 搜索框最左侧类型下拉（圆角填充样式，默认全部）
+3. [x] 首字母分组排序 + 右侧字母索引条（iPhone 通讯录式；中文拼音 lpinyin；同组英文优先）
+4. [x] 链接点击无反应：launchUrl 改全捕获（Error 子类不再静默）——待用户重测显形真实错误
+5. [x] PDF 渲染 Isolate 化（前一轮"点击导入卡死"根因，已完成）
+6. [ ] dsh 交叉复测（后台中）→ 重建 exe → 用户验收
+- UI 重设计解读：本轮只做曲谱库页视觉（控件圆角/分组头/索引条），全局主题未动；用户要更激进 reactbits 风格再扩

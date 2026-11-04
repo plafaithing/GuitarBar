@@ -83,13 +83,15 @@ class SampleScorePlayer implements ScorePlayback {
     return playbackOrderMeasures[k] * _beatsPerBar + inMeasure;
   }
 
-  /// 线性小节 → 展开轴起播秒（点音起播；该小节首次出现的遍次）。
+  /// 线性小节+拍位 → 展开轴起播秒（点音起播；精确到点击音符——2026-11-03
+  /// 走查修正：小节首次遍次起点 + 小节内拍偏移，原小节粒度版本停止后
+  /// 点音总是回小节开头）。
   @override
-  double? startSecondsForMeasure(int measureIndex) {
+  double? startSecondsForBeat(int measureIndex, double beat) {
     if (playbackOrderMeasures.isEmpty || _beatSeconds == 0) return null;
     final k = playbackOrderMeasures.indexOf(measureIndex);
     if (k < 0) return null;
-    return playbackOrderStarts[k] * _beatSeconds;
+    return (playbackOrderStarts[k] + beat) * _beatSeconds;
   }
 
   /// 活动滑音 ramp（handle → PitchShift 逐 tick 推进）。
@@ -126,6 +128,10 @@ class SampleScorePlayer implements ScorePlayback {
     _killVoices(); // 现场 + 预调度声部全切（重排后重调度）
     if (keepPause) {
       _pausedAt = pos;
+      // 暂停态 seek 播放头即时跟随（2026-11-04 用户实测实锤：点音定位
+      // 后 positionSeconds 留在旧暂停点——用户暂停时机常在小节边界附近，
+      // 看上去就是"跳到前一小节最后位置"；恢复播放前的 UI 全错）。
+      positionSeconds.value = pos;
     } else {
       _t0 = _sound.engineNow() -
           Duration(microseconds: (pos * 1e6).round());

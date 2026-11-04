@@ -36,9 +36,10 @@ abstract interface class ScorePlayback {
   ///（播放头定位）。无反复结构的谱返回 null（调用方走原式换算）。
   double? linearBeatAt(double playBeat);
 
-  /// 线性小节 → 展开时间轴上的起播秒（点音起播用：点反复段内音符从
-  /// 该小节首次出现的遍次起播）。无展开结构返回 null（从头）。
-  double? startSecondsForMeasure(int measureIndex);
+  /// 线性小节+拍位 → 展开时间轴上的起播秒（点音起播用：精确定位到点击
+  /// 音符——小节首次遍次起点 + 小节内拍偏移；2026-11-03 走查修正，原
+  /// 小节粒度版本在停止后点音总是回小节开头）。无展开结构返回 null。
+  double? startSecondsForBeat(int measureIndex, double beat);
 }
 
 /// 自动演奏播放：渲染 PCM → loadPcm → play。
@@ -100,12 +101,12 @@ class ScorePlayer implements ScorePlayback {
 
   /// 线性小节 → 展开轴起播秒（点音起播；该小节首次出现的遍次）。
   @override
-  double? startSecondsForMeasure(int measureIndex) {
+  double? startSecondsForBeat(int measureIndex, double beat) {
     final order = lastOrder, starts = lastOrderStarts;
     if (order == null || starts == null || order.isEmpty) return null;
     final k = order.indexOf(measureIndex);
     if (k < 0) return null;
-    return starts[k] * 60.0 / _tempo;
+    return (starts[k] + beat) * 60.0 / _tempo;
   }
 
   @override
