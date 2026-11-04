@@ -83,6 +83,29 @@ void main() {
     expect(() => repo.importScore(title: 'x', source: f), throwsArgumentError);
   });
 
+  test('importFiles 批量：返回成功数、开始+结束各回调一次、失败不中断', () async {
+    // dsh 复测 P1/P3 守卫：开始前也要回调（大 PDF 不冻结进度）、回调
+    // 自身异常不进失败计数、失败文件不中断批次、返回值=成功数。
+    final ok1 = File('${tmp.path}/f1.png')..writeAsBytesSync(tinyPng());
+    final bad = File('${tmp.path}/f2.txt')..writeAsBytesSync([1]);
+    final ok2 = File('${tmp.path}/f3.png')..writeAsBytesSync(tinyPng());
+    final calls = <(int, int, String, String?)>[];
+    final ok = await repo.importFiles([ok1, bad, ok2],
+        onProgress: (done, total, name, error) =>
+            calls.add((done, total, name, error)));
+    expect(ok, 2);
+    expect(await repo.listScores(), hasLength(2));
+    // 每文件 2 次回调（开始前 + 结束后），共 6 次；顺序与输入一致。
+    expect(calls.map((c) => c.$3), ['f1', 'f1', 'f2', 'f2', 'f3', 'f3']);
+    // 开始回调 error 恒 null；结束回调仅失败文件带错误。
+    expect(calls[0].$4, isNull); // f1 开始
+    expect(calls[1].$4, isNull); // f1 结束成功
+    expect(calls[2].$4, isNull); // f2 开始
+    expect(calls[3].$4, isNotNull); // f2 结束失败
+    expect(calls[4].$4, isNull); // f3 开始（失败未中断）
+    expect(calls[5].$4, isNull); // f3 结束成功
+  });
+
   test('导入失败：行与文件双清理', () async {
     final failing =
         ScoreRepository(db, ScoreFiles(tmp), rasterizer: ThrowingRasterizer());

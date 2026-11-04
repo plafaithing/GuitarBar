@@ -924,6 +924,17 @@ class $ScoresTable extends Scores with TableInfo<$ScoresTable, Score> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _noteUrlMeta = const VerificationMeta(
+    'noteUrl',
+  );
+  @override
+  late final GeneratedColumn<String> noteUrl = GeneratedColumn<String>(
+    'note_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -956,6 +967,7 @@ class $ScoresTable extends Scores with TableInfo<$ScoresTable, Score> {
     sourcePath,
     irJson,
     tuning,
+    noteUrl,
     createdAt,
     updatedAt,
   ];
@@ -1010,6 +1022,12 @@ class $ScoresTable extends Scores with TableInfo<$ScoresTable, Score> {
         tuning.isAcceptableOrUnknown(data['tuning']!, _tuningMeta),
       );
     }
+    if (data.containsKey('note_url')) {
+      context.handle(
+        _noteUrlMeta,
+        noteUrl.isAcceptableOrUnknown(data['note_url']!, _noteUrlMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1055,6 +1073,10 @@ class $ScoresTable extends Scores with TableInfo<$ScoresTable, Score> {
         DriftSqlType.string,
         data['${effectivePrefix}tuning'],
       ),
+      noteUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}note_url'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -1079,6 +1101,7 @@ class Score extends DataClass implements Insertable<Score> {
   final String sourcePath;
   final String? irJson;
   final String? tuning;
+  final String? noteUrl;
   final DateTime createdAt;
   final DateTime updatedAt;
   const Score({
@@ -1088,6 +1111,7 @@ class Score extends DataClass implements Insertable<Score> {
     required this.sourcePath,
     this.irJson,
     this.tuning,
+    this.noteUrl,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -1103,6 +1127,9 @@ class Score extends DataClass implements Insertable<Score> {
     }
     if (!nullToAbsent || tuning != null) {
       map['tuning'] = Variable<String>(tuning);
+    }
+    if (!nullToAbsent || noteUrl != null) {
+      map['note_url'] = Variable<String>(noteUrl);
     }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -1121,6 +1148,9 @@ class Score extends DataClass implements Insertable<Score> {
       tuning: tuning == null && nullToAbsent
           ? const Value.absent()
           : Value(tuning),
+      noteUrl: noteUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(noteUrl),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -1138,6 +1168,7 @@ class Score extends DataClass implements Insertable<Score> {
       sourcePath: serializer.fromJson<String>(json['sourcePath']),
       irJson: serializer.fromJson<String?>(json['irJson']),
       tuning: serializer.fromJson<String?>(json['tuning']),
+      noteUrl: serializer.fromJson<String?>(json['noteUrl']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -1152,6 +1183,7 @@ class Score extends DataClass implements Insertable<Score> {
       'sourcePath': serializer.toJson<String>(sourcePath),
       'irJson': serializer.toJson<String?>(irJson),
       'tuning': serializer.toJson<String?>(tuning),
+      'noteUrl': serializer.toJson<String?>(noteUrl),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -1164,6 +1196,7 @@ class Score extends DataClass implements Insertable<Score> {
     String? sourcePath,
     Value<String?> irJson = const Value.absent(),
     Value<String?> tuning = const Value.absent(),
+    Value<String?> noteUrl = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Score(
@@ -1173,6 +1206,7 @@ class Score extends DataClass implements Insertable<Score> {
     sourcePath: sourcePath ?? this.sourcePath,
     irJson: irJson.present ? irJson.value : this.irJson,
     tuning: tuning.present ? tuning.value : this.tuning,
+    noteUrl: noteUrl.present ? noteUrl.value : this.noteUrl,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -1188,6 +1222,7 @@ class Score extends DataClass implements Insertable<Score> {
           : this.sourcePath,
       irJson: data.irJson.present ? data.irJson.value : this.irJson,
       tuning: data.tuning.present ? data.tuning.value : this.tuning,
+      noteUrl: data.noteUrl.present ? data.noteUrl.value : this.noteUrl,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -1202,6 +1237,7 @@ class Score extends DataClass implements Insertable<Score> {
           ..write('sourcePath: $sourcePath, ')
           ..write('irJson: $irJson, ')
           ..write('tuning: $tuning, ')
+          ..write('noteUrl: $noteUrl, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -1216,6 +1252,7 @@ class Score extends DataClass implements Insertable<Score> {
     sourcePath,
     irJson,
     tuning,
+    noteUrl,
     createdAt,
     updatedAt,
   );
@@ -1229,6 +1266,7 @@ class Score extends DataClass implements Insertable<Score> {
           other.sourcePath == this.sourcePath &&
           other.irJson == this.irJson &&
           other.tuning == this.tuning &&
+          other.noteUrl == this.noteUrl &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -1240,6 +1278,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
   final Value<String> sourcePath;
   final Value<String?> irJson;
   final Value<String?> tuning;
+  final Value<String?> noteUrl;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   const ScoresCompanion({
@@ -1249,6 +1288,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
     this.sourcePath = const Value.absent(),
     this.irJson = const Value.absent(),
     this.tuning = const Value.absent(),
+    this.noteUrl = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
@@ -1259,6 +1299,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
     required String sourcePath,
     this.irJson = const Value.absent(),
     this.tuning = const Value.absent(),
+    this.noteUrl = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   }) : title = Value(title),
@@ -1271,6 +1312,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
     Expression<String>? sourcePath,
     Expression<String>? irJson,
     Expression<String>? tuning,
+    Expression<String>? noteUrl,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
   }) {
@@ -1281,6 +1323,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
       if (sourcePath != null) 'source_path': sourcePath,
       if (irJson != null) 'ir_json': irJson,
       if (tuning != null) 'tuning': tuning,
+      if (noteUrl != null) 'note_url': noteUrl,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
@@ -1293,6 +1336,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
     Value<String>? sourcePath,
     Value<String?>? irJson,
     Value<String?>? tuning,
+    Value<String?>? noteUrl,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
   }) {
@@ -1303,6 +1347,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
       sourcePath: sourcePath ?? this.sourcePath,
       irJson: irJson ?? this.irJson,
       tuning: tuning ?? this.tuning,
+      noteUrl: noteUrl ?? this.noteUrl,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -1329,6 +1374,9 @@ class ScoresCompanion extends UpdateCompanion<Score> {
     if (tuning.present) {
       map['tuning'] = Variable<String>(tuning.value);
     }
+    if (noteUrl.present) {
+      map['note_url'] = Variable<String>(noteUrl.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -1347,6 +1395,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
           ..write('sourcePath: $sourcePath, ')
           ..write('irJson: $irJson, ')
           ..write('tuning: $tuning, ')
+          ..write('noteUrl: $noteUrl, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -1914,6 +1963,7 @@ typedef $$ScoresTableCreateCompanionBuilder = ScoresCompanion Function({
   required String sourcePath,
   Value<String?> irJson,
   Value<String?> tuning,
+  Value<String?> noteUrl,
   Value<DateTime> createdAt,
   Value<DateTime> updatedAt,
 });
@@ -1924,6 +1974,7 @@ typedef $$ScoresTableUpdateCompanionBuilder = ScoresCompanion Function({
   Value<String> sourcePath,
   Value<String?> irJson,
   Value<String?> tuning,
+  Value<String?> noteUrl,
   Value<DateTime> createdAt,
   Value<DateTime> updatedAt,
 });
@@ -1964,6 +2015,11 @@ class $$ScoresTableFilterComposer
 
   ColumnFilters<String> get tuning => $composableBuilder(
     column: $table.tuning,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get noteUrl => $composableBuilder(
+    column: $table.noteUrl,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2017,6 +2073,11 @@ class $$ScoresTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get noteUrl => $composableBuilder(
+    column: $table.noteUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -2059,6 +2120,9 @@ class $$ScoresTableAnnotationComposer
   GeneratedColumn<String> get tuning =>
       $composableBuilder(column: $table.tuning, builder: (column) => column);
 
+  GeneratedColumn<String> get noteUrl =>
+      $composableBuilder(column: $table.noteUrl, builder: (column) => column);
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -2100,6 +2164,7 @@ class $$ScoresTableTableManager
                 Value<String> sourcePath = const Value.absent(),
                 Value<String?> irJson = const Value.absent(),
                 Value<String?> tuning = const Value.absent(),
+                Value<String?> noteUrl = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
               }) => ScoresCompanion(
@@ -2109,6 +2174,7 @@ class $$ScoresTableTableManager
                 sourcePath: sourcePath,
                 irJson: irJson,
                 tuning: tuning,
+                noteUrl: noteUrl,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
@@ -2120,6 +2186,7 @@ class $$ScoresTableTableManager
                 required String sourcePath,
                 Value<String?> irJson = const Value.absent(),
                 Value<String?> tuning = const Value.absent(),
+                Value<String?> noteUrl = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
               }) => ScoresCompanion.insert(
@@ -2129,6 +2196,7 @@ class $$ScoresTableTableManager
                 sourcePath: sourcePath,
                 irJson: irJson,
                 tuning: tuning,
+                noteUrl: noteUrl,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),

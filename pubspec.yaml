@@ -54,6 +54,8 @@ dependencies:
   # GP5 导入：元数据按 GBK 解码。gbk_codec 0.4.0 SDK 约束 <3.0.0 无法在 Dart 3
   # 解析，用 enough_convert 的 GbkCodec（fast_gbk 分支，零运行时依赖）。
   enough_convert: ^1.7.1
+  url_launcher: ^6.3.3
+  lpinyin: ^2.0.3
 
 dev_dependencies:
   flutter_test:

@@ -21,11 +21,35 @@ class ScoreRepository {
   final ScoreFiles files;
   final PdfRasterizer rasterizer;
 
-  /// 默认路径工厂：`<support>/scores` 为曲谱根（与 SQLite 同目录）。
+  /// 默认路径工厂：曲谱根 = `<数据根>/scores`（2026-11-03 迁移，与
+  /// SQLite 共用 resolveDataRoot 的候选链与兜底——Defender 对无签名
+  /// exe 封锁 C:\Users 全域写，exe 旁 data 目录兜底）。历史
+  /// AppData\...\scores 存在则一次性迁入（保曲谱文件）。
   static Future<ScoreRepository> createDefault(AppDatabase db) async {
-    final dir = await getApplicationSupportDirectory();
-    return ScoreRepository(
-        db, ScoreFiles(Directory(p.join(dir.path, 'scores'))));
+    final root = await resolveDataRoot();
+    final scoresRoot = Directory(p.join(root.path, 'scores'));
+    // 一次性迁移历史曲谱文件（AppData → 数据根）。**跨盘迁移用复制**
+    ///（C:→D: 的 renameSync 会抛跨卷异常）。
+    final legacyDir = await getApplicationSupportDirectory();
+    final legacyRoot = Directory(p.join(legacyDir.path, 'scores'));
+    try {
+      if (legacyRoot.existsSync()) {
+        for (final e in legacyRoot.listSync()) {
+          if (e is! Directory) continue;
+          final name = p.basename(e.path);
+          final dest = Directory(p.join(scoresRoot.path, name));
+          if (dest.existsSync()) continue; // 已迁过
+          for (final f in e.listSync(recursive: true)) {
+            if (f is! File) continue;
+            final rel = p.relative(f.path, from: e.path);
+            final df = File(p.join(dest.path, rel));
+            df.parent.createSync(recursive: true);
+            f.copySync(df.path);
+          }
+        }
+      }
+    } catch (_) {} // 迁移失败（源不可读）：新库照常工作
+    return ScoreRepository(db, ScoreFiles(scoresRoot));
   }
 
   /// 支持的曲谱图片扩展名（小写、无点）：repository 校验与 UI 文件夹过滤共用。
@@ -91,6 +115,33 @@ class ScoreRepository {
       await files.delete(id);
       rethrow;
     }
+  }
+
+  /// 批量导入（2026-11-03 走查三件套）：多文件逐个 importScore（每文件
+  /// 独立曲谱条目，标题取文件名去扩展名），返回成功条数。onProgress 参数
+  /// =（已完成数, 总数, 当前文件名, 失败信息?）——**开始处理每个文件前
+  /// 也回调一次**（dsh 复测 P1：大 PDF 转图期间进度不冻结在上一个文件），
+  /// 失败不中断批次（结果汇总由调用方展示）。回调移出 try：回调自身
+  /// 抛异常不会被误计成导入失败。
+  Future<int> importFiles(
+    List<File> sources, {
+    void Function(int done, int total, String name, String? error)? onProgress,
+  }) async {
+    var ok = 0;
+    for (var i = 0; i < sources.length; i++) {
+      final f = sources[i];
+      final name = p.basename(f.path).replaceFirst(RegExp(r'\.[^.]+$'), '');
+      onProgress?.call(i, sources.length, name, null); // 开始前
+      String? error;
+      try {
+        await importScore(title: name, source: f);
+        ok++;
+      } catch (e) {
+        error = e.toString();
+      }
+      onProgress?.call(i + 1, sources.length, name, error); // 结束后
+    }
+    return ok;
   }
 
   /// 自然排序比较：数字段按数值、文本段按字典序（大小写不敏感）。
@@ -190,5 +241,19 @@ class ScoreRepository {
     await (_db.update(_db.scores)..where((s) => s.id.equals(id))).write(
         ScoresCompanion(
             irJson: Value(irJson), updatedAt: Value(DateTime.now())));
+  }
+
+  /// 链接备注回写（2026-11-03 走查三件套）：null = 清除备注。
+  Future<void> updateNoteUrl(int id, String? url) async {
+    await (_db.update(_db.scores)..where((s) => s.id.equals(id))).write(
+        ScoresCompanion(
+            noteUrl: Value(url), updatedAt: Value(DateTime.now())));
+  }
+
+  /// 重命名回写（2026-11-03 用户需求）：非空/无空格/同类型唯一性校验
+  /// 由 UI 层负责（需要全列表上下文，repo 不重复查库）。
+  Future<void> updateTitle(int id, String title) async {
+    await (_db.update(_db.scores)..where((s) => s.id.equals(id))).write(
+        ScoresCompanion(title: Value(title), updatedAt: Value(DateTime.now())));
   }
 }

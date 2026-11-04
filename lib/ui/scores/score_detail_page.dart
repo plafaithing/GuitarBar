@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../audio/sample_bank.dart';
 import '../../audio/sample_player.dart';
@@ -14,6 +15,7 @@ import '../../core/music/builtin_tunings.dart';
 import '../../core/score/score_ir.dart';
 import '../../core/score/score_repository.dart';
 import '../../data/database.dart';
+import '../gbar_background.dart';
 import '../theme.dart';
 import 'note_edit_sheet.dart';
 import 'play_bar.dart';
@@ -276,14 +278,17 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     final linearBeat = m * beatsPerBar + n.beat;
     final seconds = linearBeat * 60.0 / ir.tempo;
     final active = _activePlayer;
+    // 精确定位到点击音符（2026-11-03 走查：停止/暂停后点音总是从所在
+    // 小节开头播——startSecondsForMeasure 只有小节粒度，丢了小节内
+    // 拍位）。展开结构谱：小节首次遍次起点 + 小节内拍偏移；线性谱：
+    // 线性秒。暂停/停止/播放中三种状态一致用精确位置。
+    final start = active.startSecondsForBeat(m, n.beat);
     if (active.playing || active.paused) {
-      // 播放中：展开轴定位（结构谱），否则线性秒。
-      final start = active.startSecondsForMeasure(m);
       await active.seekToSecond(start ?? seconds);
       if (mounted) setState(() {});
       return;
     }
-    await _togglePlay(startAt: active.startSecondsForMeasure(m) ?? seconds);
+    await _togglePlay(startAt: start ?? seconds);
   }
 
   /// 进度条拖动定位（松手回调）：播放/暂停中即时 seek；未播放从该处起播。
@@ -356,15 +361,133 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     if (mounted) setState(() {});
   }
 
+  /// 打开链接备注（2026-11-03 走查三件套）：系统默认浏览器。
+  /// 只放行 http/https 且 host 非空（dsh 复测：`https:foo`/`https://`
+  /// 无主机也该拒）；launchUrl 失败除返回 false 外还可能抛
+  /// PlatformException（dsh P2-3），一并兜底。
+  Future<void> _openNoteUrl() async {
+    final url = _row?.noteUrl;
+    if (url == null || url.isEmpty) return;
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !(uri.scheme == 'http' || uri.scheme == 'https') ||
+        uri.host.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('链接无效：$url')));
+      }
+      return;
+    }
+    bool launched;
+    try {
+      launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e, st) {
+      // 全捕获（不用 on Exception）：UnimplementedError 等 Error 子类
+      // on Exception 接不住 → 用户实测"点击后没有反应"无任何提示。
+      // 编程错误（StateError 等）同时上报 debug 日志（dsh 复测：不能
+      // 只降级成 SnackBar 而在调试中消失）；用户看通用文案。
+      FlutterError.reportError(FlutterErrorDetails(
+          exception: e, stack: st, library: 'score_detail_page',
+          context: ErrorDescription('launchUrl')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('无法打开链接（系统未响应）')));
+      }
+      return;
+    }
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('无法打开链接：$url')));
+    }
+  }
+
+  /// 编辑链接备注（顶部栏按钮 → 对话框输入，留空保存 = 清除）。
+  Future<void> _editNoteUrl() async {
+    final row = _row;
+    final repo = _repo;
+    if (row == null || repo == null || !mounted) return;
+    final ctrl = TextEditingController(text: row.noteUrl ?? '');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('链接备注'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+              labelText: '网址（教学/视频，留空清除）',
+              hintText: 'https://…'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('保存')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    var url = ctrl.text.trim();
+    // 注：不在 pop 返回后 dispose（对话框退出动画仍引用它）——同
+    // _renameScore 的权衡，正规修法局部 StatefulWidget，此处不引入。
+    // 无 scheme 自动补 https://（dsh P2-4：用户输入 "bilibili.com/xxx"
+    // 直接入库会打不开）；scheme 判断大小写不敏感（HTTP:// 不得被
+    // 二次拼接成 https://HTTP:// 坏链接，dsh 复测 P3）。
+    final lower = url.toLowerCase();
+    if (url.isNotEmpty &&
+        !lower.startsWith('http://') &&
+        !lower.startsWith('https://')) {
+      url = 'https://$url';
+    }
+    try {
+      await repo.updateNoteUrl(row.id, url.isEmpty ? null : url);
+    } catch (e) {
+      // 写库失败（锁/盘）可见化，_row 保持旧值不误显新链接。
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('保存失败：$e')));
+      }
+      return;
+    }
+    try {
+      final fresh = await repo.getScore(row.id);
+      if (mounted) setState(() => _row = fresh);
+    } catch (_) {} // 回读失败不影响已写入的结果
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
     return Scaffold(
-      backgroundColor: p.ground,
-      appBar: AppBar(title: Text(_row?.title ?? '曲谱')),
-      body: (_pages == null)
-          ? const Center(child: CircularProgressIndicator())
-          : LayoutBuilder(builder: (ctx, box) {
+      // v2：透明 Scaffold + 统一光晕背景层（独立路由，自带外壳）。
+      backgroundColor: Colors.transparent,
+      appBar: AppBar(title: Text(_row?.title ?? '曲谱'), actions: [
+        // 链接备注（2026-11-03 走查三件套）：有链接先显"打开"，编辑钮
+        // 常驻（无备注 = 添加图标，有备注 = 编辑图标）。行未加载时隐藏
+        //（dsh P3：点了没反应像坏掉）。
+        if (_row != null) ...[
+          if ((_row?.noteUrl ?? '').isNotEmpty)
+            IconButton(
+                tooltip: '打开备注链接',
+                icon: const Icon(Icons.open_in_new, size: 20),
+                onPressed: _openNoteUrl),
+          IconButton(
+              tooltip: (_row?.noteUrl ?? '').isEmpty ? '添加链接备注' : '编辑链接备注',
+              icon: Icon(
+                  (_row?.noteUrl ?? '').isEmpty
+                      ? Icons.note_add_outlined
+                      : Icons.edit_note,
+                  size: 22),
+              onPressed: _editNoteUrl),
+          const SizedBox(width: 8),
+        ],
+      ]),
+      body: GbarBackground(
+        child: (_pages == null)
+            ? const Center(child: CircularProgressIndicator())
+            : LayoutBuilder(builder: (ctx, box) {
               final wide = box.maxWidth >= 900; // 与 root.dart 宽窄阈值一致
               final isGtp = _row?.sourceType == 'gtp';
               final viewer = SourceViewer(pagePngs: _pages!);
@@ -444,7 +567,7 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                   ),
                 ]),
               );
-            }),
+            })), // LayoutBuilder + GbarBackground child 闭合
       // 播放控制条：有谱面数据才显示；进度由 position notifier 50ms 驱动，
       // playing/paused 态经 setState 切换（_togglePlay/_stopPlay）。
       bottomSheet: (_ir == null)

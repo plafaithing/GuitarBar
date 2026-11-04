@@ -53,4 +53,68 @@ void main() {
     expect(find.text('测试曲'), findsOneWidget);
     expect(find.textContaining('查看器'), findsOneWidget);
   });
+
+  // 重命名（2026-11-03 用户需求）：保存时校验非空/无空格/同类型唯一。
+  // 对话框输入框要限定在 AlertDialog 内——页面背后还有搜索框 TextField。
+  Finder dialogField(WidgetTester tester) => find.descendant(
+      of: find.byType(AlertDialog), matching: find.byType(TextField));
+
+  Future<void> seedTwo(WidgetTester tester, AppDatabase db) async {
+    await db.into(db.scores).insert(ScoresCompanion.insert(
+        title: '甲曲', sourceType: 'image', sourcePath: ''));
+    await db.into(db.scores).insert(ScoresCompanion.insert(
+        title: '乙曲', sourceType: 'image', sourcePath: ''));
+  }
+
+  testWidgets('重命名：同类型重名被拒并显示错误', (tester) async {
+    final (db, tmp) = makeEnv();
+    await seedTwo(tester, db);
+    await pumpPage(tester, db, tmp);
+    await tester.pumpAndSettle();
+    // 列表按拼音首字母分组排序：第一行是甲曲（jia → J 组）。改成乙曲
+    // → 同类型重名。
+    await tester.tap(find.byIcon(Icons.more_horiz).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('重命名'));
+    await tester.pumpAndSettle();
+    await tester.enterText(dialogField(tester), '乙曲');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('同类型已有同名曲谱'), findsOneWidget);
+    // 对话框未关（错误留在窗内）。
+    expect(find.text('重命名'), findsWidgets);
+  });
+
+  testWidgets('重命名：内部空格允许、两侧空格 trim 后保存', (tester) async {
+    final (db, tmp) = makeEnv();
+    await seedTwo(tester, db);
+    await pumpPage(tester, db, tmp);
+    await tester.pumpAndSettle();
+    // 第一行（乙曲，id 倒序）：内部空格合法；两侧空格 trim 掉。
+    await tester.tap(find.byIcon(Icons.more_horiz).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('重命名'));
+    await tester.pumpAndSettle();
+    await tester.enterText(dialogField(tester), '  乙 曲  ');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.text('乙 曲'), findsOneWidget); // trim 后显示，无错误拦截
+  });
+
+  testWidgets('重命名：合法名字保存生效', (tester) async {
+    final (db, tmp) = makeEnv();
+    await seedTwo(tester, db);
+    await pumpPage(tester, db, tmp);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.more_horiz).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('重命名'));
+    await tester.pumpAndSettle();
+    await tester.enterText(dialogField(tester), '甲曲_v2');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.text('甲曲_v2'), findsOneWidget);
+    final rows = await db.select(db.scores).get();
+    expect(rows.firstWhere((r) => r.title == '甲曲_v2').title, '甲曲_v2');
+  });
 }

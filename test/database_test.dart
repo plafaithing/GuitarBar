@@ -133,4 +133,38 @@ void main() {
         await (db.select(db.scores)..where((s) => s.id.equals(scoreId))).getSingle();
     expect(score.title, '迁移后新曲');
   });
+
+  // —— v2→v3 迁移（2026-11-03 noteUrl 列；dsh 复测 P2-5：真实用户路径）——
+  test('v2→v3 迁移：scores 行保留且 noteUrl 列可用', () async {
+    final tempDir = await Directory.systemTemp.createTemp('guitarbar_mig_v3');
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final fixturePath = p.join(tempDir.path, 'guitarbar.sqlite');
+    // v2 形态 fixture：scores 表无 note_url 列（v2 用户库的真实结构）。
+    final raw = sqlite3.open(fixturePath);
+    raw.execute('CREATE TABLE "scores" '
+        '("id" INTEGER PRIMARY KEY AUTOINCREMENT, "title" TEXT NOT NULL, '
+        '"source_type" TEXT NOT NULL, "source_path" TEXT NOT NULL, '
+        '"ir_json" TEXT NULL, "tuning" TEXT NULL, '
+        '"created_at" TEXT NOT NULL, "updated_at" TEXT NOT NULL)');
+    raw.execute(
+        'INSERT INTO scores (title, source_type, source_path, created_at, updated_at) '
+        'VALUES (?, ?, ?, ?, ?)',
+        ['旧曲', 'gtp', 'scores/1/source.gpx', _isoLocal(DateTime(2026, 11, 1)),
+         _isoLocal(DateTime(2026, 11, 1))]);
+    raw.execute('PRAGMA user_version = 2');
+    raw.close();
+
+    final db = AppDatabase(NativeDatabase(File(fixturePath)));
+    addTearDown(db.close);
+
+    // ① 旧行保留
+    final row = await db.select(db.scores).getSingle();
+    expect(row.title, '旧曲');
+    expect(row.noteUrl, isNull); // 补列后默认 null
+    // ② 新列可写（迁移目的）
+    await (db.update(db.scores)..where((s) => s.id.equals(row.id)))
+        .write(const ScoresCompanion(noteUrl: Value('https://example.com')));
+    final after = await db.select(db.scores).getSingle();
+    expect(after.noteUrl, 'https://example.com');
+  });
 }

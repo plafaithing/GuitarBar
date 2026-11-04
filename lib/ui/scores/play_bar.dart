@@ -69,6 +69,7 @@ class _PlayBarState extends State<PlayBar> {
       value: rates.contains(w.rate) ? w.rate : 1.0,
       underline: const SizedBox.shrink(),
       isDense: true,
+      dropdownColor: p.panel,
       items: [
         for (final r in rates)
           DropdownMenuItem(
