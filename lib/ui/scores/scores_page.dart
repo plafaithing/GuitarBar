@@ -115,13 +115,20 @@ class _ScoresPageState extends State<ScoresPage> {
   Future<void> _importFile() async {
     final repo = _repo;
     if (repo == null || _busy) return;
+    // 上次导入目录记忆（2026-11-04 用户需求）：打开位置 = 上次成功导入处。
+    final initialDir = await repo.lastImportDir();
     // 多选批量导入（2026-11-03 走查三件套）：单文件继续走原流程。
-    final files = await openFiles(acceptedTypeGroups: [
-      const XTypeGroup(
-          label: '乐谱文件（GTP/PDF/图片）',
-          extensions: ['gpx', 'gp5', 'pdf', 'png', 'jpg', 'jpeg', 'webp']),
-    ]);
+    final files = await openFiles(
+        initialDirectory: initialDir,
+        acceptedTypeGroups: [
+          const XTypeGroup(
+              label: '乐谱文件（GTP/PDF/图片）',
+              extensions: ['gpx', 'gp5', 'pdf', 'png', 'jpg', 'jpeg', 'webp']),
+        ]);
     if (files.isEmpty || !mounted) return;
+    // 目录记忆：取第一个文件所在文件夹（多选跨目录时以首个为准）。
+    final firstDir = p.dirname(files.first.path);
+    if (firstDir.isNotEmpty) unawaited(repo.saveLastImportDir(firstDir));
     if (files.length > 1) {
       await _importBatch(files.map((f) => File(f.path)).toList());
       return;
@@ -181,8 +188,10 @@ class _ScoresPageState extends State<ScoresPage> {
   Future<void> _importFolder() async {
     final repo = _repo;
     if (repo == null || _busy) return;
-    final dirPath = await getDirectoryPath();
+    final initialDir = await repo.lastImportDir();
+    final dirPath = await getDirectoryPath(initialDirectory: initialDir);
     if (dirPath == null || !mounted) return;
+    unawaited(repo.saveLastImportDir(dirPath)); // 文件夹导入：记忆其本身
     final images = Directory(dirPath)
         .listSync()
         .whereType<File>()

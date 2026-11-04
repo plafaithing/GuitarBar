@@ -256,4 +256,20 @@ class ScoreRepository {
     await (_db.update(_db.scores)..where((s) => s.id.equals(id))).write(
         ScoresCompanion(title: Value(title), updatedAt: Value(DateTime.now())));
   }
+
+  /// 上次导入目录（2026-11-04 用户需求：文件选择器记住上次位置）。
+  /// 存 settings 表（key: lastImportDir）；无记录返回 null（走系统默认）。
+  Future<String?> lastImportDir() async {
+    final row = await (_db.select(_db.settings)
+          ..where((t) => t.key.equals('lastImportDir')))
+        .getSingleOrNull();
+    final v = row?.value;
+    return (v == null || v.isEmpty || !Directory(v).existsSync()) ? null : v;
+  }
+
+  /// 导入成功后记录目录（文件取所在文件夹 / 文件夹导入取其本身）。
+  Future<void> saveLastImportDir(String dir) async {
+    await _db.into(_db.settings).insertOnConflictUpdate(
+        SettingsCompanion.insert(key: 'lastImportDir', value: dir));
+  }
 }
