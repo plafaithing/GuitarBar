@@ -386,6 +386,29 @@ void _readVoice(
             .any((p) =>
                 p.getAttribute('name') == 'Tremolo' ||
                 p.getAttribute('name') == 'TremoloPicking');
+    // 摇把（2026-11-04 gp8 补完）：Beat 属性 WhammyBarOrigin/Middle/
+    // DestinationValue（Float，半音）。三点线性 v1 只取首尾（Like A Star
+    // 的 1257 处属性全 0.0 是 gp8 导出占位——origin/dest 均为 0 时不算
+    // 效果，不写 IR）。
+    double? wOrigin;
+    double? wDest;
+    if (beatProps != null) {
+      for (final prop in beatProps.findElements('Property')) {
+        switch (prop.getAttribute('name')) {
+          case 'WhammyBarOriginValue':
+            wOrigin = double.tryParse(_childText(prop, 'Float') ?? '');
+            break;
+          case 'WhammyBarDestinationValue':
+            wDest = double.tryParse(_childText(prop, 'Float') ?? '');
+            break;
+        }
+      }
+    }
+    // 双 0 才是 gp8 导出占位（origin 从 0 起的合法摇把如 0→-1.5 要放行）。
+    final whammy = (wOrigin != null && wDest != null &&
+            !(wOrigin == 0.0 && wDest == 0.0))
+        ? [wOrigin, wDest]
+        : null;
     for (final noteId in _refs(_childText(beat, 'Notes'))) {
       final noteEl = notesById[noteId];
       if (noteEl == null) {
@@ -428,6 +451,8 @@ void _readVoice(
           wah: wah,
           tremolo: tremolo,
           velocity: velocity,
+          bend: marks.bend,
+          whammy: whammy,
         ));
         // 链式 tie（dest 再连下一 dest）时 dest 也登记为 origin（实测无此形态，兜底）。
         tieOrigins[(gpString, fret)] = (out, out.length - 1);
@@ -474,6 +499,8 @@ void _readVoice(
         wah: wah,
         tremolo: tremolo,
         velocity: velocity,
+        bend: marks.bend,
+        whammy: whammy,
       ));
       tieOrigins[(gpString, fret)] = (out, out.length - 1);
     }
@@ -570,6 +597,7 @@ class _NoteMarks {
   bool staccato = false;
   bool trill = false;
   String? slide;
+  List<BendPointIr>? bend; // 音符弯音曲线（gpif Note 属性 Bend）
 }
 
 bool _propEnabled(XmlElement note, String name) => note
@@ -621,6 +649,20 @@ _NoteMarks _noteMarks(XmlElement note) {
           } else if (flags & 0x01 != 0) {
             m.slide = 'shift';
           }
+          break;
+        case 'Bend':
+          // 弯音曲线（2026-11-04 gp8 补完）：Property 下 Point 列
+          //（宽容解析，Curve 包裹与否都取到）。gpif/alphaTab 语义：
+          // x ∈ 0-60（拍内 1/60 步）→ offset = x/60；y 单位 1/4 半音
+          // → value = y/4。系数待真实谱校准（曲库暂无 Bend 样本）。
+          final pts = <BendPointIr>[];
+          for (final pt in prop.findAllElements('Point')) {
+            final x = double.tryParse(pt.getAttribute('x') ?? '');
+            final y = double.tryParse(pt.getAttribute('y') ?? '');
+            if (x == null || y == null) continue;
+            pts.add(BendPointIr(offset: (x / 60).clamp(0.0, 1.0), value: y / 4));
+          }
+          if (pts.length >= 2) m.bend = pts;
           break;
       }
     }

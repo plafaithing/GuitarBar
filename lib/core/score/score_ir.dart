@@ -229,6 +229,14 @@ List<int> expandMeasures(List<MeasureIr> measures) {
   return out;
 }
 
+/// 弯音曲线点（2026-11-04 gp8 补完）：offset = 音符时值内位置 0-1，
+/// value = 半音（gpif y/4）。
+class BendPointIr {
+  const BendPointIr({required this.offset, required this.value});
+  final double offset;
+  final double value;
+}
+
 class NoteIr {
   const NoteIr({
     required this.beat,
@@ -261,6 +269,8 @@ class NoteIr {
     this.wah = false,
     this.tremolo = false,
     this.velocity,
+    this.bend,
+    this.whammy,
   });
 
   final double beat; // 小节内拍位置，0 起
@@ -318,6 +328,17 @@ class NoteIr {
   final bool tremolo;
   final int? velocity;
 
+  // 弯音（2026-11-04 gp8 编辑面板播放能力补完；样本缺口——曲库三 gpx +
+  // 三 gp5 探针均无 Bend 数据，Like A Star 的 1257 处 Whammy 属性全为
+  // 0.0 占位。解析按 gpif/alphaTab 语义实现，合成 fixture 验证，换算
+  // 系数待真实谱校准）：
+  // - bend：音符弯音曲线（gpif Note 属性 Bend 的 Curve 点列，x 0-60 →
+  //   0-1 拍内位置，y 单位 1/4 半音 → value 半音 = y/4）
+  // - whammy：拍级摇把 [origin, destination]（半音，gpif Beat 属性
+  //   WhammyBarOrigin/DestinationValue 的 Float 值；全 0 不写入）
+  final List<BendPointIr>? bend;
+  final List<double>? whammy;
+
   /// 有标注才写字段：无标注音符的 JSON 与旧格式一致（存量 irJson 兼容）。
   Map<String, dynamic> toJson() => {
         'beat': beat,
@@ -350,6 +371,9 @@ class NoteIr {
         if (wah) 'wah': true,
         if (tremolo) 'tremolo': true,
         if (velocity != null) 'velocity': velocity,
+        if (bend != null)
+          'bend': [for (final p in bend!) [p.offset, p.value]],
+        if (whammy != null) 'whammy': whammy,
       };
 
   static NoteIr fromJson(Map<String, dynamic> j) => NoteIr(
@@ -383,6 +407,17 @@ class NoteIr {
         wah: j['wah'] as bool? ?? false,
         tremolo: j['tremolo'] as bool? ?? false,
         velocity: (j['velocity'] as num?)?.toInt(),
+        bend: j['bend'] == null
+            ? null
+            : [
+                for (final p in j['bend'] as List)
+                  BendPointIr(
+                      offset: (p[0] as num).toDouble(),
+                      value: (p[1] as num).toDouble()),
+              ],
+        whammy: (j['whammy'] as List?)
+            ?.map((v) => (v as num).toDouble())
+            .toList(),
       );
 
   NoteIr copyWith({

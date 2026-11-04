@@ -51,3 +51,11 @@ GP8 GPCore.dll strings 侦察确认 gpif 属性名全集（含 LegatoOrigin/Tril
 5. [x] PDF 渲染 Isolate 化（前一轮"点击导入卡死"根因，已完成）
 6. [ ] dsh 交叉复测（后台中）→ 重建 exe → 用户验收
 - UI 重设计解读：本轮只做曲谱库页视觉（控件圆角/分组头/索引条），全局主题未动；用户要更激进 reactbits 风格再扩
+
+## 二轮走查三件（2026-11-04 用户指令：2/5/6）
+
+1. [x] tab_view 614 处 U+FFFD 乱码注释：Dart 脚本截尾 130 行，0 残留（脚本用完即删）
+2. [x] 文件选择器记住上次导入目录：settings lastImportDir + openFiles/getDirectoryPath initialDirectory
+3. [x] Bend/Whammy 解析+播放（gp8 补完）：IR BendPointIr/whammy、gpif 解析（x/60、y/4 半音；双 0 占位过滤）、播放 PitchShift ramp 铺满时值。**样本缺口**：曲库三 gpx+三 gp5 无 Bend、Like A Star 1257 处 Whammy 全 0.0 占位——合成 fixture 验证，系数待真实谱校准
+- 启动 5s 卡顿：用户反馈未再现，挂起
+- 274 测试全绿

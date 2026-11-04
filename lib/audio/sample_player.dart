@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 // AudioSource/SoundHandle 类型来自 soloud 包（sound_engine 未重导出）。
@@ -310,6 +311,22 @@ class SampleScorePlayer implements ScorePlayback {
               string: n.string,
               absBeat: absBeat,
               arpeggio: n.arpeggio));
+          // 弯音/摇把（2026-11-04 gp8 补完）：bend 曲线首尾优先，
+          // 否则拍级摇把 origin→destination。首尾相等（全 0 占位）不挂。
+          {
+            final pFrom = n.bend != null && n.bend!.isNotEmpty
+                ? n.bend!.first.value
+                : (n.whammy != null ? n.whammy![0] : null);
+            final pTo = n.bend != null && n.bend!.isNotEmpty
+                ? n.bend!.last.value
+                : (n.whammy != null ? n.whammy![1] : null);
+            if (pFrom != null &&
+                pTo != null &&
+                (pFrom - pTo).abs() > 1e-6) {
+              _pending.last.pitchFrom = pFrom;
+              _pending.last.pitchTo = pTo;
+            }
+          }
           final e = absBeat + n.duration;
           if (e > endBeat) endBeat = e;
         }
@@ -429,7 +446,20 @@ class SampleScorePlayer implements ScorePlayback {
         );
         _voices.add(h);
         // 滑音起音：注册 PitchShift ramp（终点速度接线过才 ramp）。
-        if (e.slide && e.slideEndSpeed != null) {
+        if (e.pitchFrom != null && e.pitchTo != null) {
+          // 弯音/摇把（2026-11-04 gp8 补完）：曲线铺满音符时值，
+          // 50ms 步进线性推进（多点曲线 v1 以首尾两点近似——真实谱
+          // 校准待遇）。半音 → PitchShift 频率比 2^(s/12)。
+          final dur = (e.noteSeconds / _rate).clamp(0.1, 2.0);
+          final steps = (dur * 1000 / 50).round().clamp(2, 20);
+          _slides.add(_SlideRamp(
+              src: src,
+              handle: h,
+              from: math.pow(2.0, e.pitchFrom! / 12).toDouble(),
+              to: math.pow(2.0, e.pitchTo! / 12).toDouble(),
+              step: 0,
+              steps: steps));
+        } else if (e.slide && e.slideEndSpeed != null) {
           final steps =
               ((e.noteSeconds / _rate).clamp(0.08, 0.45) * 1000 / 50)
                   .round()
@@ -554,6 +584,10 @@ class _PendingEvent {
   final int string;
   final double absBeat;
   final String? arpeggio; // 琶音方向（'up'|'down'，依次发声用）
+  // 弯音/摇把（2026-11-04 gp8 补完）：起止半音（null = 无）。
+  // bend（音级曲线首尾）优先于 whammy（拍级 origin→destination）。
+  double? pitchFrom;
+  double? pitchTo;
   AudioSource? src;
 }
 
