@@ -10,6 +10,7 @@ import '../../core/music/chord_catalog.dart';
 import '../../core/music/chord_parser.dart';
 import '../../core/music/fingering.dart';
 import '../../state/tuning_state.dart';
+import '../../ui/gbar_background.dart';
 import '../../ui/theme.dart';
 import '../../ui/tuner/preset_editor.dart';
 import '../../ui/tuner/preset_sheet.dart';
@@ -197,6 +198,7 @@ class _ChordPageState extends State<ChordPage> {
             key: const Key('chord-cat'),
             initialValue: _categoryName,
             decoration: const InputDecoration(labelText: '和弦分类'),
+            dropdownColor: Theme.of(context).colorScheme.surfaceContainer,
             items: [
               for (final cat in chordCategories)
                 DropdownMenuItem(value: cat.name, child: Text(cat.name)),
@@ -210,6 +212,7 @@ class _ChordPageState extends State<ChordPage> {
             key: const Key('chord-type'),
             initialValue: _suffix,
             decoration: const InputDecoration(labelText: '和弦类型'),
+            dropdownColor: Theme.of(context).colorScheme.surfaceContainer,
             items: [
               for (final sub in category.subtypes)
                 DropdownMenuItem(
@@ -224,6 +227,7 @@ class _ChordPageState extends State<ChordPage> {
             key: const Key('chord-root'),
             initialValue: _rootPc,
             decoration: const InputDecoration(labelText: '根音'),
+            dropdownColor: Theme.of(context).colorScheme.surfaceContainer,
             items: [
               for (final e in rootNames.entries)
                 DropdownMenuItem(value: e.value, child: Text(e.key)),
@@ -245,8 +249,10 @@ class _ChordPageState extends State<ChordPage> {
     final palette = context.palette;
     final state = context.watch<TuningState>();
     return Scaffold(
+      // v2：透明 + 统一光晕背景层。
+      backgroundColor: Colors.transparent,
       appBar: AppBar(title: const Text('和弦库')),
-      body: Padding(
+      body: GbarBackground(child: Padding(
       padding: const EdgeInsets.all(24),
       child: Column(children: [
         // 模式切换：输入（乐手）/ 浏览（新手查阅，设计 §13.1）。
@@ -363,6 +369,7 @@ class _ChordPageState extends State<ChordPage> {
           ),
         ),
       ]),
+      ),
       ),
     );
   }

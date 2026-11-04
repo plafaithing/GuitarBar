@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../audio/metronome_engine.dart';
 import '../../audio/sound_engine.dart';
+import '../../ui/gbar_background.dart';
 import '../../ui/theme.dart';
 
 class MetronomePage extends StatefulWidget {
@@ -111,8 +112,10 @@ class _MetronomePageState extends State<MetronomePage> {
     final cfg = _engine.cfg;
     // 转盘直径：可用宽 0.9，上限 340（页面竖向预算内）。
     return Scaffold(
+      // v2：透明 + 统一光晕背景层。
+      backgroundColor: Colors.transparent,
       appBar: AppBar(title: const Text('节拍器')),
-      body: Padding(
+      body: GbarBackground(child: Padding(
       padding: const EdgeInsets.all(24),
       child: Column(children: [
         // T1 步进行：− / 大号 BPM / +，下方小字。
@@ -197,7 +200,7 @@ class _MetronomePageState extends State<MetronomePage> {
               child: DropdownButtonHideUnderline(
               child: DropdownButton<int>(
                 value: cfg.beatsPerBar,
-                dropdownColor: palette.surface,
+                dropdownColor: palette.panel,
                 elevation: 2,
                 borderRadius: BorderRadius.circular(8),
                 icon: Icon(Icons.expand_more, color: palette.ink),
@@ -267,6 +270,7 @@ class _MetronomePageState extends State<MetronomePage> {
               label: const Text('Tap 点速')),
         ]),
       ]),
+      ),
       ),
     );
   }

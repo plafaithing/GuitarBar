@@ -60,7 +60,8 @@ class _PresetSheetState extends State<PresetSheet> {
   Widget build(BuildContext context) {
     final p = context.palette;
     return Material(
-      color: p.surface,
+      // 浮层家族统一 panel 暖灰（2026-11-04 走查：白底与页面风格不符）。
+      color: p.panel,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: p.border),

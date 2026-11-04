@@ -1,12 +1,17 @@
 import 'dart:async' show unawaited;
-import 'dart:io' show exit;
+import 'dart:io' show Directory, File, FileMode, Platform;
+import 'dart:isolate' show Isolate;
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../core/hard_exit.dart';
+import '../core/watchdog.dart';
 import '../data/database.dart';
 import '../state/practice_timer.dart';
+import 'gbar_background.dart';
 import 'profile/profile_page.dart';
 import 'theme.dart';
 import 'toolbox/toolbox_page.dart';
@@ -59,14 +64,43 @@ class _RootPageState extends State<RootPage> with WindowListener {
   /// native 线程（soloud 音频/录音）优雅收尾拖 5-10s——exit(0) 不等
   /// VM/native 收尾；打卡已完成（drift WAL 崩溃安全），mic/引擎资源
   /// 由 OS 回收，无数据风险。
+  /// 关闭诊断日志（2026-11-04 用户实测：播放时/播放后关闭偶发卡死需
+  /// 手动杀进程）。追加到 exe 旁 data\close-log.txt；写失败静默（日志
+  /// 永不影响关闭本身）。
+  void _closeLog(String msg) {
+    try {
+      final dir = Directory(p.join(
+          File(Platform.resolvedExecutable).parent.path, 'data'));
+      File(p.join(dir.path, 'close-log.txt')).writeAsStringSync(
+          '${DateTime.now().toIso8601String()} $msg\n',
+          mode: FileMode.append);
+    } catch (_) {}
+  }
+
   @override
   void onWindowClose() async {
+    _closeLog('close: begin');
+    Watchdog.armExit(); // 武装关闭守护：2s 内进程必须消失，否则补刀强杀
     unawaited(windowManager.hide()); // 即时视觉关闭（ms 级）
+    _closeLog('close: hidden');
+    // 独立 isolate 保险丝（2026-11-04 实锤升级）：主 isolate 的 event
+    // loop 若被播放引擎的同步调用卡死，挂在其上的 Timer 一样不触发——
+    // spawn 的 isolate 独立计时，无论主线程死活 1.5s 后 exit(0) 杀整个
+    // 进程（dart:io exit 是进程级终止）。正常路径 stop 完成先行 exit，
+    // 本 isolate 随进程消亡。
+    unawaited(Isolate.spawn((_) async {
+      await Future<void>.delayed(const Duration(milliseconds: 1500));
+      hardExit(); // exit(0) 会挂在 native 终止序列（见 hard_exit.dart），必须强杀
+    }, null));
     try {
       await PracticeTimer.I.stop(note: '应用关闭时自动保存')
           .timeout(const Duration(milliseconds: 800));
-    } catch (_) {}
-    exit(0);
+      _closeLog('close: practice-timer saved');
+    } catch (_) {
+      _closeLog('close: practice-timer failed/timeout');
+    }
+    _closeLog('close: hard-exiting');
+    hardExit();
   }
 
   Future<void> _loadCollapsed() async {
@@ -108,6 +142,7 @@ class _RootPageState extends State<RootPage> with WindowListener {
           ),
       ]);
       return Scaffold(
+        backgroundColor: Colors.transparent,
         appBar: wide
             ? null
             : AppBar(
@@ -132,20 +167,23 @@ class _RootPageState extends State<RootPage> with WindowListener {
                   }),
                 ],
               ),
-        body: wide
-            ? Row(children: [
-                _SideNav(
-                  titles: _titles,
-                  icons: _icons,
-                  activeIcons: _activeIcons,
-                  activeIndex: _tab,
-                  collapsed: _collapsed,
-                  onSelect: (i) => setState(() => _tab = i),
-                  onToggleCollapse: _toggleCollapsed,
-                ),
-                Expanded(child: body),
-              ])
-            : body,
+        body: GbarBackground(
+          // v2 统一背景（光晕）只在此画一次；子页 Scaffold 全透明。
+          child: wide
+              ? Row(children: [
+                  _SideNav(
+                    titles: _titles,
+                    icons: _icons,
+                    activeIcons: _activeIcons,
+                    activeIndex: _tab,
+                    collapsed: _collapsed,
+                    onSelect: (i) => setState(() => _tab = i),
+                    onToggleCollapse: _toggleCollapsed,
+                  ),
+                  Expanded(child: body),
+                ])
+              : body,
+        ),
         bottomNavigationBar: wide
             ? null
             : Container(
@@ -299,31 +337,42 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final labelColor = selected ? context.palette.ink : context.palette.muted;
+    final p = context.palette;
+    final labelColor = selected ? p.ink : p.muted;
     final glyph = selected ? activeIcon : icon;
-    Widget child = Material(
-      color: selected ? context.palette.activePill : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
-      child: Semantics(
-        label: collapsed ? title : null,
-        selected: selected,
-        button: true,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: onTap,
-          child: SizedBox(
-            height: 36,
-            child: collapsed
-                ? Center(child: Icon(glyph, size: 20, color: context.palette.muted))
-                : Row(children: [
-                    const SizedBox(width: 8),
-                    Icon(glyph, size: 20, color: context.palette.muted),
-                    const SizedBox(width: 10),
-                    Text(
-                      title,
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: labelColor),
-                    ),
-                  ]),
+    Widget child = Container(
+      // v2 选中态：dataHue 微光药丸（透明底 + 光晕装饰语言），替代原灰药丸。
+      decoration: BoxDecoration(
+        color: selected ? p.dataHue.withValues(alpha: 0.10) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        border: selected
+            ? Border.all(color: p.dataHue.withValues(alpha: 0.28))
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: Semantics(
+          label: collapsed ? title : null,
+          selected: selected,
+          button: true,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onTap,
+            child: SizedBox(
+              height: 36,
+              child: collapsed
+                  ? Center(child: Icon(glyph, size: 20, color: labelColor))
+                  : Row(children: [
+                      const SizedBox(width: 8),
+                      Icon(glyph, size: 20, color: labelColor),
+                      const SizedBox(width: 10),
+                      Text(
+                        title,
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: labelColor),
+                      ),
+                    ]),
+            ),
           ),
         ),
       ),

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../core/vision/vision_client.dart';
 import '../../core/vision/vision_model.dart';
 import '../../data/database.dart';
+import '../gbar_background.dart';
 import '../theme.dart';
 
 /// 识谱模型配置：卡片列表，可增删改、单选启用、测试连接。
@@ -67,7 +68,8 @@ class _VisionModelsPageState extends State<VisionModelsPage> {
     final p = context.palette;
     final configs = _configs;
     return Scaffold(
-      backgroundColor: p.ground,
+      // v2：透明 + 统一光晕背景层。
+      backgroundColor: Colors.transparent,
       // 新建放右上角（零阴影）：FAB 自带 6dp 阴影，违反设计语言"静止零阴影"。
       appBar: AppBar(
         title: const Text('识谱模型'),
@@ -81,16 +83,17 @@ class _VisionModelsPageState extends State<VisionModelsPage> {
           ),
         ],
       ),
-      body: configs == null
-          ? const Center(child: CircularProgressIndicator())
-          : configs.isEmpty
-              ? Center(child: Text('还没有配置，点右上角新建（内置智谱模板）',
-                  style: TextStyle(color: p.muted)))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(24),
-                  itemCount: configs.length,
-                  itemBuilder: (ctx, i) {
-                    final c = configs[i];
+      body: GbarBackground(
+        child: configs == null
+            ? const Center(child: CircularProgressIndicator())
+            : configs.isEmpty
+                ? Center(child: Text('还没有配置，点右上角新建（内置智谱模板）',
+                    style: TextStyle(color: p.muted)))
+                : ListView.builder(
+                    padding: const EdgeInsets.all(24),
+                    itemCount: configs.length,
+                    itemBuilder: (ctx, i) {
+                      final c = configs[i];
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: Material(
@@ -146,6 +149,7 @@ class _VisionModelsPageState extends State<VisionModelsPage> {
                     );
                   },
                 ),
+      ),
     );
   }
 

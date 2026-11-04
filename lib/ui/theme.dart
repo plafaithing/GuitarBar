@@ -1,19 +1,24 @@
 import 'package:flutter/material.dart';
 
-/// GuitarBar 界面设计语言（achromatic-ledger 色彩账本风）。
+/// GuitarBar 界面设计语言（v2「aurora-dark」——2026-11-04 设计语言换代，
+/// 参考 reactbits.dev；原 achromatic-ledger 骨架规则保留）。
 ///
-/// 骨架无彩色：近黑主色、平面、静止零阴影；唯一的数据色 dataHue（玫瑰木琥珀）
-/// 只允许出现在数据元素上（调音音名/音分、弦钮检测态、琴头插画），
-/// 严禁用于按钮、导航、标签页等界面骨架。
+/// 骨架无彩：近黑主色、平面；唯一的数据色 dataHue（玫瑰木琥珀）允许出现在
+/// 数据元素**与光晕装饰**上（glowA/glowB 均为 dataHue 系派生，不引入新的
+/// 彩色家族），严禁把其他彩色用于按钮、导航、标签页等界面骨架。
 ///
-/// 圆角只有两档：卡片 8、控件 6。字重预算 400/500/600（700 留给日后最重要的数字）。
-/// 数字类文本一律 `FontFeature.tabularFigures()`（主题角色已内置，页面自绘
-/// 数字也要显式应用该特性）。
+/// reactbits 式落地（全产品统一，单一风格语言）：
+/// - 背景统一走 [GbarBackground]（ground 底 + dataHue 径向光晕 ×2），
+///   页面 Scaffold 一律透明，光晕随主题明暗调整强度（暗更亮、浅更淡）
+/// - 卡片/对话框/菜单圆角 12 + 细边框 + 微光阴影；控件（按钮/输入框/下拉）
+///   圆角 10；AppBar 透明融入背景
+/// - 字重预算 400/500/600（700 留给日后最重要的数字）。数字类文本一律
+///   `FontFeature.tabularFigures()`（主题角色已内置，页面自绘数字也要
+///   显式应用该特性）。
 ///
 /// 取色统一走 `context.palette.muted` 等（[GuitarBarPaletteContext]）：
-/// 深浅两套色板经 ThemeExtension 随 themeMode 切换。不再提供静态色常量——
-/// 静态浅色常量与主题色板并存必然漂移。与 BuildContext 无关的插画
-/// （如琴头固定木色）直接使用字面色。
+/// 深浅两套色板经 ThemeExtension 随 themeMode 切换。不再提供静态色常量。
+/// 与 BuildContext 无关的插画（如琴头固定木色）直接使用字面色。
 class GuitarBarPalette {
   const GuitarBarPalette({
     required this.ground,
@@ -31,6 +36,9 @@ class GuitarBarPalette {
     required this.pillPositiveBg,
     required this.pillPositiveInk,
     required this.panel,
+    required this.glowA,
+    required this.glowB,
+    required this.overlay,
   });
 
   /// 画布底色（浅：云杉暖白 / 暗：暖黑）
@@ -63,7 +71,7 @@ class GuitarBarPalette {
   /// 主按钮近黑（暗色下反白）
   final Color primary;
 
-  /// 唯一数据色（玫瑰木琥珀）—— 仅限数据元素，不得用于骨架
+  /// 唯一数据色（玫瑰木琥珀）—— 仅限数据元素与光晕装饰，不得引入新彩色
   final Color dataHue;
 
   /// 调到位的绿
@@ -78,10 +86,19 @@ class GuitarBarPalette {
   /// 正向药丸墨色
   final Color pillPositiveInk;
 
+  /// 主光晕色（dataHue 派生，自带 alpha）——GbarBackground 主光源
+  final Color glowA;
+
+  /// 次光晕色（冷调微光，对冲主光晕防大面积同色晕染）
+  final Color glowB;
+
+  /// 玻璃面板色（半透明 surface）：悬浮索引条/浮层等叠加在光晕上的元素
+  final Color overlay;
+
   /// 两套色板均为 const 单例，identity 比较即可区分（无需逐字段 ==）。
 }
 
-/// 浅色板（云杉暖白）
+/// 浅色板（云杉暖白；光晕淡——不干扰谱面阅读）
 const GuitarBarPalette lightPalette = GuitarBarPalette(
   ground: Color(0xFFF7F5F1),
   panel: Color(0xFFEDEBE6),
@@ -98,9 +115,12 @@ const GuitarBarPalette lightPalette = GuitarBarPalette(
   negative: Color(0xFFC4242A),
   pillPositiveBg: Color(0xFFDCFAE5),
   pillPositiveInk: Color(0xFF04250E),
+  glowA: Color(0x1A8A5A2B), // dataHue @ ~10%
+  glowB: Color(0x0F5A6B7A), // 冷蓝灰 @ ~6%
+  overlay: Color(0xD9FFFFFF), // surface @ 85%
 );
 
-/// 暗色板（暖黑，取自主题材质而非纯黑；琥珀提亮保暗底可读）
+/// 暗色板（暖黑，取自主题材质而非纯黑；琥珀提亮保暗底可读；光晕更明显）
 const GuitarBarPalette darkPalette = GuitarBarPalette(
   ground: Color(0xFF141311),
   panel: Color(0xFF1C1B18),
@@ -117,6 +137,9 @@ const GuitarBarPalette darkPalette = GuitarBarPalette(
   negative: Color(0xFFE5566F),
   pillPositiveBg: Color(0xFF172A1D),
   pillPositiveInk: Color(0xFF3FC07A),
+  glowA: Color(0x26D19A63), // dataHue @ ~15%
+  glowB: Color(0x1A35506B), // 冷蓝 @ ~10%
+  overlay: Color(0xD920201C), // surface @ 85%
 );
 
 /// 把当前色板挂进主题（深浅随 themeMode 切换）。
@@ -216,15 +239,18 @@ class GuitarBarTheme {
             onSurface: p.ink,
             error: p.negative,
             // 中性容器角色补全：未覆写的容器角色会走 M3 种子基线紫色，这里
-            // 全部指向 surface/border 中性色，堵住 SegmentedButton/FilledButton
-            // .tonal/ChoiceChip/Card/AlertDialog/bottomSheet/TextField 描边成片漏紫。
-            secondaryContainer: p.surface,
+            // 全部指向中性色，堵住 FilledButton.tonal/ChoiceChip/Card/
+            // AlertDialog/bottomSheet/TextField 描边成片漏紫。
+            // 2026-11-04 走查：surfaceContainer 系从 surface(白) 改 panel
+            //（暖灰）——DropdownButton 菜单等 M3 浮层底色统一页面暖调，
+            // 不可白底。
+            secondaryContainer: p.panel,
             onSecondaryContainer: p.ink,
-            surfaceContainerLowest: p.surface,
-            surfaceContainerLow: p.surface,
-            surfaceContainer: p.surface,
-            surfaceContainerHigh: p.surface,
-            surfaceContainerHighest: p.border,
+            surfaceContainerLowest: p.ground,
+            surfaceContainerLow: p.panel,
+            surfaceContainer: p.panel,
+            surfaceContainerHigh: p.panel,
+            surfaceContainerHighest: p.panel,
             outline: p.controlBorder,
             outlineVariant: p.border,
             onSurfaceVariant: p.muted,
@@ -237,13 +263,13 @@ class GuitarBarTheme {
             surface: p.surface,
             onSurface: p.ink,
             error: p.negative,
-            secondaryContainer: p.surface,
+            secondaryContainer: p.panel,
             onSecondaryContainer: p.ink,
             surfaceContainerLowest: p.ground,
-            surfaceContainerLow: p.surface,
-            surfaceContainer: p.surface,
-            surfaceContainerHigh: p.surface,
-            surfaceContainerHighest: p.border,
+            surfaceContainerLow: p.panel,
+            surfaceContainer: p.panel,
+            surfaceContainerHigh: p.panel,
+            surfaceContainerHighest: p.panel,
             outline: p.controlBorder,
             outlineVariant: p.border,
             onSurfaceVariant: p.muted,
@@ -255,6 +281,9 @@ class GuitarBarTheme {
       // 全局字体：所有角色统一到微软雅黑（见 kUiFontFamily）。
       textTheme: _textThemeFor(p.ink)
           .apply(fontFamily: kUiFontFamily, fontFamilyFallback: kUiFontFallback),
+      // AppBar 底色恢复（2026-11-04 走查：透明 AppBar + 透明 Scaffold
+      // 会露出窗口原生黑底成"大黑框"——AppBar 区域不在 GbarBackground
+      // 光晕层内，只能实体色；光晕仍在各页 body 内可见）。
       appBarTheme: AppBarTheme(
         backgroundColor: p.ground,
         foregroundColor: p.ink,
@@ -264,7 +293,76 @@ class GuitarBarTheme {
         centerTitle: false,
         titleTextStyle: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: p.ink),
       ),
+      // v2 统一卡片/对话框：圆角 12 + surface 底 + 细边框 + 微光阴影
+      //（reactbits 玻璃卡片语言；阴影极淡只作层次提示）。
+      cardTheme: CardThemeData(
+        color: p.surface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: p.border)),
+        surfaceTintColor: Colors.transparent,
+        margin: EdgeInsets.zero,
+      ),
+      dialogTheme: DialogThemeData(
+        // 选项框/对话框与下拉浮层统一 panel 暖灰（2026-11-04 走查：白底
+        // 浮层与页面风格不符）。
+        backgroundColor: p.panel,
+        elevation: 8,
+        shadowColor: p.dataHue.withValues(alpha: 0.18),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: p.border)),
+        titleTextStyle: TextStyle(
+            fontSize: 18, fontWeight: FontWeight.w600, color: p.ink),
+      ),
+      // SegmentedButton（吉他模式/输入浏览/主题三选）统一：底 panel、
+      // 选中 activePill 药丸、圆角 10——不落 M3 白底默认。
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.resolveWith((states) =>
+              states.contains(WidgetState.selected)
+                  ? p.activePill
+                  : p.panel),
+          side: WidgetStatePropertyAll(BorderSide(color: p.controlBorder)),
+          shape: WidgetStatePropertyAll(RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10))),
+        ),
+      ),
+      // v2 统一按钮圆角 10（控件档）；FilledButton 保持主色实底。
+      filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)))),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+              side: BorderSide(color: p.controlBorder))),
+      textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)))),
+      // v2 统一输入框：填充 panel、圆角 10、聚焦描边 dataHue（唯一数据色
+      // 作为焦点信号，替代 M3 默认蓝紫）。
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: p.panel,
+        isDense: true,
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: p.controlBorder)),
+        enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: p.controlBorder)),
+        focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: p.dataHue, width: 1.4)),
+      ),
       navigationBarTheme: NavigationBarThemeData(
+        // 实体底色（2026-11-04 走查：透明会在窄屏露出窗口原生黑底，
+        // 与 AppBar 同因——底部栏也不在光晕层内）。
         backgroundColor: p.ground,
         indicatorColor: p.activePill,
         elevation: 0,
@@ -305,14 +403,15 @@ class GuitarBarTheme {
   }
 
   /// 菜单浮层共享样式：DropdownMenu 与 MenuAnchor（MenuItemButton 菜单）
-  /// 同一份视觉，收敛一处防两份主题复制粘贴漂移。
+  /// 同一份视觉，收敛一处防两份主题复制粘贴漂移。v2：圆角 12 + dataHue
+  /// 微光阴影（玻璃浮层）；底色 panel 暖灰（2026-11-04 走查：不可白底）。
   static MenuStyle _menuStyle(GuitarBarPalette p) => MenuStyle(
-        backgroundColor: WidgetStatePropertyAll(p.surface),
-        elevation: const WidgetStatePropertyAll(2),
-        shadowColor: WidgetStatePropertyAll(p.ink.withValues(alpha: 0.12)),
+        backgroundColor: WidgetStatePropertyAll(p.panel),
+        elevation: const WidgetStatePropertyAll(4),
+        shadowColor: WidgetStatePropertyAll(p.dataHue.withValues(alpha: 0.15)),
         surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
         shape: WidgetStatePropertyAll(RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(12),
             side: BorderSide(color: p.border))),
         padding: const WidgetStatePropertyAll(
             EdgeInsets.symmetric(horizontal: 8, vertical: 4)),

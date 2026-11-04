@@ -3,6 +3,7 @@ import 'package:pdfrx/pdfrx.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'core/watchdog.dart';
 import 'data/database.dart';
 import 'state/practice_timer.dart';
 import 'state/theme_settings.dart';
@@ -12,6 +13,10 @@ import 'ui/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 心跳守护（2026-11-04 关闭卡死兜底）：主线程 event loop 一旦被播放
+  // 引擎等同步调用卡死，守护 isolate 6.5s 后自动 exit(0)——窗口关闭
+  // 回调排不上队也有最后一道防线。必须在最早期启动。
+  Watchdog.start();
   // pdfrx 引擎初始化：导入流程在无 pdfrx 组件参与时直接调引擎 API，需先初始化。
   await pdfrxFlutterInitialize();
   await windowManager.ensureInitialized();

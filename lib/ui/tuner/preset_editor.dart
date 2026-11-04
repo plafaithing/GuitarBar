@@ -88,7 +88,8 @@ class _PresetEditorState extends State<PresetEditor> {
   Widget build(BuildContext context) {
     final p = context.palette;
     return Material(
-      color: p.surface,
+      // 浮层家族统一 panel 暖灰（2026-11-04 走查：不可白底）。
+      color: p.panel,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: p.border),
@@ -205,6 +206,7 @@ class _PresetEditorState extends State<PresetEditor> {
             initialValue: _picked[i],
             isDense: true,
             isExpanded: true,
+            dropdownColor: p.panel,
             // 显式给箭头颜色：这套色板下 M3 角色色偏淡，默认箭头几乎看不见。
             icon: Icon(Icons.expand_more, size: 18, color: p.muted),
             decoration: InputDecoration(

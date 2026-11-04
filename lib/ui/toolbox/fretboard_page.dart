@@ -9,6 +9,7 @@ import '../../audio/synth.dart';
 import '../../core/music/note.dart';
 import '../../core/music/scale.dart';
 import '../../state/tuning_state.dart';
+import '../../ui/gbar_background.dart';
 import '../../ui/theme.dart';
 import '../../ui/tuner/preset_editor.dart';
 import '../../ui/tuner/preset_sheet.dart';
@@ -84,13 +85,16 @@ class _FretboardPageState extends State<FretboardPage> {
     final grid = fretboardGrid(state.current.strings, _rootPc, _scale, frets: _frets);
     final majorPcs = scalePitchClasses(_rootPc, ScaleType.major);
     return Scaffold(
+      // v2：透明 + 统一光晕背景层。
+      backgroundColor: Colors.transparent,
       appBar: AppBar(title: const Text('指板音阶')),
-      body: Padding(
+      body: GbarBackground(child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
             DropdownButton<int>(
               value: _rootPc,
+              dropdownColor: context.palette.panel,
               items: [
                 for (var pc = 0; pc < 12; pc++)
                   DropdownMenuItem(value: pc, child: Text(_pcNames[pc]))
@@ -100,6 +104,7 @@ class _FretboardPageState extends State<FretboardPage> {
             const SizedBox(width: 16),
             DropdownButton<ScaleType>(
               value: _scale,
+              dropdownColor: context.palette.panel,
               items: [
                 for (final s in ScaleType.values)
                   DropdownMenuItem(value: s, child: Text(s.label))
@@ -160,6 +165,7 @@ class _FretboardPageState extends State<FretboardPage> {
             ),
           ),
         ]),
+      ),
       ),
     );
   }

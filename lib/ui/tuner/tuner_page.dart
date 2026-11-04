@@ -224,9 +224,11 @@ class _TunerPageState extends State<TunerPage> {
 
     // 页面高度自适应：琴头吃掉剩余竖向空间（iPad 11 寸横屏更饱满），
     // 窗口太矮时整页滚动而不是溢出（旧版在默认窗口即溢出 3px）。
+    // 2026-11-04 走查：0.52 时设备行贴窗口底边，浮动的「输入设备」
+    // label 被裁——降系数并抬下限，给底部控件留呼吸。
     return LayoutBuilder(builder: (context, viewport) {
       final headHeight =
-          ((viewport.maxHeight - 48) * 0.52).clamp(320.0, 640.0);
+          ((viewport.maxHeight - 96) * 0.46).clamp(280.0, 600.0);
       return SingleChildScrollView(
         child: ConstrainedBox(
           constraints: BoxConstraints(minHeight: viewport.maxHeight),
@@ -342,13 +344,19 @@ class _TunerPageState extends State<TunerPage> {
           Expanded(
             child: DropdownButtonFormField<String>(
               initialValue: _selectedDeviceId,
-              isDense: true,
-              decoration: const InputDecoration(
-                labelText: '输入设备',
-                border: OutlineInputBorder(),
+              // hint 占位（2026-11-04 走查二次反馈：labelText 浮动样式在
+              // isDense+小内边距下与选中设备名重叠"文字遮挡"；hint 不浮
+              // 动绝不重叠）+ 放弃 isDense 给足行高。
+              decoration: InputDecoration(
+                hintText: '输入设备',
+                hintStyle: TextStyle(
+                    fontSize: 14, color: context.palette.muted),
                 contentPadding:
-                    EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    EdgeInsets.symmetric(horizontal: 8, vertical: 10),
               ),
+              style: TextStyle(
+                  fontSize: 14, color: context.palette.ink),
+              dropdownColor: context.palette.panel,
               // 展开时强制刷新一次，保证点开看到的永远是最新列表。
               onTap: () => unawaited(_refreshDevices()),
               items: [
