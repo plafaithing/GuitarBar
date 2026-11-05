@@ -50,6 +50,15 @@ flutter test          # 276 项测试全绿（乐理/解析器/音频算法/播�
 flutter run -d windows
 ```
 
+**发布打包**（解压即用便携 zip，内置卸载器与使用说明）：
+
+```powershell
+powershell -File packaging\build.ps1              # 编译 + 打包
+powershell -File packaging\build.ps1 -SkipBuild   # 只重新打包（跳过编译）
+```
+
+产物：`dist\GuitarBar-<日期>.zip`。
+
 要求：Flutter 3.47+、Windows 开发者模式（构建符号链接）、Visual Studio C++ 桌面工具链。
 
 ## 工程方法
