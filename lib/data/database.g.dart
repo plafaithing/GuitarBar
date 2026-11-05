@@ -935,6 +935,17 @@ class $ScoresTable extends Scores with TableInfo<$ScoresTable, Score> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -968,6 +979,7 @@ class $ScoresTable extends Scores with TableInfo<$ScoresTable, Score> {
     irJson,
     tuning,
     noteUrl,
+    deletedAt,
     createdAt,
     updatedAt,
   ];
@@ -1028,6 +1040,12 @@ class $ScoresTable extends Scores with TableInfo<$ScoresTable, Score> {
         noteUrl.isAcceptableOrUnknown(data['note_url']!, _noteUrlMeta),
       );
     }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1077,6 +1095,10 @@ class $ScoresTable extends Scores with TableInfo<$ScoresTable, Score> {
         DriftSqlType.string,
         data['${effectivePrefix}note_url'],
       ),
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -1102,6 +1124,7 @@ class Score extends DataClass implements Insertable<Score> {
   final String? irJson;
   final String? tuning;
   final String? noteUrl;
+  final DateTime? deletedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
   const Score({
@@ -1112,6 +1135,7 @@ class Score extends DataClass implements Insertable<Score> {
     this.irJson,
     this.tuning,
     this.noteUrl,
+    this.deletedAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -1130,6 +1154,9 @@ class Score extends DataClass implements Insertable<Score> {
     }
     if (!nullToAbsent || noteUrl != null) {
       map['note_url'] = Variable<String>(noteUrl);
+    }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
     }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -1151,6 +1178,9 @@ class Score extends DataClass implements Insertable<Score> {
       noteUrl: noteUrl == null && nullToAbsent
           ? const Value.absent()
           : Value(noteUrl),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -1169,6 +1199,7 @@ class Score extends DataClass implements Insertable<Score> {
       irJson: serializer.fromJson<String?>(json['irJson']),
       tuning: serializer.fromJson<String?>(json['tuning']),
       noteUrl: serializer.fromJson<String?>(json['noteUrl']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -1184,6 +1215,7 @@ class Score extends DataClass implements Insertable<Score> {
       'irJson': serializer.toJson<String?>(irJson),
       'tuning': serializer.toJson<String?>(tuning),
       'noteUrl': serializer.toJson<String?>(noteUrl),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -1197,6 +1229,7 @@ class Score extends DataClass implements Insertable<Score> {
     Value<String?> irJson = const Value.absent(),
     Value<String?> tuning = const Value.absent(),
     Value<String?> noteUrl = const Value.absent(),
+    Value<DateTime?> deletedAt = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Score(
@@ -1207,6 +1240,7 @@ class Score extends DataClass implements Insertable<Score> {
     irJson: irJson.present ? irJson.value : this.irJson,
     tuning: tuning.present ? tuning.value : this.tuning,
     noteUrl: noteUrl.present ? noteUrl.value : this.noteUrl,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -1223,6 +1257,7 @@ class Score extends DataClass implements Insertable<Score> {
       irJson: data.irJson.present ? data.irJson.value : this.irJson,
       tuning: data.tuning.present ? data.tuning.value : this.tuning,
       noteUrl: data.noteUrl.present ? data.noteUrl.value : this.noteUrl,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -1238,6 +1273,7 @@ class Score extends DataClass implements Insertable<Score> {
           ..write('irJson: $irJson, ')
           ..write('tuning: $tuning, ')
           ..write('noteUrl: $noteUrl, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -1253,6 +1289,7 @@ class Score extends DataClass implements Insertable<Score> {
     irJson,
     tuning,
     noteUrl,
+    deletedAt,
     createdAt,
     updatedAt,
   );
@@ -1267,6 +1304,7 @@ class Score extends DataClass implements Insertable<Score> {
           other.irJson == this.irJson &&
           other.tuning == this.tuning &&
           other.noteUrl == this.noteUrl &&
+          other.deletedAt == this.deletedAt &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -1279,6 +1317,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
   final Value<String?> irJson;
   final Value<String?> tuning;
   final Value<String?> noteUrl;
+  final Value<DateTime?> deletedAt;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   const ScoresCompanion({
@@ -1289,6 +1328,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
     this.irJson = const Value.absent(),
     this.tuning = const Value.absent(),
     this.noteUrl = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
@@ -1300,6 +1340,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
     this.irJson = const Value.absent(),
     this.tuning = const Value.absent(),
     this.noteUrl = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   }) : title = Value(title),
@@ -1313,6 +1354,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
     Expression<String>? irJson,
     Expression<String>? tuning,
     Expression<String>? noteUrl,
+    Expression<DateTime>? deletedAt,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
   }) {
@@ -1324,6 +1366,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
       if (irJson != null) 'ir_json': irJson,
       if (tuning != null) 'tuning': tuning,
       if (noteUrl != null) 'note_url': noteUrl,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
@@ -1337,6 +1380,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
     Value<String?>? irJson,
     Value<String?>? tuning,
     Value<String?>? noteUrl,
+    Value<DateTime?>? deletedAt,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
   }) {
@@ -1348,6 +1392,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
       irJson: irJson ?? this.irJson,
       tuning: tuning ?? this.tuning,
       noteUrl: noteUrl ?? this.noteUrl,
+      deletedAt: deletedAt ?? this.deletedAt,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -1377,6 +1422,9 @@ class ScoresCompanion extends UpdateCompanion<Score> {
     if (noteUrl.present) {
       map['note_url'] = Variable<String>(noteUrl.value);
     }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -1396,6 +1444,7 @@ class ScoresCompanion extends UpdateCompanion<Score> {
           ..write('irJson: $irJson, ')
           ..write('tuning: $tuning, ')
           ..write('noteUrl: $noteUrl, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -1964,6 +2013,7 @@ typedef $$ScoresTableCreateCompanionBuilder = ScoresCompanion Function({
   Value<String?> irJson,
   Value<String?> tuning,
   Value<String?> noteUrl,
+  Value<DateTime?> deletedAt,
   Value<DateTime> createdAt,
   Value<DateTime> updatedAt,
 });
@@ -1975,6 +2025,7 @@ typedef $$ScoresTableUpdateCompanionBuilder = ScoresCompanion Function({
   Value<String?> irJson,
   Value<String?> tuning,
   Value<String?> noteUrl,
+  Value<DateTime?> deletedAt,
   Value<DateTime> createdAt,
   Value<DateTime> updatedAt,
 });
@@ -2020,6 +2071,11 @@ class $$ScoresTableFilterComposer
 
   ColumnFilters<String> get noteUrl => $composableBuilder(
     column: $table.noteUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2078,6 +2134,11 @@ class $$ScoresTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -2123,6 +2184,9 @@ class $$ScoresTableAnnotationComposer
   GeneratedColumn<String> get noteUrl =>
       $composableBuilder(column: $table.noteUrl, builder: (column) => column);
 
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -2165,6 +2229,7 @@ class $$ScoresTableTableManager
                 Value<String?> irJson = const Value.absent(),
                 Value<String?> tuning = const Value.absent(),
                 Value<String?> noteUrl = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
               }) => ScoresCompanion(
@@ -2175,6 +2240,7 @@ class $$ScoresTableTableManager
                 irJson: irJson,
                 tuning: tuning,
                 noteUrl: noteUrl,
+                deletedAt: deletedAt,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
@@ -2187,6 +2253,7 @@ class $$ScoresTableTableManager
                 Value<String?> irJson = const Value.absent(),
                 Value<String?> tuning = const Value.absent(),
                 Value<String?> noteUrl = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
               }) => ScoresCompanion.insert(
@@ -2197,6 +2264,7 @@ class $$ScoresTableTableManager
                 irJson: irJson,
                 tuning: tuning,
                 noteUrl: noteUrl,
+                deletedAt: deletedAt,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),

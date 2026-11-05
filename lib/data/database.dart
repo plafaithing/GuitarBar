@@ -43,6 +43,9 @@ class Scores extends Table {
   // 链接备注（2026-11-03 走查三件套）：教学/视频网址，详情页顶部栏可
   // 编辑、点击跳浏览器；null = 无备注。
   TextColumn get noteUrl => text().nullable()();
+  // 回收站（2026-11-05 用户定案：删除先进回收站 30 天后自动清）：
+  // 软删时间戳；null = 正常，非 null = 已进回收站。
+  DateTimeColumn get deletedAt => dateTime().nullable()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
 }
@@ -52,18 +55,18 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onUpgrade: (m, from, to) async {
-          // v1→v2 分支的 createTable 用的是**当前（v3）schema 定义**，
-          // 建出的表已含 noteUrl——不能再 addColumn（duplicate column）；
-          // 只有 v2→v3 的旧库才需要补列。
+          // v2 建表分支用当前（v4）schema 定义——已含全部新列，不能再
+          // addColumn（duplicate column）；只有 v2+ 的旧库才逐级补列。
           if (from < 2) {
             await m.createTable(scores);
-          } else if (from < 3) {
-            await m.addColumn(scores, scores.noteUrl);
+          } else {
+            if (from < 3) await m.addColumn(scores, scores.noteUrl);
+            if (from < 4) await m.addColumn(scores, scores.deletedAt);
           }
         },
       );

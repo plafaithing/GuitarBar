@@ -56,8 +56,10 @@ class ScoreRepository {
   static const imageExts = ['png', 'jpg', 'jpeg', 'webp'];
 
   // createdAt 默认值是秒级 CURRENT_TIMESTAMP，同秒导入需按 id 倒序稳定裁决。
+  // 回收站（deletedAt 软删）条目不出现在主列表。
   Future<List<Score>> listScores() =>
       (_db.select(_db.scores)
+            ..where((s) => s.deletedAt.isNull())
             ..orderBy([
               (s) => OrderingTerm.desc(s.createdAt),
               (s) => OrderingTerm.desc(s.id),
@@ -71,10 +73,14 @@ class ScoreRepository {
 
   /// 唯一化标题（2026-11-05 用户需求：同名文件重复导入不覆盖，自动
   /// 改名——Windows 新建同名文件夹同款）：`名` 已存在 → `名 (2)`、
-  /// `名 (3)`… 找第一个空位。全库查重（不区分类型，Windows 目录语义）。
+  /// `名 (3)`… 找第一个空位。全库查重不区分类型；**回收站条目不占名**
+  ///（Windows 回收站独立于命名空间）。
   Future<String> _uniqueTitle(String base) async {
-    final existing =
-        (await _db.select(_db.scores).get()).map((s) => s.title).toSet();
+    final existing = (await (_db.select(_db.scores)
+              ..where((s) => s.deletedAt.isNull()))
+            .get())
+        .map((s) => s.title)
+        .toSet();
     if (!existing.contains(base)) return base;
     var i = 2;
     while (existing.contains('$base ($i)')) {
@@ -238,9 +244,53 @@ class ScoreRepository {
     }
   }
 
+  /// 删除 = 移入回收站（2026-11-05 用户定案）：软删（deletedAt 时间戳），
+  /// 文件不动；30 天后由 purgeExpired 清理。
   Future<void> deleteScore(int id) async {
+    await (_db.update(_db.scores)..where((s) => s.id.equals(id))).write(
+        ScoresCompanion(deletedAt: Value(DateTime.now())));
+  }
+
+  /// 回收站列表（deletedAt 非空，按删除时间倒序）。
+  Future<List<Score>> listRecycleBin() =>
+      (_db.select(_db.scores)
+            ..where((s) => s.deletedAt.isNotNull())
+            ..orderBy([
+              (s) => OrderingTerm.desc(s.deletedAt),
+              (s) => OrderingTerm.desc(s.id),
+            ]))
+          .get();
+
+  /// 从回收站恢复（deletedAt 置 null 回主列表）。
+  Future<void> restoreScore(int id) async {
+    await (_db.update(_db.scores)..where((s) => s.id.equals(id)))
+        .write(const ScoresCompanion(deletedAt: Value(null)));
+  }
+
+  /// 彻底删除（回收站内真删：行 + 文件）。
+  Future<void> purgeScore(int id) async {
     await (_db.delete(_db.scores)..where((s) => s.id.equals(id))).go();
     await files.delete(id);
+  }
+
+  /// 清理超期回收站条目（30 天），启动时调用；失败逐条跳过不中断。
+  static const recycleTtl = Duration(days: 30);
+
+  Future<int> purgeExpired() async {
+    final cutoff = DateTime.now().subtract(recycleTtl);
+    final expired = await (_db.select(_db.scores)
+          ..where((s) =>
+              s.deletedAt.isNotNull() &
+              s.deletedAt.isSmallerThanValue(cutoff)))
+        .get();
+    var n = 0;
+    for (final s in expired) {
+      try {
+        await purgeScore(s.id);
+        n++;
+      } catch (_) {}
+    }
+    return n;
   }
 
   /// 识谱结果回写（Task 11 用）。

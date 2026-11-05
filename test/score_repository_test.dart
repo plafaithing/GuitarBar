@@ -65,14 +65,27 @@ void main() {
     expect(repo.files.pagePngs(row.id).length, 2);
   });
 
-  test('listScores 按创建时间倒序、deleteScore 清库清文件', () async {
+  test('listScores 过滤回收站、软删保文件、purge 真删（2026-11-05 语义）',
+      () async {
     final a = await repo.importScore(
         title: 'A', source: File('${tmp.path}/a.jpg')..writeAsBytesSync(tinyPng()));
     await repo.importScore(
         title: 'B', source: File('${tmp.path}/b.jpg')..writeAsBytesSync(tinyPng()));
     final list = await repo.listScores();
     expect(list.map((e) => e.title), ['B', 'A']);
+    // 软删：主列表消失、回收站出现、文件保留（可恢复）。
     await repo.deleteScore(a.id);
+    expect(await repo.listScores().then((l) => l.map((e) => e.id)),
+        isNot(contains(a.id)));
+    expect(await repo.listRecycleBin().then((l) => l.map((e) => e.id)),
+        contains(a.id));
+    expect(repo.files.pagePngs(a.id), isNotEmpty);
+    // 恢复：回主列表。
+    await repo.restoreScore(a.id);
+    expect(await repo.listScores().then((l) => l.map((e) => e.id)),
+        contains(a.id));
+    // 彻底删除：行与文件全清。
+    await repo.purgeScore(a.id);
     expect(await repo.listScores().then((l) => l.map((e) => e.id)),
         isNot(contains(a.id)));
     expect(repo.files.pagePngs(a.id), isEmpty);
@@ -183,5 +196,25 @@ void main() {
     final archived = repo.files.sourceFile(row.id, row.sourcePath);
     expect(archived.existsSync(), isTrue);
     expect(row.sourcePath, endsWith('source.gpx'));
+  });
+
+  test('同名导入自动改名：Windows 语义（名 → 名 (2) → 名 (3)）', () async {
+    final f1 = File('${tmp.path}/a.png')..writeAsBytesSync(tinyPng());
+    // 两份同名源文件（不同路径同文件名）。
+    final sub = Directory('${tmp.path}/sub')..createSync();
+    final f2 = File('${sub.path}/a.png')..writeAsBytesSync(tinyPng());
+    final f3 = File('${sub.path}/b.png')..writeAsBytesSync(tinyPng());
+    final r1 = await repo.importScore(title: '名', source: f1);
+    final r2 = await repo.importScore(title: '名', source: f2);
+    final r3 = await repo.importScore(title: '名', source: f3);
+    expect(r1.title, '名');
+    expect(r2.title, '名 (2)');
+    expect(r3.title, '名 (3)');
+    // 删掉 (2) 后再导入 → 补空位拿回 (2)。
+    final rows = await repo.listScores();
+    await repo.deleteScore(rows.firstWhere((r) => r.title == '名 (2)').id);
+    final f4 = File('${sub.path}/c.png')..writeAsBytesSync(tinyPng());
+    final r4 = await repo.importScore(title: '名', source: f4);
+    expect(r4.title, '名 (2)');
   });
 }

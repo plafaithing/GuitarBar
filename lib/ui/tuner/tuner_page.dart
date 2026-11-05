@@ -222,19 +222,31 @@ class _TunerPageState extends State<TunerPage> {
     // 当前命中弦（锁定优先，-1 = 未命中），弦块高亮/到位点用它。
     final hitIdx = _lockedString ?? autoIdx;
 
-    // 页面高度自适应：琴头吃掉剩余竖向空间（iPad 11 寸横屏更饱满），
-    // 窗口太矮时整页滚动而不是溢出（旧版在默认窗口即溢出 3px）。
-    // 2026-11-04 走查：0.52 时设备行贴窗口底边，浮动的「输入设备」
-    // label 被裁——降系数并抬下限，给底部控件留呼吸。
+    // 页面高度自适应：琴头（网格区）吃掉剩余竖向空间，让设备栏自然
+    // 贴到可视底部——窄屏（pad 竖屏比例）时 body 位于底部导航之上，
+    // 即"菜单栏上方"（Scaffold 自动扣除）。窗口太矮时整页滚动不溢出。
+    // 2026-11-05 用户反馈：网格区域高度 +10%，随屏幕自适应放大缩小。
+    // （此前为修 label 遮挡把系数压到 0.46——遮挡已改 hintText 方案，
+    // 现恢复贴底自适应。）
+    // 2026-11-05 二次重构（用户走查：headHeight 撑不满视口，设备栏悬在
+    // 中间）——设备栏改 **Stack 钉底**：任何屏幕比例贴可视底部，pad 竖屏
+    // 时 body 位于底部导航上方（Scaffold 自动扣除）。滚动内容底部预留
+    // 96px；琴头网格区随屏幕自适应（0.52 系数）。
     return LayoutBuilder(builder: (context, viewport) {
       final headHeight =
-          ((viewport.maxHeight - 96) * 0.46).clamp(280.0, 600.0);
-      return SingleChildScrollView(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: viewport.maxHeight),
-          child: Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(children: [
+          ((viewport.maxHeight - 170) * 0.52).clamp(280.0, 720.0);
+      // 网格区（表盘）高度随屏幕连续缩放（2026-11-05 用户反馈：固定值
+      // 不自适应，拉长 app 时网格要跟着变高——0.14 系数 + 84/200 钳制）。
+      final gaugeHeight =
+          ((viewport.maxHeight - 170) * 0.14).clamp(84.0, 200.0);
+      return SizedBox(
+        height: viewport.maxHeight,
+        child: Stack(children: [
+          Positioned.fill(
+            bottom: 96,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Column(children: [
         Row(children: [
           SegmentedButton<_TunerMode>(
             segments: const [
@@ -318,7 +330,8 @@ class _TunerPageState extends State<TunerPage> {
                 painter: _GridPainter(ink: context.palette.ink)),
           ),
           Column(children: [
-            _gaugeArea(cents.toDouble(), inTune, _freq != null),
+            _gaugeArea(cents.toDouble(), inTune, _freq != null,
+                height: gaugeHeight),
             const SizedBox(height: 8),
             _statusPill(targetNote, cents),
           ]),
@@ -337,82 +350,84 @@ class _TunerPageState extends State<TunerPage> {
             ),
           ),
         const SizedBox(height: 12),
-        // 输入设备选择（长期保留）：默认设备是虚拟声卡时可一键切到真麦。
-        Row(children: [
-          Icon(Icons.mic_none, size: 16, color: context.palette.muted),
-          const SizedBox(width: 8),
-          Expanded(
-            child: DropdownButtonFormField<String>(
-              initialValue: _selectedDeviceId,
-              // hint 占位（2026-11-04 走查二次反馈：labelText 浮动样式在
-              // isDense+小内边距下与选中设备名重叠"文字遮挡"；hint 不浮
-              // 动绝不重叠）+ 放弃 isDense 给足行高。
-              decoration: InputDecoration(
-                hintText: '输入设备',
-                hintStyle: TextStyle(
-                    fontSize: 14, color: context.palette.muted),
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-              ),
-              style: TextStyle(
-                  fontSize: 14, color: context.palette.ink),
-              dropdownColor: context.palette.panel,
-              // 展开时强制刷新一次，保证点开看到的永远是最新列表。
-              onTap: () => unawaited(_refreshDevices()),
-              items: [
-                const DropdownMenuItem(value: '', child: Text('系统默认设备')),
-                for (final d in _devices)
-                  DropdownMenuItem(
-                      value: d.id,
-                      child: Text(d.label, overflow: TextOverflow.ellipsis)),
-              ],
-              onChanged: (id) => unawaited(_onDeviceChanged(id)),
+      ]),
             ),
           ),
-        ]),
-        // 诊断行（I2）：默认隐藏，个人中心「调试模式」开关打开才显示。
-        if (kDebugMode &&
-            context.watch<ThemeSettingsState>().debugDiagnostics) ...[
-          const SizedBox(height: 4),
-          // 诊断行（D1，临时）：chunks=0 且 on:false → 打开设备就失败（看 err 行）；
-          // chunks=0 且 on:true → 设备/权限在系统层被挡；rms 长期 <0.005 →
-          // 默认设备是虚拟声卡；rms 正常但音高 null → 检测 bug。
-          Text(
-              'chunks:${MicPitchStream.I.chunkCount}  窗:${MicPitchStream.I.windowCount}  cs:${MicPitchStream.I.lastChunkSamples}  ws:${MicPitchStream.I.lastWindowSamples}  rms:${MicPitchStream.I.lastRms.toStringAsFixed(6)}  dev:${MicPitchStream.I.currentDeviceName ?? '-'}  on:$_micOn',
-              style: TextStyle(
-                  fontSize: 12,
-                  color: context.palette.muted,
-                  fontFeatures: const [FontFeature.tabularFigures()])),
-          // 格式自适应轮换（D3）：fmt 当前格式 / 静音窗 连续 rms==0 窗数 /
-          // hex 最近 chunk 前 16 字节（全 00 = 真数字静音；非零乱值 = 格式误读）。
-          Text(
-              'fmt:${MicPitchStream.I.currentFormatText}  静音窗:${MicPitchStream.I.zeroWindows}  hex:${MicPitchStream.I.lastChunkHex}',
-              style: TextStyle(
-                  fontSize: 12,
-                  color: context.palette.muted,
-                  fontFeatures: const [FontFeature.tabularFigures()])),
-          if (_lastError != null)
-            Text('err: $_lastError（重进调音页或重启应用重试）',
-                style: TextStyle(
-                    fontSize: 12,
-                    color: context.palette.negative,
-                    fontFeatures: const [FontFeature.tabularFigures()])),
-          // 回调内异常（Error/Exception 一并捕获）：非空即说明音频处理链在
-          // 回调层炸过，配合 窗/cs/ws 定位断链层。
-          if (MicPitchStream.I.callbackErr.isNotEmpty) ...[
-            Text('cberr: ${MicPitchStream.I.callbackErr}',
-                style: TextStyle(
-                    fontSize: 12,
-                    color: context.palette.negative,
-                    fontFeatures: const [FontFeature.tabularFigures()])),
-            Text(MicPitchStream.I.callbackErrSt,
-                style: TextStyle(
-                    fontSize: 10, color: context.palette.muted)),
-          ],
-        ],
-      ]),
+          // 设备栏钉底层（2026-11-05 重构）：贴可视底部，诊断行跟随。
+          Positioned(
+            left: 24,
+            right: 24,
+            bottom: 24,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              // 输入设备选择（长期保留）：默认设备是虚拟声卡时可一键切到真麦。
+              Row(children: [
+                Icon(Icons.mic_none, size: 16, color: context.palette.muted),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _selectedDeviceId,
+                    // hint 占位（labelText 浮动样式与选中设备名重叠"文字
+                    // 遮挡"；hint 不浮动绝不重叠）+ 放弃 isDense 给足行高。
+                    decoration: InputDecoration(
+                      hintText: '输入设备',
+                      hintStyle: TextStyle(
+                          fontSize: 14, color: context.palette.muted),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                    ),
+                    style: TextStyle(
+                        fontSize: 14, color: context.palette.ink),
+                    dropdownColor: context.palette.panel,
+                    // 展开时强制刷新一次，保证点开看到的永远是最新列表。
+                    onTap: () => unawaited(_refreshDevices()),
+                    items: [
+                      const DropdownMenuItem(value: '', child: Text('系统默认设备')),
+                      for (final d in _devices)
+                        DropdownMenuItem(
+                            value: d.id,
+                            child: Text(d.label,
+                                overflow: TextOverflow.ellipsis)),
+                    ],
+                    onChanged: (id) => unawaited(_onDeviceChanged(id)),
+                  ),
+                ),
+              ]),
+              // 诊断行（I2）：默认隐藏，个人中心「调试模式」开关打开才显示。
+              if (kDebugMode &&
+                  context.watch<ThemeSettingsState>().debugDiagnostics) ...[
+                const SizedBox(height: 4),
+                Text(
+                    'chunks:${MicPitchStream.I.chunkCount}  窗:${MicPitchStream.I.windowCount}  cs:${MicPitchStream.I.lastChunkSamples}  ws:${MicPitchStream.I.lastWindowSamples}  rms:${MicPitchStream.I.lastRms.toStringAsFixed(6)}  dev:${MicPitchStream.I.currentDeviceName ?? '-'}  on:$_micOn',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: context.palette.muted,
+                        fontFeatures: const [FontFeature.tabularFigures()])),
+                Text(
+                    'fmt:${MicPitchStream.I.currentFormatText}  静音窗:${MicPitchStream.I.zeroWindows}  hex:${MicPitchStream.I.lastChunkHex}',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: context.palette.muted,
+                        fontFeatures: const [FontFeature.tabularFigures()])),
+                if (_lastError != null)
+                  Text('err: $_lastError（重进调音页或重启应用重试）',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: context.palette.negative,
+                          fontFeatures: const [FontFeature.tabularFigures()])),
+                if (MicPitchStream.I.callbackErr.isNotEmpty) ...[
+                  Text('cberr: ${MicPitchStream.I.callbackErr}',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: context.palette.negative,
+                          fontFeatures: const [FontFeature.tabularFigures()])),
+                  Text(MicPitchStream.I.callbackErrSt,
+                      style: TextStyle(
+                          fontSize: 10, color: context.palette.muted)),
+                ],
+              ],
+            ]),
           ),
-        ),
+        ]),
       );
     });
   }
@@ -420,9 +435,11 @@ class _TunerPageState extends State<TunerPage> {
   /// 仪表区（高 96）：♭/♯ 两端；滑动目标环（不透明实底随 |cents| 渐变，
   /// 内写音分数）+ 环下小尖整体沿顶部虚拟轨道左右平滑滑动（±50 音分映射
   /// 全宽）——滑到与固定中央基准轴（网格层）重合即调准（环变绿）。
-  Widget _gaugeArea(double cents, bool inTune, bool hasFreq) {
+  Widget _gaugeArea(double cents, bool inTune, bool hasFreq,
+      {required double height}) {
     return SizedBox(
-      height: 84,
+      // 高度由页面层按屏幕自适应传入（2026-11-05：连续缩放）。
+      height: height,
       child: TweenAnimationBuilder<double>(
         tween: Tween(end: cents.clamp(-50.0, 50.0)),
         duration: const Duration(milliseconds: 300),

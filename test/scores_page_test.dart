@@ -66,6 +66,17 @@ void main() {
         title: '乙曲', sourceType: 'image', sourcePath: ''));
   }
 
+  // 重命名入口（三点菜单已删）：长按行 → 卡片浮层 → 卡内编辑钮。
+  // 固定帧 pump（页面内持续动画会让 pumpAndSettle 超时）。
+  Future<void> openRenameViaCard(WidgetTester tester, String title) async {
+    await tester.longPress(find.text(title).first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byTooltip('重命名'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+  }
+
   testWidgets('重命名：同类型重名被拒并显示错误', (tester) async {
     final (db, tmp) = makeEnv();
     await seedTwo(tester, db);
@@ -73,10 +84,7 @@ void main() {
     await tester.pumpAndSettle();
     // 列表按拼音首字母分组排序：第一行是甲曲（jia → J 组）。改成乙曲
     // → 同类型重名。
-    await tester.tap(find.byIcon(Icons.more_horiz).first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('重命名'));
-    await tester.pumpAndSettle();
+    await openRenameViaCard(tester, '甲曲');
     await tester.enterText(dialogField(tester), '乙曲');
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
@@ -90,11 +98,8 @@ void main() {
     await seedTwo(tester, db);
     await pumpPage(tester, db, tmp);
     await tester.pumpAndSettle();
-    // 第一行（乙曲，id 倒序）：内部空格合法；两侧空格 trim 掉。
-    await tester.tap(find.byIcon(Icons.more_horiz).first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('重命名'));
-    await tester.pumpAndSettle();
+    // 乙曲行：内部空格合法；两侧空格 trim 掉。
+    await openRenameViaCard(tester, '乙曲');
     await tester.enterText(dialogField(tester), '  乙 曲  ');
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
@@ -106,10 +111,7 @@ void main() {
     await seedTwo(tester, db);
     await pumpPage(tester, db, tmp);
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.more_horiz).first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('重命名'));
-    await tester.pumpAndSettle();
+    await openRenameViaCard(tester, '甲曲');
     await tester.enterText(dialogField(tester), '甲曲_v2');
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();

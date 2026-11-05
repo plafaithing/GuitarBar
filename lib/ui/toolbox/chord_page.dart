@@ -192,8 +192,10 @@ class _ChordPageState extends State<ChordPage> {
     String subLabel(ChordSubtype s) =>
         s.suffix.isEmpty ? s.name : '${s.name}（${s.suffix}）';
     return [
+      // 2026-11-05 用户反馈：下拉选项框太宽——Expanded 平分改 IntrinsicWidth
+      // 内容自适应宽（菜单宽度跟随组件，随之变窄），右余空白自然留白。
       Row(children: [
-        Expanded(
+        IntrinsicWidth(
           child: DropdownButtonFormField<String>(
             key: const Key('chord-cat'),
             initialValue: _categoryName,
@@ -207,7 +209,7 @@ class _ChordPageState extends State<ChordPage> {
           ),
         ),
         const SizedBox(width: 12),
-        Expanded(
+        IntrinsicWidth(
           child: DropdownButtonFormField<String>(
             key: const Key('chord-type'),
             initialValue: _suffix,
@@ -222,7 +224,7 @@ class _ChordPageState extends State<ChordPage> {
           ),
         ),
         const SizedBox(width: 12),
-        Expanded(
+        IntrinsicWidth(
           child: DropdownButtonFormField<int>(
             key: const Key('chord-root'),
             initialValue: _rootPc,

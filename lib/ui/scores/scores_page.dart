@@ -1,17 +1,22 @@
 import 'dart:async' show unawaited;
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
+import '../../core/score/score_ir.dart';
 import '../../core/score/score_repository.dart';
 import '../../data/database.dart';
 import '../gbar_background.dart';
 import '../theme.dart';
+import 'recycle_bin_page.dart';
 import 'score_detail_page.dart';
 import 'score_sorting.dart';
+import 'tab_view.dart';
 
 /// 曲谱库：源文件仓库（导入即归档即查看），识谱/演奏是叠加增强。
 class ScoresPage extends StatefulWidget {
@@ -37,6 +42,11 @@ class _ScoresPageState extends State<ScoresPage> {
   // 搜索与类型筛选（2026-11-03 走查三件套）。
   final _searchCtrl = TextEditingController();
   String? _typeFilter;
+  // 多选模式（2026-11-05 用户定案：双端统一 iOS 信息 app 交互）。
+  bool _selecting = false;
+  final Set<int> _selected = {};
+  // 左滑操作：当前左滑展开的行（全局只允许一行展开，开新行关旧行）。
+  int? _swipedId;
   // 字母索引条（2026-11-04 用户需求，iPhone 通讯录式）：点击字母定位
   // 到对应组的第一个文件。各组 header 挂 GlobalKey 供定位；A-Z/# 一次性
   // 预建（dsh P3：不在 build 中做副作用）。
@@ -83,6 +93,8 @@ class _ScoresPageState extends State<ScoresPage> {
         if (!mounted) return;
         final db = context.read<AppDatabase>();
         repo = await ScoreRepository.createDefault(db);
+        // 回收站超期清理（30 天）：后台执行不阻塞首屏。
+        unawaited(repo.purgeExpired());
       }
       if (!mounted) return;
       setState(() => _repo = repo);
@@ -253,8 +265,66 @@ class _ScoresPageState extends State<ScoresPage> {
     return Scaffold(
       // v2：透明 Scaffold + 统一光晕背景层（全产品单一背景来源）。
       backgroundColor: Colors.transparent,
-      appBar: AppBar(title: const Text('曲谱库')),
-      body: GbarBackground(
+      // 多选模式垃圾桶（2026-11-05 iOS 交互）：右下角，带已选数量。
+      floatingActionButton: _selecting && _selected.isNotEmpty
+          ? FloatingActionButton.extended(
+              heroTag: 'batchDelete',
+              backgroundColor: p.negative,
+              foregroundColor: Colors.white,
+              onPressed: _deleteSelected,
+              icon: const Icon(Icons.delete_outline),
+              label: Text('删除 ${_selected.length}'))
+          : null,
+      appBar: AppBar(
+          title: Text(_selecting
+              ? (_selected.isEmpty ? '选择曲谱' : '已选 ${_selected.length} 项')
+              : '曲谱库'),
+          actions: [
+            // 回收站入口（2026-11-05 用户定案：删除先进回收站 30 天自动清）。
+            IconButton(
+                tooltip: '回收站',
+                icon: const Icon(Icons.delete_outline, size: 22),
+                onPressed: repo == null
+                    ? null
+                    : () async {
+                        await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const RecycleBinPage()));
+                        if (mounted) _reload();
+                      }),
+            // 选择/对勾（双端统一 iOS 信息 app 交互）：进入与退出多选。
+            IconButton(
+                tooltip: _selecting ? '完成' : '选择',
+                icon: Icon(_selecting ? Icons.check : Icons.checklist,
+                    size: 22),
+                onPressed: () {
+                  if (_selecting) {
+                    _exitSelecting();
+                  } else if (_scores != null && _scores!.isNotEmpty) {
+                    setState(() => _selecting = true);
+                  }
+                }),
+          ]),
+      body: CallbackShortcuts(
+        // 桌面增强：Ctrl+A 全选 / Esc 退出多选（仅多选模式生效）。
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.keyA, control: true): () {
+            if (!_selecting || scores == null) return;
+            setState(() =>
+                _selected.addAll(scores.map((s) => s.id)));
+          },
+          const SingleActivator(LogicalKeyboardKey.escape): () {
+            if (_selecting) _exitSelecting();
+          },
+        },
+        child: GestureDetector(
+          // 左滑后点其他任意位置收回展开行（2026-11-05 用户需求）：
+          // 行内点击被内层消费，只有点空白/组头等非交互区才冒泡到这。
+          onTap: () {
+            if (_swipedId != null) setState(() => _swipedId = null);
+          },
+          child: GbarBackground(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -485,6 +555,8 @@ class _ScoresPageState extends State<ScoresPage> {
         ),
       ),
         ),
+      ),
+        ),
     );
   }
 
@@ -506,10 +578,20 @@ class _ScoresPageState extends State<ScoresPage> {
       );
     }
     final s = it.score!;
-    // 行卡片回退（2026-11-04 走查：上一版 surface 白底不符）——恢复
-    // panel 底 + 10 圆角。需 Material 祖先（波纹）且底色走 Material.color，
-    // 否则触发 "ListTile background color may be invisible" 断言。
-    return Padding(
+    return _buildScoreRow(ctx, p, s);
+  }
+
+  /// 曲谱行（2026-11-05 双端统一 iOS 交互）：
+  /// - 多选模式：左侧圆形勾选键，点行=切换选中（三点菜单已删——左滑/
+  ///   长按/多选三通道全覆盖）
+  /// - 左滑露「重命名 / 删除」两枚 iOS 全高色块按钮（单行展开）
+  /// - 长按：卡片式展开（首图预览 + 元信息），点浮层外关闭
+  Widget _buildScoreRow(BuildContext ctx, GuitarBarPalette p, Score s) {
+    final swiped = _swipedId == s.id;
+    final checked = _selected.contains(s.id);
+    // 前景行：swiped 时右移出按钮区宽（116px = 两按钮 72+72 交叠 28）。
+    const swipeWidth = 116.0;
+    final row = Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
         color: p.panel,
@@ -519,40 +601,269 @@ class _ScoresPageState extends State<ScoresPage> {
         child: ListTile(
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          // 多选模式：勾选键占据 leading。
+          leading: _selecting
+              ? Icon(
+                  checked ? Icons.check_circle : Icons.radio_button_unchecked,
+                  size: 22,
+                  color: checked ? p.primary : p.muted)
+              : null,
           title: Text(s.title,
               style: TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.w500, color: p.ink)),
-          // GTP 导入无页图概念（谱面即数据），徽标不显示页数段。
-          // 13.4 后图片/PDF 不再识谱：徽标显示"可播放/查看器"
-          //（GTP 有 IR 可播放；图片/PDF 是纯查看器条目）。
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: p.ink)),
           subtitle: Text(
               '${s.sourceType == 'pdf' ? 'PDF' : s.sourceType == 'gtp' ? 'GTP' : '图片'}'
               '${s.sourceType == 'gtp' ? '' : ' · ${_pageCounts?[s.id] ?? 0} 页'}'
               ' · ${s.irJson == null ? '查看器' : '可播放'}',
               style: TextStyle(fontSize: 12, color: p.muted)),
-          // 行尾菜单（2026-10-30 用户反馈补删除）：桌面惯例三点菜单，删除
-          // 带确认防误删整份谱。「打开原谱」已删（2026-11-04 用户走查：
-          // 与点行进入完全同路径，冗余）。
-          trailing: PopupMenuButton<String>(
-            tooltip: '更多',
-            icon: Icon(Icons.more_horiz, size: 20, color: p.muted),
-            itemBuilder: (ctx) => [
-              const PopupMenuItem(value: 'rename', child: Text('重命名')),
-              const PopupMenuItem(value: 'delete', child: Text('删除')),
-            ],
-            onSelected: (v) {
-              if (v == 'rename') _renameScore(s);
-              if (v == 'delete') _confirmDelete(s);
-            },
-          ),
           onTap: () async {
-            await Navigator.push(context,
-                MaterialPageRoute(builder: (_) => ScoreDetailPage(scoreId: s.id)));
+            if (_selecting) {
+              setState(() => checked
+                  ? _selected.remove(s.id)
+                  : _selected.add(s.id));
+              return;
+            }
+            _swipedId = null;
+            await Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => ScoreDetailPage(scoreId: s.id)));
             if (mounted) _reload();
           },
+          onLongPress: () => _showScoreCard(s),
         ),
       ),
     );
+    // 左滑操作层：iOS 全高色块按钮（行同高、图标居中），前景平移露出。
+    return GestureDetector(
+      // 桌面右键同样开卡片（Windows 鼠标长按易抖动超拖动阈值被抢赢——
+      // 用户实测"GTP 卡片打不开"根因；右键是桌面直觉）。
+      onSecondaryTapUp: (_) => _showScoreCard(s),
+      onHorizontalDragUpdate: _selecting
+          ? null
+          : (d) {
+              if (d.delta.dx < -2 && _swipedId != s.id) {
+                setState(() => _swipedId = s.id);
+              } else if (d.delta.dx > 2 && _swipedId == s.id) {
+                setState(() => _swipedId = null);
+              }
+            },
+      child: Stack(children: [
+        Positioned.fill(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Spacer(),
+                _swipeButton(p, Icons.edit_outlined, '重命名',
+                    () => _renameScore(s), p.primary),
+                _swipeButton(p, Icons.delete_outline, '删除',
+                    () => _confirmDelete(s), p.negative),
+              ]),
+            ),
+          ),
+        ),
+        AnimatedSlide(
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+          offset: swiped
+              ? const Offset(-swipeWidth / 600, 0)
+              : Offset.zero,
+          child: row,
+        ),
+      ]),
+    );
+  }
+
+  /// 左滑露出的 iOS 式操作按钮：全高色块（图标+文字居中，底色按动作
+  /// 语义：重命名=primary 墨色、删除=negative 红）。
+  Widget _swipeButton(GuitarBarPalette p, IconData icon, String label,
+      VoidCallback onTap, Color bg) {
+    return InkWell(
+      onTap: () {
+        _swipedId = null;
+        onTap();
+      },
+      child: Container(
+        width: 72,
+        color: bg,
+        alignment: Alignment.center,
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, size: 22, color: p.ground),
+          const SizedBox(height: 4),
+          Text(label, style: TextStyle(fontSize: 11, color: p.ground)),
+        ]),
+      ),
+    );
+  }
+
+  /// 长按卡片展开（2026-11-05 用户定案）：首图预览 + 元信息，
+  /// 点浮层外任意处关闭；卡内快捷操作（打开/重命名/删除）。
+  /// GTP 无页图——**渲染谱面预览**（TabView 按卡片宽自适应重排，
+  /// 纯 widget 绘制无音频引擎；2026-11-05 用户反馈"GTP 卡片显示为
+  /// 空"修复）。
+  Future<void> _showScoreCard(Score s) async {
+    final repo = _repo;
+    if (repo == null || !mounted) return;
+    final p = context.palette;
+    final pages = repo.files.pagePngs(s.id);
+    // GTP：同步解码 irJson（几十小节 JSON ms 级）供谱面预览。
+    ScoreIr? gtpIr;
+    if (s.sourceType == 'gtp' && s.irJson != null) {
+      try {
+        gtpIr = ScoreIr.fromJson(
+            jsonDecode(s.irJson!) as Map<String, dynamic>);
+      } catch (_) {}
+    }
+    await showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '曲谱卡片',
+      barrierColor: Colors.black.withValues(alpha: 0.45),
+      pageBuilder: (ctx, _, _) => Center(
+        child: Material(
+          color: p.panel,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: p.border)),
+          clipBehavior: Clip.antiAlias,
+          child: SizedBox(
+            // 2026-11-05 用户反馈：卡片放大、主要显示内容、去文件名称。
+            width: 520,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              // 预览（主内容）：image/pdf 取页图首图；GTP 渲染谱面
+              //（TabView 按卡片宽重排，纵向可滚看前段）；两者皆无才显
+              // 类型徽标。
+              SizedBox(
+                height: 320,
+                width: double.infinity,
+                child: pages.isNotEmpty
+                    ? Image.file(pages.first, fit: BoxFit.contain)
+                    : gtpIr != null
+                        ? Material(
+                            color: p.ground,
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.all(8),
+                              child: TabView(ir: gtpIr),
+                            ),
+                          )
+                        : Container(
+                            color: p.ground,
+                            alignment: Alignment.center,
+                            child: Icon(Icons.library_music_outlined,
+                                size: 72, color: p.muted),
+                          ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(
+                      '${s.sourceType == 'pdf' ? 'PDF' : s.sourceType == 'gtp' ? 'GTP' : '图片'}'
+                      '${s.sourceType == 'gtp' ? '' : ' · ${_pageCounts?[s.id] ?? 0} 页'}'
+                      ' · ${s.irJson == null ? '查看器' : '可播放'}'
+                      ' · 导入于 ${s.createdAt.year}/${s.createdAt.month}/${s.createdAt.day}',
+                      style: TextStyle(fontSize: 12, color: p.muted)),
+                  const SizedBox(height: 16),
+                  Row(children: [
+                    FilledButton.tonalIcon(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      ScoreDetailPage(scoreId: s.id)));
+                        },
+                        icon: const Icon(Icons.open_in_full, size: 16),
+                        label: const Text('打开')),
+                    const Spacer(),
+                    IconButton(
+                        tooltip: '重命名',
+                        icon: Icon(Icons.edit_outlined, color: p.ink),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _renameScore(s);
+                        }),
+                    IconButton(
+                        tooltip: '删除',
+                        icon: Icon(Icons.delete_outline, color: p.negative),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _confirmDelete(s);
+                        }),
+                  ]),
+                ]),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 批量删除（多选模式右下角垃圾桶）：确认框（数量+前几项标题）后
+  /// 逐个删除，失败不中断；完成退出多选并刷新。
+  Future<void> _deleteSelected() async {
+    final repo = _repo;
+    final scores = _scores;
+    if (repo == null || _selected.isEmpty || !mounted) return;
+    final picked =
+        scores!.where((s) => _selected.contains(s.id)).toList();
+    final preview = picked
+        .take(3)
+        .map((s) => s.title)
+        .join('、');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('删除 ${picked.length} 份曲谱'),
+        content: Text('将删除：$preview'
+            '${picked.length > 3 ? ' 等 ${picked.length} 份' : ''}，'
+            '原谱文件与识谱结果一并删除，不可恢复。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('删除')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    var failed = 0;
+    for (final s in picked) {
+      try {
+        await repo.deleteScore(s.id);
+      } catch (_) {
+        failed++;
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _selecting = false;
+        _selected.clear();
+        _swipedId = null;
+      });
+      await _reload();
+      if (failed > 0 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('删除完成，$failed 份失败')));
+      }
+    }
+  }
+
+  /// 退出多选（右上角对勾 / Esc）。
+  void _exitSelecting() {
+    setState(() {
+      _selecting = false;
+      _selected.clear();
+      _swipedId = null;
+    });
   }
 
   /// 重命名（2026-11-03 用户需求）：保存时校验——trim 后非空（两侧
