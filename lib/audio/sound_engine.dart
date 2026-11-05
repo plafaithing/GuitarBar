@@ -116,4 +116,12 @@ class SoundEngine {
           .value = v.clamp(0.0, 3.0);
     } catch (_) {}
   }
+
+  /// 设置某句柄的实时音量（第 16 个成员，FadeIn/FadeOut 音量渐变用；
+  /// 0-1，clamp 防越界；失败静默——渐变失败维持调度时音量，不致命）。
+  void setVoiceVolume(SoundHandle h, double v) {
+    try {
+      SoLoud.instance.setVolume(h, v.clamp(0.0, 1.0));
+    } catch (_) {}
+  }
 }

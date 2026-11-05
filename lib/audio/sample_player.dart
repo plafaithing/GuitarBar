@@ -97,6 +97,7 @@ class SampleScorePlayer implements ScorePlayback {
 
   /// 活动滑音 ramp（handle → PitchShift 逐 tick 推进）。
   final List<_SlideRamp> _slides = [];
+  final List<_VolumeRamp> _volumeRamps = [];
 
   /// 滑音 ramp 推进（50ms 步进，pitchShift 保时长只变音高）。
   void _advanceSlides() {
@@ -105,10 +106,30 @@ class SampleScorePlayer implements ScorePlayback {
       // 句柄已失效（播完/被切）：直接清除。
       if (!_sound.getIsValidVoiceHandle(s.handle)) return true;
       s.step++;
+      if (s.pingpong) {
+        // 揉弦往复（三角波循环）：from→to→from 循环推进，音结束才清。
+        final cycle = s.steps * 2;
+        final t = (s.step % cycle) / s.steps; // 0..2
+        final v = t <= 1 ? t : 2 - t; // 三角 0..1..0
+        _sound.setPitchShift(
+            s.src, s.handle, s.from + (s.to - s.from) * v);
+        return false;
+      }
       final t = s.step / s.steps;
       final v = s.from + (s.to - s.from) * t;
       _sound.setPitchShift(s.src, s.handle, v);
       return s.step >= s.steps; // ramp 完成后保持终值到 voice 自然结束
+    });
+  }
+
+  /// 音量 ramp 推进（FadeIn/FadeOut；50ms 步进，到位即移除）。
+  void _advanceVolumeRamps() {
+    if (_volumeRamps.isEmpty) return;
+    _volumeRamps.removeWhere((r) {
+      r.step++;
+      final t = (r.step / r.steps).clamp(0.0, 1.0);
+      _sound.setVoiceVolume(r.handle, r.from + (r.to - r.from) * t);
+      return r.step >= r.steps;
     });
   }
 
@@ -261,12 +282,22 @@ class SampleScorePlayer implements ScorePlayback {
           final absBeat = baseBeat + n.beat;
           // 采样时长 = 音符时值 + 极短余振（0.08s，2026-10-31 二轮收窄：
           // 0.15s 在 82bpm 快速指弹中仍叠出"抢拍"感）。
-          final noteSeconds = n.duration * beatSeconds + 0.08;
+          var noteSeconds = n.duration * beatSeconds + 0.08;
           // 力度（2026-11-01 技法音效，GP8 无独立采样靠力度近似——其
           // 内部同为采样+处理）：击勾端弱击 0.75、闷音暗弱 0.7。
           var volume = (n.hopoEnd || n.hopoStart)
               ? 0.75
               : (n.technique == 'x' ? 0.7 : 1.0);
+          // 符号播放映射（2026-11-04 gp8 对照补完）：
+          // - Ghost 幽灵音 = 极弱（GP8 ~0.3-0.5 力度带）
+          // - Accent 重音 = 强调（在 Dynamic/Velocity 基础上再抬）
+          if (n.ghost) volume *= 0.4;
+          if (n.accent) volume *= 1.15;
+          // 时值截短（gp8 同款发声行为）：
+          // - Staccato 断音 = 时值减半（留空拍感）
+          // - Grace 装饰音 = 极短一闪（~30-40ms 量级）
+          if (n.staccato) noteSeconds *= 0.5;
+          if (n.grace) noteSeconds *= 0.12;
           // Dynamic 力度映射（2026-11-02 gp8 播放复刻）：力度记号影响
           // 发声音量（GP8 同款——ff 到 pp 的 MIDI 力度带）。
           volume *= _dynamicVolume(n.dynamicMark);
@@ -300,6 +331,34 @@ class SampleScorePlayer implements ScorePlayback {
             if (e2 > endBeat) endBeat = e2;
             continue;
           }
+          // 颤音 Trill（2026-11-04 gp8 对照补完）：32 分与上方大二度
+          //（2 半音，GP8 默认交替音程）快速交替——奇数粒固定移调
+          //（PitchShift 恒定，非 ramp）。曲库样本无 Trill 数据（探针
+          // 实锤），交替音程/速度按 GP8 默认，待真实谱校准。
+          if (n.trill && n.duration > 0.15) {
+            const step = 0.125;
+            var t = n.beat;
+            var k = 0;
+            while (t < n.beat + n.duration - 1e-9) {
+              final e = _PendingEvent(
+                  time: (baseBeat + t) * beatSeconds,
+                  file: r.file,
+                  speed: r.speed,
+                  muted: n.technique == 'x',
+                  noteSeconds: step * beatSeconds + 0.08,
+                  volume: volume * (k.isEven ? 1.0 : 0.85),
+                  slide: false,
+                  string: n.string,
+                  absBeat: baseBeat + t);
+              if (k.isOdd) e.pitchFixed = 2.0; // 交替粒 +2 半音
+              _pending.add(e);
+              t += step;
+              k++;
+            }
+            final e3 = baseBeat + n.beat + n.duration;
+            if (e3 > endBeat) endBeat = e3;
+            continue;
+          }
           _pending.add(_PendingEvent(
               time: absBeat * beatSeconds,
               file: r.file,
@@ -310,7 +369,10 @@ class SampleScorePlayer implements ScorePlayback {
               slide: n.slide != null,
               string: n.string,
               absBeat: absBeat,
-              arpeggio: n.arpeggio));
+              arpeggio: n.arpeggio,
+              brush: n.brush,
+              vibrato: n.vibrato,
+              fade: n.fadding));
           // 弯音/摇把（2026-11-04 gp8 补完）：bend 曲线首尾优先，
           // 否则拍级摇把 origin→destination。首尾相等（全 0 占位）不挂。
           {
@@ -370,25 +432,31 @@ class SampleScorePlayer implements ScorePlayback {
   /// 量级）。Beat 级标注挂该拍全部音 → 同 absBeat 的琶音事件为一群。
   void _staggerArpeggios() {
     const step = 0.03;
+    const brushStep = 0.015; // 扫弦比琶音更快依次（GP8 听感惯例）
     var i = 0;
     while (i < _pending.length) {
       final e = _pending[i];
-      if (e.arpeggio == null) {
+      if (e.arpeggio == null && e.brush == null) {
         i++;
         continue;
       }
+      // 方向语义（GP8）：琶音 up = 低音弦（6）先响；扫弦 down（向下扫）
+      // = 6 弦先响——brush 与 arpeggio 的方向词相反、弦序一致。
+      final isDownward =
+          e.arpeggio != null ? e.arpeggio == 'up' : e.brush == 'down';
+      final stepBeat = e.arpeggio != null ? step : brushStep;
       var j = i;
       while (j < _pending.length &&
           _pending[j].absBeat == e.absBeat &&
-          _pending[j].arpeggio != null) {
+          (_pending[j].arpeggio != null || _pending[j].brush != null)) {
         j++;
       }
       final group = _pending.sublist(i, j)
-        ..sort((a, b) => e.arpeggio == 'up'
-            ? b.string.compareTo(a.string) // Up：6 弦先响 → string 降序
-            : a.string.compareTo(b.string)); // Down：1 弦先响
+        ..sort((a, b) => isDownward
+            ? b.string.compareTo(a.string) // 6 弦先响 → string 降序
+            : a.string.compareTo(b.string)); // 1 弦先响
       for (var k = 0; k < group.length; k++) {
-        group[k].time += k * step;
+        group[k].time += k * stepBeat;
       }
       i = j;
     }
@@ -417,6 +485,7 @@ class SampleScorePlayer implements ScorePlayback {
   void onTick() {
     if (!_playing || _paused) return;
     _advanceSlides();
+    _advanceVolumeRamps();
     final pos = _positionSeconds();
     // AB 循环（2026-11-01 跟练）：越 B 点重锚回 A（A/B 均设才生效）。
     final a = loopA, b = loopB;
@@ -445,6 +514,34 @@ class SampleScorePlayer implements ScorePlayback {
           volume: e.volume,
         );
         _voices.add(h);
+        // 颤音 Trill 交替粒：固定移调（恒定 PitchShift，非 ramp）。
+        if (e.pitchFixed != null) {
+          _sound.setPitchShift(
+              src, h, math.pow(2.0, e.pitchFixed! / 12).toDouble());
+        }
+        // 揉弦：音高 ±0.4 半音三角波往复（~200ms 周期，GP8 木弦幅度
+        // 小幅惯例），持续整个音。
+        if (e.vibrato) {
+          _slides.add(_SlideRamp(
+              src: src,
+              handle: h,
+              from: math.pow(2.0, -0.4 / 12).toDouble(),
+              to: math.pow(2.0, 0.4 / 12).toDouble(),
+              step: 0,
+              steps: 4,
+              pingpong: true));
+        }
+        // 淡入/淡出：音量 ramp 铺满音符时值（in 0.3→v；out v→0.2）。
+        if (e.fade != null) {
+          _volumeRamps.add(_VolumeRamp(
+              handle: h,
+              from: e.fade == 'in' ? 0.3 : e.volume,
+              to: e.fade == 'in' ? e.volume : 0.2,
+              step: 0,
+              steps: (e.noteSeconds / _rate * 1000 / 50)
+                  .round()
+                  .clamp(2, 20)));
+        }
         // 滑音起音：注册 PitchShift ramp（终点速度接线过才 ramp）。
         if (e.pitchFrom != null && e.pitchTo != null) {
           // 弯音/摇把（2026-11-04 gp8 补完）：曲线铺满音符时值，
@@ -544,7 +641,8 @@ class SampleScorePlayer implements ScorePlayback {
 
   /// 停掉全部活动句柄（预调度中 + 余振）。已自然失效的句柄跳过。
   void _killVoices() {
-    _slides.clear(); // 滑音 ramp 随声部全切
+    _slides.clear(); // 滑音/揉弦 ramp 随声部全切
+    _volumeRamps.clear(); // 淡入出 ramp 同切
     final voices = List.of(_voices);
     _voices.clear();
     for (final h in voices) {
@@ -572,22 +670,30 @@ class _PendingEvent {
       this.slide = false,
       required this.string,
       required this.absBeat,
-      this.arpeggio});
+      this.arpeggio,
+      this.brush,
+      this.vibrato = false,
+      this.fade});
   double time; // 可变：琶音依次发声的错开偏移（事件轴原速秒）
   final String file;
   final double speed;
   final bool muted;
   final double noteSeconds; // 采样时长限制（音符时值+0.15s 余振）
-  final double volume; // 力度（击勾弱击/闷音暗弱）
+  final double volume; // 力度（击勾弱击/闷音暗音色的力度层用）
   final bool slide; // 滑音起音（起播后 PitchShift ramp 向终点）
   double? slideEndSpeed; // 滑音终点的重移调 speed（_attachSlideTargets 回填）
   final int string;
   final double absBeat;
   final String? arpeggio; // 琶音方向（'up'|'down'，依次发声用）
+  final String? brush; // 扫弦方向（'up'|'down'，各弦快速依次发声）
+  final bool vibrato; // 揉弦（音高往复循环 ramp）
+  final String? fade; // 'in'|'out'（音量渐变 ramp）
   // 弯音/摇把（2026-11-04 gp8 补完）：起止半音（null = 无）。
   // bend（音级曲线首尾）优先于 whammy（拍级 origin→destination）。
   double? pitchFrom;
   double? pitchTo;
+  // 颤音 Trill 交替粒的固定移调（半音；恒定 PitchShift 非 ramp）。
+  double? pitchFixed;
   AudioSource? src;
 }
 
@@ -599,8 +705,26 @@ class _SlideRamp {
       required this.from,
       required this.to,
       required this.step,
-      required this.steps});
+      required this.steps,
+      this.pingpong = false});
   final AudioSource src;
+  final SoundHandle handle;
+  final double from;
+  final double to;
+  int step;
+  final int steps;
+  // true = 揉弦往复循环（from→to→from 三角波，音结束才清）。
+  final bool pingpong;
+}
+
+/// 音量 ramp（FadeIn/FadeOut）：handle 音量 from→to 分 steps 步推进。
+class _VolumeRamp {
+  _VolumeRamp(
+      {required this.handle,
+      required this.from,
+      required this.to,
+      required this.step,
+      required this.steps});
   final SoundHandle handle;
   final double from;
   final double to;
