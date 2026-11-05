@@ -75,21 +75,52 @@ class _MetronomePageState extends State<MetronomePage> {
     );
   }
 
-  /// 转盘点按（T2 v1）：角度反算 BPM（30–240 线性映射 300° 弧），取整。
-  void _dialTapUp(TapUpDetails d, double dial) {
+  /// 转盘角度 → BPM 反算（点按/拖动共用）。底部开口区返回 null：
+  /// 点按按封顶 240 处理（原语义），拖动按"不越界"处理（保持当前值）。
+  double? _bpmFromLocal(Offset local, double dial) {
     final c = dial / 2;
-    final v = d.localPosition - Offset(c, c);
+    final v = local - Offset(c, c);
     var a = math.atan2(v.dy, v.dx); // [-π, π]，顺时针为正
     const start = 2 * math.pi * 120 / 360; // 左下起点（30 BPM）
     const sweep = 2 * math.pi * 300 / 360; // 300° 弧
     while (a < start) {
       a += 2 * math.pi;
     }
-    if (a > start + sweep) a = start + sweep; // 落在底部开口区 → 封顶
-    final bpm = 30 + (a - start) / sweep * 210;
+    if (a > start + sweep) return null; // 底部开口区
+    return 30 + (a - start) / sweep * 210;
+  }
+
+  /// 转盘点按（T2 v1）：角度反算 BPM（30–240 线性映射 300° 弧），取整；
+  /// 开口区封顶 240（原语义）。
+  void _dialTapUp(TapUpDetails d, double dial) {
+    _setBpm(_bpmFromLocal(d.localPosition, dial) ?? 240.0);
+  }
+
+  /// 圆球拖动（2026-11-05 用户需求）：从绿圈附近按下才进入拖动模式，
+  /// 拖动中连续反算 BPM（抓取阈值 24px，覆盖圆球半径 10 + 手指容差）。
+  bool _draggingBall = false;
+
+  void _dialPanStart(DragStartDetails d, double dial) {
+    final c = dial / 2;
+    final radius = dial / 2 - 18;
+    final a = _MetronomeDialPainter.angleOf(_engine.cfg.bpm);
+    final marker = Offset(c, c) +
+        Offset(math.cos(a), math.sin(a)) * (radius - 5);
+    _draggingBall =
+        (d.localPosition - marker).distance <= 24;
+    if (_draggingBall) _bpmFromLocal(d.localPosition, dial); // 预热无副作用
+  }
+
+  void _dialPanUpdate(DragUpdateDetails d, double dial) {
+    if (!_draggingBall) return;
+    final bpm = _bpmFromLocal(d.localPosition, dial);
+    if (bpm != null) _setBpm(bpm);
+  }
+
+  void _setBpm(double raw) {
     final cfg = _engine.cfg;
     setState(() => _engine.cfg = MetronomeConfig(
-        bpm: bpm.round().clamp(30, 240).toDouble(),
+        bpm: raw.round().clamp(30, 240).toDouble(),
         beatsPerBar: cfg.beatsPerBar,
         subdivision: cfg.subdivision));
   }
@@ -151,6 +182,13 @@ class _MetronomePageState extends State<MetronomePage> {
               child: GestureDetector(
                 onTapUp:
                     _engine.running ? null : (d) => _dialTapUp(d, dial),
+                // 圆球拖动调 BPM（运行中禁用，同点按）：仅从绿圈附近按下
+                // 才进入拖动，任意处拖不影响点按/中央播放键。
+                onPanStart:
+                    _engine.running ? null : (d) => _dialPanStart(d, dial),
+                onPanUpdate:
+                    _engine.running ? null : (d) => _dialPanUpdate(d, dial),
+                onPanEnd: (_) => _draggingBall = false,
                 child: Stack(fit: StackFit.expand, children: [
                   TweenAnimationBuilder<double>(
                     key: ValueKey(tick),
@@ -169,9 +207,9 @@ class _MetronomePageState extends State<MetronomePage> {
                   Center(
                     child: IconButton(
                       onPressed: _toggle,
-                      iconSize: 48,
+                      iconSize: 96, // 2026-11-05 用户反馈：放大 1 倍
                       constraints: const BoxConstraints(
-                          minWidth: 80, minHeight: 80),
+                          minWidth: 160, minHeight: 160),
                       padding: EdgeInsets.zero,
                       icon: Icon(
                           _engine.running ? Icons.pause : Icons.play_arrow,
@@ -239,7 +277,7 @@ class _MetronomePageState extends State<MetronomePage> {
             absorbing: _engine.running,
             child: DropdownButton<int>(
               value: cfg.subdivision,
-            dropdownColor: palette.surface,
+            dropdownColor: palette.panel,
             elevation: 2,
             borderRadius: BorderRadius.circular(8),
             icon: Icon(Icons.expand_more, color: palette.ink),
@@ -315,8 +353,10 @@ class _MetronomeDialPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = math.min(size.width, size.height) / 2 - 18;
 
-    // 密集细刻度环（M2 已过段 positive 2px + F2 整环闪光：全环向闪光色
+    // 密集刻度环（M2 已过段 positive + F2 整环闪光：全环向闪光色
     // lerp（flash×0.8），按拍时长衰减回基准色，循环跳动）。
+    // 2026-11-05 用户反馈：刻度放大——加长（10→15px）加粗（1.0→1.6，
+    // 已过段 2.6），密集细线更醒目。
     final flashColor =
         flashIsDownbeat ? const Color(0xFFE6B800) : palette.positive;
     for (var i = 0; i < 210; i++) {
@@ -326,10 +366,10 @@ class _MetronomeDialPainter extends CustomPainter {
       final a = _start + i / 210 * _sweep;
       final dir = Offset(math.cos(a), math.sin(a));
       canvas.drawLine(
-          center + dir * (radius - 10),
+          center + dir * (radius - 15),
           center + dir * radius,
           Paint()
-            ..strokeWidth = lit ? 2.0 : 1.0
+            ..strokeWidth = lit ? 2.6 : 1.6
             ..color = Color.lerp(base, flashColor, flash * 0.8)!);
     }
 

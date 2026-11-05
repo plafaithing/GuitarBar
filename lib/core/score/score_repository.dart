@@ -69,6 +69,20 @@ class ScoreRepository {
       (_db.select(_db.scores)..where((s) => s.id.equals(id)))
           .getSingleOrNull();
 
+  /// 唯一化标题（2026-11-05 用户需求：同名文件重复导入不覆盖，自动
+  /// 改名——Windows 新建同名文件夹同款）：`名` 已存在 → `名 (2)`、
+  /// `名 (3)`… 找第一个空位。全库查重（不区分类型，Windows 目录语义）。
+  Future<String> _uniqueTitle(String base) async {
+    final existing =
+        (await _db.select(_db.scores).get()).map((s) => s.title).toSet();
+    if (!existing.contains(base)) return base;
+    var i = 2;
+    while (existing.contains('$base ($i)')) {
+      i++;
+    }
+    return '$base ($i)';
+  }
+
   /// 导入：插行拿 id → 原图落盘 → 生成页图（PDF 逐页转 PNG / 图片规范化单页）。
   Future<Score> importScore({required String title, required File source}) async {
     final ext = p.extension(source.path).replaceFirst('.', '').toLowerCase();
@@ -78,8 +92,9 @@ class ScoreRepository {
     if (!isPdf && !isGtp && !imageExts.contains(ext)) {
       throw ArgumentError('不支持的曲谱文件类型: .$ext');
     }
+    final uniqueTitle = await _uniqueTitle(title);
     final id = await _db.into(_db.scores).insert(ScoresCompanion.insert(
-        title: title,
+        title: uniqueTitle,
         sourceType: isPdf ? 'pdf' : isGtp ? 'gtp' : 'image',
         sourcePath: ''));
     try {
@@ -204,7 +219,9 @@ class ScoreRepository {
       }
     }
     final id = await _db.into(_db.scores).insert(ScoresCompanion.insert(
-        title: title, sourceType: 'image', sourcePath: ''));
+        title: await _uniqueTitle(title),
+        sourceType: 'image',
+        sourcePath: ''));
     try {
       final pages = <Uint8List>[];
       for (final f in images) {
