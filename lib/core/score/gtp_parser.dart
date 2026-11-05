@@ -453,6 +453,7 @@ void _readVoice(
           velocity: velocity,
           bend: marks.bend,
           whammy: whammy,
+          harmonicOffset: marks.harmonicOffset,
         ));
         // 链式 tie（dest 再连下一 dest）时 dest 也登记为 origin（实测无此形态，兜底）。
         tieOrigins[(gpString, fret)] = (out, out.length - 1);
@@ -501,6 +502,7 @@ void _readVoice(
         velocity: velocity,
         bend: marks.bend,
         whammy: whammy,
+        harmonicOffset: marks.harmonicOffset,
       ));
       tieOrigins[(gpString, fret)] = (out, out.length - 1);
     }
@@ -598,6 +600,9 @@ class _NoteMarks {
   bool trill = false;
   String? slide;
   List<BendPointIr>? bend; // 音符弯音曲线（gpif Note 属性 Bend）
+  double? harmonicOffset; // 泛音发声偏移（半音，解析层按类型算好）
+  String? harmonicTypeRaw; // 'natural'|'artificial'|...（原始小写）
+  double? harmonicFret; // HFret 浮点（触点位置/相对距离）
 }
 
 bool _propEnabled(XmlElement note, String name) => note
@@ -636,7 +641,14 @@ _NoteMarks _noteMarks(XmlElement note) {
       switch (prop.getAttribute('name')) {
         case 'HarmonicType':
           final t = (_childText(prop, 'HType')?.trim() ?? '').toLowerCase();
-          if (t.isNotEmpty && t != 'noharmonic') m.technique = 'H';
+          if (t.isNotEmpty && t != 'noharmonic') {
+            m.technique = 'H';
+            m.harmonicTypeRaw = t;
+          }
+          break;
+        case 'HarmonicFret':
+          m.harmonicFret =
+              double.tryParse(_childText(prop, 'HFret') ?? '');
           break;
         case 'Muted':
           if (prop.findElements('Enable').isNotEmpty) m.technique = 'x';
@@ -666,10 +678,43 @@ _NoteMarks _noteMarks(XmlElement note) {
           break;
       }
     }
+    // 泛音发声偏移（2026-11-05 gp8 实现方式逆向；曲库 22 处真值：
+    // Natural/Artificial 两类）。Natural 的 HFret 即触点品；Artificial
+    // 的 HFret 是相对按弦品的触点距离（月下之恋 Fret19/HFret12 →
+    // 按弦音 +12）。未知品兜底 +12（最常见 12 品触点）。
+    final hf = m.harmonicFret;
+    if (m.harmonicTypeRaw != null && hf != null) {
+      m.harmonicOffset = m.harmonicTypeRaw == 'artificial'
+          ? _naturalHarmonicOffset(hf)
+          : _naturalHarmonicOffset(hf);
+    }
   }
   // 兼容旧技法字母：连滑/击勾由专用弧线表达（渲染按品数判 H/P），
   // gpx 通道不再写 h/p/s 字母；AI 通道的 technique 字段不受影响。
   return m;
+}
+
+/// 自然泛音表（触点品 → 相对空弦半音）：谐波系列标准节点。
+/// alphaTab/GP8 同款；未知品兜底 12（12 品最常见触点）。
+double _naturalHarmonicOffset(double fret) {
+  switch (fret.round()) {
+    case 12:
+      return 12;
+    case 9:
+      return 16;
+    case 7:
+      return 19;
+    case 5:
+      return 24;
+    case 4:
+      return 28;
+    case 3:
+      return 31;
+    case 2:
+      return 34;
+    default:
+      return 12;
+  }
 }
 
 int _readIntLe(Uint8List b) => b[0] | (b[1] << 8) | (b[2] << 16) | (b[3] << 24);

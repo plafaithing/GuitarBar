@@ -271,6 +271,7 @@ class NoteIr {
     this.velocity,
     this.bend,
     this.whammy,
+    this.harmonicOffset,
   });
 
   final double beat; // 小节内拍位置，0 起
@@ -339,6 +340,16 @@ class NoteIr {
   final List<BendPointIr>? bend;
   final List<double>? whammy;
 
+  // 泛音（2026-11-05 gp8 实现方式逆向）：**发声 = 音高重映射**——原品
+  // 采样固定移调到泛音分节点（GP8/alphaTab 同款，无独立采样）。
+  // harmonicOffset = 相对空弦的半音偏移（解析层算好）：
+  // - Natural：自然泛音表[fret]（12→+12、9→+16、7→+19、5→+24、4→+28、
+  //   3→+31、2→+34，未知品兜底 +12）
+  // - Artificial：按弦音 + 自然泛音表[HFret]（HFret 为触点相对距离）
+  // 曲库样本：月下之恋 Artificial(Fret19/HFret12)、Like A Star
+  // Natural(HFret12)/Artificial、Bluebird Natural——22 处真值。
+  final double? harmonicOffset;
+
   /// 有标注才写字段：无标注音符的 JSON 与旧格式一致（存量 irJson 兼容）。
   Map<String, dynamic> toJson() => {
         'beat': beat,
@@ -374,6 +385,7 @@ class NoteIr {
         if (bend != null)
           'bend': [for (final p in bend!) [p.offset, p.value]],
         if (whammy != null) 'whammy': whammy,
+        if (harmonicOffset != null) 'harmonicOffset': harmonicOffset,
       };
 
   static NoteIr fromJson(Map<String, dynamic> j) => NoteIr(
@@ -418,6 +430,7 @@ class NoteIr {
         whammy: (j['whammy'] as List?)
             ?.map((v) => (v as num).toDouble())
             .toList(),
+        harmonicOffset: (j['harmonicOffset'] as num?)?.toDouble(),
       );
 
   NoteIr copyWith({

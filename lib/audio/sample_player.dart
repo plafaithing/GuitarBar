@@ -375,6 +375,8 @@ class SampleScorePlayer implements ScorePlayback {
               fade: n.fadding));
           // 弯音/摇把（2026-11-04 gp8 补完）：bend 曲线首尾优先，
           // 否则拍级摇把 origin→destination。首尾相等（全 0 占位）不挂。
+          // 泛音（2026-11-05 gp8 逆向）：发声 = 固定移调到泛音分节点
+          //（GP8/alphaTab 同款音高重映射），复用 trill 的恒定移调机制。
           {
             final pFrom = n.bend != null && n.bend!.isNotEmpty
                 ? n.bend!.first.value
@@ -387,6 +389,8 @@ class SampleScorePlayer implements ScorePlayback {
                 (pFrom - pTo).abs() > 1e-6) {
               _pending.last.pitchFrom = pFrom;
               _pending.last.pitchTo = pTo;
+            } else if (n.harmonicOffset != null) {
+              _pending.last.pitchFixed = n.harmonicOffset;
             }
           }
           final e = absBeat + n.duration;

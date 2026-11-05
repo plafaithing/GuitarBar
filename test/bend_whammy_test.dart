@@ -6,6 +6,18 @@ import 'package:guitarbar/core/score/score_ir.dart';
 // 曲库真实样本无 Bend、Whammy 全 0.0 占位——合成 fixture 验证解析语义，
 // 换算系数（y/4 半音、x/60 拍内位置）待真实谱校准。
 void main() {
+  test('parseGpif：泛音（gp8 逆向）——Natural/Artificial 发声偏移', () {
+    // Natural：触点品 12 → +12；触点品 7 → +19（谐波系列表）。
+    final nat = parseGpif(_harmonicGpif('Natural', 12));
+    final n = nat.tracks.first.measures.first.notes.first;
+    expect(n.harmonicOffset, 12.0);
+    final nat7 = parseGpif(_harmonicGpif('Natural', 7));
+    expect(nat7.tracks.first.measures.first.notes.first.harmonicOffset, 19.0);
+    // Artificial：HFret 为触点相对距离（月下之恋 Fret19/HFret12 真值同构）。
+    final art = parseGpif(_harmonicGpif('Artificial', 12));
+    expect(art.tracks.first.measures.first.notes.first.harmonicOffset, 12.0);
+  });
+
   test('parseGpif：Note 属性 Bend 曲线 → NoteIr.bend（x/60 位置、y/4 半音）', () {
     final ir = parseGpif(_bendGpif);
     final n = ir.tracks.first.measures.first.notes.first;
@@ -113,5 +125,26 @@ const _whammyZeroGpif = '''<?xml version="1.0" encoding="UTF-8"?>
     </Properties>
   </Beat></Beats>
   <Notes><Note id="0"><Properties><Property name="String"><String>5</String></Property><Property name="Fret"><Fret>0</Fret></Property></Properties></Note></Notes>
+  <Rhythms><Rhythm id="0"><NoteValue>Quarter</NoteValue></Rhythm></Rhythms>
+</GPIF>''';
+
+// 泛音 fixture（type/hfret 参数化；GP6 真值形态：HarmonicType/HarmonicFret）。
+String _harmonicGpif(String type, int hfret) => '''<?xml version="1.0" encoding="UTF-8"?>
+<GPIF>
+  <Score><Title><![CDATA[Harmonic Test]]></Title></Score>
+  <MasterTrack><Tracks>0</Tracks><Automations><Automation><Type>Tempo</Type><Value>90 2</Value></Automation></Automations></MasterTrack>
+  <Tracks><Track id="0"><Name><![CDATA[T]]></Name><Properties><Property name="Tuning"><Pitches>40 45 50 55 59 64</Pitches></Property></Properties></Track></Tracks>
+  <MasterBars><MasterBar><Time>4/4</Time><Bars>0</Bars></MasterBar></MasterBars>
+  <Bars><Bar id="0"><Voices>0</Voices></Bar></Bars>
+  <Voices><Voice id="0"><Beats>0</Beats></Voice></Voices>
+  <Beats><Beat id="0"><Rhythm ref="0" /><Notes>0</Notes></Beat></Beats>
+  <Notes><Note id="0">
+    <Properties>
+      <Property name="String"><String>5</String></Property>
+      <Property name="Fret"><Fret>$hfret</Fret></Property>
+      <Property name="HarmonicType"><HType>$type</HType></Property>
+      <Property name="HarmonicFret"><HFret>$hfret.000000</HFret></Property>
+    </Properties>
+  </Note></Notes>
   <Rhythms><Rhythm id="0"><NoteValue>Quarter</NoteValue></Rhythm></Rhythms>
 </GPIF>''';
