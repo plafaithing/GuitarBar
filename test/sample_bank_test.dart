@@ -68,11 +68,29 @@ void main() {
     expect(r.speed, lessThan(0.7)); // 移调量大幅减少（< 7 半音降速）
   });
 
-  test('非 5/7/12 泛音位：按普通拨弦发声（音高正确优先）', () {
+  test('非 5/7/12 泛音位（无 offset 旧路径）：按普通拨弦发声', () {
     final r = SteelSampleBank.resolve(
         string: 6, fret: 9, soundingMidi: 49, technique: 'H');
     expect(r!.file, 'Mrg12-Pck-Sus-Up-01-6E40-048-none-none.ogg');
     expect(r.speed, closeTo(speedBySemitones(1), 1e-9));
+  });
+
+  test('harmonicOffset 强制真泛音采样（2026-11-07 音色修复）', () {
+    // 人工泛音月下之恋同构：记谱 4 弦 19 品（soundingMidi=50+19=69），
+    // offset=12（触点 12）→ 目标 81，跨弦借采最近的真泛音采样。
+    final r = SteelSampleBank.resolve(
+        string: 4, fret: 19, soundingMidi: 69,
+        technique: 'H', harmonicOffset: 12.0);
+    expect(r, isNotNull);
+    expect(r!.file, contains('Hrm-Nat')); // 真泛音采样，非拨弦
+    // speed = 泛音目标 / 采样发声（跨弦借采后应 ≤~1.3 合理区间）。
+    expect(r.speed, greaterThan(0.5));
+    expect(r.speed, lessThan(1.4));
+    // 4 品触点（Like A Star 同构，offset=28 → 触点 4 ∉ 白名单）同样走泛音。
+    final r2 = SteelSampleBank.resolve(
+        string: 1, fret: 4, soundingMidi: 68,
+        technique: 'H', harmonicOffset: 28.0);
+    expect(r2!.file, contains('Hrm-Nat'));
   });
 
   test('弦号越界返回 null', () {

@@ -233,6 +233,51 @@ class _ScoresPageState extends State<ScoresPage> {
     }
   }
 
+  /// 批量导入图片合并为一个曲谱（2026-11-06 用户需求，iOS 场景：文件
+  /// 选择器选不了文件夹）：多选图片 → 拖拽排序对话框（预填文件名自然
+  /// 排序）→ 命名 → importImages 合成多页。
+  Future<void> _importImageBatch() async {
+    final repo = _repo;
+    if (repo == null || _busy) return;
+    final initialDir = await repo.lastImportDir();
+    final files = await openFiles(
+        initialDirectory: initialDir,
+        acceptedTypeGroups: [
+          const XTypeGroup(
+              label: '曲谱图片',
+              extensions: ['png', 'jpg', 'jpeg', 'webp']),
+        ]);
+    if (files.isEmpty || !mounted) return;
+    // 排序确认（预填自然排序——与文件夹导入同款）。
+    final ordered = files
+        .map((f) => File(f.path))
+        .toList()
+      ..sort((a, b) => ScoreRepository.naturalCompare(
+          p.basename(a.path), p.basename(b.path)));
+    final confirmed = await showDialog<List<File>>(
+      context: context,
+      builder: (ctx) => _ImageOrderDialog(files: ordered),
+    );
+    if (confirmed == null || confirmed.isEmpty || !mounted) return;
+    final firstDir = p.dirname(confirmed.first.path);
+    if (firstDir.isNotEmpty) unawaited(repo.saveLastImportDir(firstDir));
+    final title = await _askTitle(
+        p.basenameWithoutExtension(confirmed.first.path));
+    if (title == null || title.trim().isEmpty || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      await repo.importImages(title: title.trim(), images: confirmed);
+      await _reload();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('导入失败：$e')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<String?> _askTitle(String initial) => showDialog<String>(
         context: context,
         builder: (ctx) {
@@ -357,6 +402,11 @@ class _ScoresPageState extends State<ScoresPage> {
                 MenuItemButton(
                     onPressed: repo == null || _busy ? null : _importFolder,
                     child: const Text('导入文件夹（多图合成多页）')),
+                // iOS 场景（2026-11-06 用户需求）：文件选择器选不了文件夹，
+                // 多选图片合并为一个曲谱 + 导入前拖拽排序。
+                MenuItemButton(
+                    onPressed: repo == null || _busy ? null : _importImageBatch,
+                    child: const Text('批量导入图片（合并为一个曲谱）')),
               ],
               builder: (ctx, controller, child) => FilledButton.icon(
                 onPressed: () =>
@@ -866,9 +916,10 @@ class _ScoresPageState extends State<ScoresPage> {
     });
   }
 
-  /// 重命名（2026-11-03 用户需求）：保存时校验——trim 后非空（两侧
-  /// 不能是空格），内部空格允许；同文件类型内唯一（不同类型允许同名）。
-  /// 校验失败留在对话框内显示错误，不关窗。
+  /// 重命名（2026-11-03 用户需求）：trim 后非空（两侧不能是空格），
+  /// 内部空格允许。撞同类型重名时**自动递增**（2026-11-07 用户反馈：
+  /// 与导入同款——`名` → `名 (2)`、`名 (3)`，同类型内唯一，不同类型
+  /// 允许同名），SnackBar 提示实际保存名。
   Future<void> _renameScore(Score s) async {
     final repo = _repo;
     final scores = _scores;
@@ -878,9 +929,6 @@ class _ScoresPageState extends State<ScoresPage> {
     String? validate(String raw) {
       final name = raw.trim();
       if (name.isEmpty) return '曲名不能为空';
-      final dup = scores.any((o) =>
-          o.id != s.id && o.sourceType == s.sourceType && o.title == name);
-      if (dup) return '同类型已有同名曲谱「$name」';
       return null;
     }
 
@@ -923,9 +971,25 @@ class _ScoresPageState extends State<ScoresPage> {
     // TextField 仍引用它（used-after-disposed 崩溃，测试实锤）。正规修法
     // 是局部 StatefulWidget，为一次性对话框不值得（dsh P3 权衡不修）。
     if (name == s.title) return; // 未变化
+    // 同类型重名自动递增（2026-11-07 用户反馈，与导入同款语义）：
+    // `名` → `名 (1)`、`名 (2)`…（从 (1) 起；排除自己，同类型内唯一）。
+    final taken = scores
+        .where((o) => o.id != s.id && o.sourceType == s.sourceType)
+        .map((o) => o.title)
+        .toSet();
+    var finalName = name;
+    var i = 1;
+    while (taken.contains(finalName)) {
+      finalName = '$name ($i)';
+      i++;
+    }
     try {
-      await repo.updateTitle(s.id, name);
+      await repo.updateTitle(s.id, finalName);
       await _reload();
+      if (mounted && finalName != name) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('同类型已有同名，已保存为「$finalName」')));
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -977,4 +1041,96 @@ class _ListItem {
   final int headerCount;
   final Score? score;
   bool get isHeader => header != null;
+}
+
+/// 图片排序对话框（2026-11-06 批量导入图片合并）：ReorderableListView
+/// 拖拽调整顺序（预填自然排序），缩略图 + 文件名；返回确认后的顺序，
+/// 取消返回 null。
+class _ImageOrderDialog extends StatefulWidget {
+  const _ImageOrderDialog({required this.files});
+  final List<File> files;
+
+  @override
+  State<_ImageOrderDialog> createState() => _ImageOrderDialogState();
+}
+
+class _ImageOrderDialogState extends State<_ImageOrderDialog> {
+  late final List<File> _files = List.of(widget.files);
+
+  @override
+  Widget build(BuildContext context) {
+    // 命名注意：path 包 import 为 p，palette 不得占用同名局部变量。
+    final pal = context.palette;
+    return AlertDialog(
+      title: const Text('调整图片顺序'),
+      content: SizedBox(
+        width: 420,
+        height: 420,
+        child: ReorderableListView.builder(
+          itemCount: _files.length,
+          // Flutter 3.47：onReorderItem 的 newIndex 已自动调整（无需
+          // 手动 newIndex--，旧 onReorder 已弃用）。
+          onReorderItem: (oldIndex, newIndex) {
+            setState(() {
+              final f = _files.removeAt(oldIndex);
+              _files.insert(newIndex, f);
+            });
+          },
+          itemBuilder: (ctx, i) {
+            final f = _files[i];
+            // 2026-11-07 用户反馈：去掉上/下移按钮（与序号重叠且拖拽
+            // 通道已覆盖——ReorderableListView 按住行直接拖）；序号挪到
+            // leading 数字徽章。
+            return ListTile(
+              key: ValueKey(f.path),
+              leading: SizedBox(
+                width: 74, // 序号徽章 24 + 间距 6 + 缩略图 44
+                child: Row(children: [
+                  Container(
+                      width: 24,
+                      height: 24,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                          color: pal.panel,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: pal.border)),
+                      child: Text('${i + 1}',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: pal.ink,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures()
+                              ]))),
+                  const SizedBox(width: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Image.file(f,
+                        width: 44,
+                        height: 44,
+                        fit: BoxFit.cover,
+                        cacheWidth: 88,
+                        errorBuilder: (_, _, _) =>
+                            Icon(Icons.broken_image_outlined,
+                                size: 24, color: pal.muted)),
+                  ),
+                ]),
+              ),
+              title: Text(p.basename(f.path),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13, color: pal.ink)),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: const Text('取消')),
+        FilledButton(
+            onPressed: () => Navigator.pop(context, _files),
+            child: Text('以此顺序导入（${_files.length} 张）')),
+      ],
+    );
+  }
 }

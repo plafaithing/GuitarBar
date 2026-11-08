@@ -82,7 +82,8 @@ class ScoreRepository {
         .map((s) => s.title)
         .toSet();
     if (!existing.contains(base)) return base;
-    var i = 2;
+    // 递增从 (1) 起（2026-11-07 用户统一口径：名 → 名 (1) → 名 (2)）。
+    var i = 1;
     while (existing.contains('$base ($i)')) {
       i++;
     }
@@ -244,11 +245,13 @@ class ScoreRepository {
     }
   }
 
-  /// 删除 = 移入回收站（2026-11-05 用户定案）：软删（deletedAt 时间戳），
-  /// 文件不动；30 天后由 purgeExpired 清理。
+  /// 删除 = 移入回收站（2026-11-05 用户定案；2026-11-08 布局更正）：
+  /// 软删（deletedAt 时间戳）+ **文件目录挪到 data\del\<id>\**；
+  /// 保留 7 天（recycleTtl），由 purgeExpired 清理。
   Future<void> deleteScore(int id) async {
     await (_db.update(_db.scores)..where((s) => s.id.equals(id))).write(
         ScoresCompanion(deletedAt: Value(DateTime.now())));
+    await files.moveToRecycle(id);
   }
 
   /// 回收站列表（deletedAt 非空，按删除时间倒序）。
@@ -261,10 +264,11 @@ class ScoreRepository {
             ]))
           .get();
 
-  /// 从回收站恢复（deletedAt 置 null 回主列表）。
+  /// 从回收站恢复（deletedAt 置 null + 文件从 del 挪回主目录）。
   Future<void> restoreScore(int id) async {
     await (_db.update(_db.scores)..where((s) => s.id.equals(id)))
         .write(const ScoresCompanion(deletedAt: Value(null)));
+    await files.restoreFromRecycle(id);
   }
 
   /// 彻底删除（回收站内真删：行 + 文件）。
@@ -273,8 +277,9 @@ class ScoreRepository {
     await files.delete(id);
   }
 
-  /// 清理超期回收站条目（30 天），启动时调用；失败逐条跳过不中断。
-  static const recycleTtl = Duration(days: 30);
+  /// 回收站保留期（2026-11-08 用户定案：**7 天**）。
+  /// purgeExpired 启动时调用；失败逐条跳过不中断。
+  static const recycleTtl = Duration(days: 7);
 
   Future<int> purgeExpired() async {
     final cutoff = DateTime.now().subtract(recycleTtl);

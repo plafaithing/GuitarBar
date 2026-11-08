@@ -59,3 +59,40 @@ GP8 GPCore.dll strings 侦察确认 gpif 属性名全集（含 LegatoOrigin/Tril
 3. [x] Bend/Whammy 解析+播放（gp8 补完）：IR BendPointIr/whammy、gpif 解析（x/60、y/4 半音；双 0 占位过滤）、播放 PitchShift ramp 铺满时值。**样本缺口**：曲库三 gpx+三 gp5 无 Bend、Like A Star 1257 处 Whammy 全 0.0 占位——合成 fixture 验证，系数待真实谱校准
 - 启动 5s 卡顿：用户反馈未再现，挂起
 - 274 测试全绿
+
+## gp8 三链逆向对照报告（2026-11-07，AMAudio/GPCore 证据 + 全要素样本扫描）
+
+### 链1 解析（gp8: BCFZ/zip → gpif → libxml2 → Document）
+样本全要素扫描（三谱）结果 vs 我们 gtp_parser：
+- ✅ 已覆盖：Bars/Voices/Beats/Notes、Automation Tempo（首段）、Capo（FreeText 兜底）、
+  全部技法标注族（含 Brush/PickStroke 的 Direction 子元素——Like A Star 397 个
+  `<Direction>` 命中即此，非跳转记号误报）
+- ⏳ **Fermata 延长记号**：月下之恋 **8 处真值**——gp8 播放延长该拍（AMAudio
+  TempoManager 有 Fermata 通道）。未解析未播放。**下一个实现项**
+- ⏳ **DS/Coda 跳转**：Bluebird Coda=2；expandMeasures 只有 Repeat/endings，
+  Segno/DS al Coda 跳转未实现（跳转记号结构待精确采样）
+- ⏳ 曲中变速：三谱 TempoAuto 均 1 段（无样本）；_readTempo 只取首段 BPM；
+  gp8 AMAudio TempoManager.tempo(tick) 逐 tick 支持多段
+- ⏳ Ottavia 8va/歌词/和弦图：三谱均 0，待真实谱
+- GPCore 无 "MixTableChange" 字符串（gp8 内部不用该词处理音量变化）
+
+### 链2 播放（gp8: TempoManager ticks + AudioTrack 预渲染 + RubberBand 变速 + RtAudio/WASAPI）
+AMAudio.dll 证据（ev_fdf2ea0d）：
+- TempoManager：buildTempoLines/buildTickSlices/makeTicksAtTempo/tempo(tick)/
+  Fermata 通道/Min-MaxTempo 钳制——**tick 切片架构**
+- **ProgressiveTempo**：渐变变速（startRatio→endRatio+step+repeatCount——
+  accelerando/ritardando 自动化）
+- **变速 = RubberBand time-stretch 保音调**（RubberBandAudioTrackController；
+  rubberband.dll setTimeRatio/setPitchScale）——我们采样变速 rate 缩放=变调
+- RtAudio WASAPI 输出；SharedTemporaryFile 预渲染缓冲（RSE 合成需要，我们
+  采样级实时调度无劣势）
+
+### 链3 渲染（gp8: GPCore view 层 + AMPainting）
+已逆向对齐（弧线几何/Bravura 字体/图元）；剩余显示缺口同解析（Ottavia/歌词/和弦图）。
+
+### 本应用优化清单（按价值排序）
+1. **Fermata**：解析 gpif Fermata + 播放延长 + 显示——月下之恋 8 处真值可对账
+2. **变速保调**：采样路径 rate 变速加 PitchShift 反向补偿（近似 gp8 RubberBand）
+3. **DS/Segno/Coda 跳转**：expandMeasures 补跳转语义（结构采样后）
+4. **曲中变速**：事件轴按 tick 分段 tempo（等真实多段样本）
+5. Ottavia/歌词/和弦图显示（等真实谱）

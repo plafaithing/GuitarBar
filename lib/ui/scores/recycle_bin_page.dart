@@ -143,7 +143,7 @@ class _RecycleBinPageState extends State<RecycleBinPage> {
                                 d == null
                                     ? ''
                                     : '删除于 ${d.year}/${d.month}/${d.day} · '
-                                        '${(DateTime.now().difference(d).inDays)} 天后自动清理',
+                                        '保留 ${7 - DateTime.now().difference(d).inDays} 天（超期自动清理）',
                                 style: TextStyle(
                                     fontSize: 12, color: p.muted)),
                             trailing: Row(mainAxisSize: MainAxisSize.min,

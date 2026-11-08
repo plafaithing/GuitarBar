@@ -73,10 +73,13 @@ class SteelSampleBank {
 
   /// 采样解析：文件名 + 重移调速度。弦号越界返回 null。
   ///
-  /// [fret] 是谱面品位（泛音按泛音位记谱），[soundingMidi] 是最终发声半音
-  /// （调弦+夹+品，渲染器同款公式）。泛音采样只覆盖 5/7/12 品：命中则用
-  /// 泛音录音（12 品恰为八度，速度恰 1.0）；其余泛音位按普通拨弦发声，
-  /// 音高正确优先。
+  /// [fret] 是谱面品位（泛音按泛音位记谱），[soundingMidi] 是记谱发声半音
+  /// （调弦+夹+品，渲染器同款公式——**不含泛音偏移**）。
+  /// [harmonicOffset] 泛音发声偏移（半音，解析层算好；2026-11-07 重构）：
+  /// 非 null 时**强制走真泛音采样**（跨弦借采，speed = 泛音目标/采样发声），
+  /// 不再受 fret ∈ {5,7,12} 白名单限制——人工泛音（如 Fret19/HFret12）与
+  /// 4 品触点此前全落到拨弦采样，音色与弹奏无差（用户实测反馈根因）。
+  /// 泛音音高由 speed 全权覆盖，调用方不再叠加 pitchFixed（双重移调）。
   /// [downstroke] 下拨采样（2026-11-01 技法音效：GP8 库有 Up/Down 双层，
   /// 拨弦交替轮换更贴真实演奏；null/不传 = 沿用 Up 层）。
   static ({String file, double speed})? resolve({
@@ -85,14 +88,18 @@ class SteelSampleBank {
     required int soundingMidi,
     String? technique,
     bool? downstroke,
+    double? harmonicOffset,
   }) {
     final base = _stringBaseMidi[string];
     if (base == null) return null;
+    if (harmonicOffset != null) {
+      // 泛音：目标发声 = 记谱 + 偏移，跨弦找最近真泛音采样（9 个采样点
+      // 覆盖 24/19/12 × 3 弦，最近距离 ≤~3 半音）。
+      return _harmonicByPitch(soundingMidi + harmonicOffset.round());
+    }
     if (technique == 'H' && _harmonicPitch.containsKey(fret)) {
-      // 泛音采样策略（2026-10-31 走查修正）：
-      // 1. 弦+品精确命中且移调轻（±2 半音）→ 直接用本弦采样
-      // 2. 非标准调弦/重移调→跨弦找最近发声 MIDI 的泛音采样
-      // 3. 仅 5/7/12 品走此路径；其他品按普通拨弦（与原逻辑一致）
+      // 泛音采样策略（2026-10-31 走查修正）：弦+品精确命中且移调轻
+      //（±2 半音）→ 直接用本弦采样；跨弦找最近泛音采样。
       final byString = _harmonicByString(string, fret, soundingMidi);
       if (byString != null && (byString.speed - 1.0).abs() < 0.2) {
         return byString;

@@ -10,6 +10,7 @@ import 'package:guitarbar/core/score/score_files.dart';
 import 'package:guitarbar/core/score/score_repository.dart';
 import 'package:guitarbar/data/database.dart';
 import 'package:image/image.dart' as imgpkg;
+import 'package:path/path.dart' as p;
 
 /// PdfRasterizer 的测试替身：固定返回两页假 PNG。
 class FakeRasterizer implements PdfRasterizer {
@@ -74,14 +75,21 @@ void main() {
     final list = await repo.listScores();
     expect(list.map((e) => e.title), ['B', 'A']);
     // 软删：主列表消失、回收站出现、文件保留（可恢复）。
+    // 2026-11-08 布局：文件目录挪入 data/del/<id>/。
     await repo.deleteScore(a.id);
     expect(await repo.listScores().then((l) => l.map((e) => e.id)),
         isNot(contains(a.id)));
     expect(await repo.listRecycleBin().then((l) => l.map((e) => e.id)),
         contains(a.id));
     expect(repo.files.pagePngs(a.id), isNotEmpty);
-    // 恢复：回主列表。
+    expect(
+        Directory(p.join(tmp.path, 'del', '${a.id}')).existsSync(), isTrue);
+    expect(Directory(p.join(tmp.path, '${a.id}')).existsSync(), isFalse);
+    // 恢复：回主列表，文件挪回主目录。
     await repo.restoreScore(a.id);
+    expect(
+        Directory(p.join(tmp.path, 'del', '${a.id}')).existsSync(), isFalse);
+    expect(Directory(p.join(tmp.path, '${a.id}')).existsSync(), isTrue);
     expect(await repo.listScores().then((l) => l.map((e) => e.id)),
         contains(a.id));
     // 彻底删除：行与文件全清。
@@ -149,6 +157,29 @@ void main() {
         throwsArgumentError);
   });
 
+  test('importImages 页序 = images 参数序（2026-11-06 批量合并排序依赖）',
+      () async {
+    // 不同尺寸区分页：2×2 / 3×3 / 4×4。调用方（排序对话框）按用户
+    // 调整后的顺序传 images，页图序必须严格一致。
+    Uint8List sizedPng(int n) {
+      final image = imgpkg.Image(width: n, height: n);
+      return Uint8List.fromList(imgpkg.encodePng(image));
+    }
+
+    final c = File('${tmp.path}/c.png')..writeAsBytesSync(sizedPng(4));
+    final a = File('${tmp.path}/a.png')..writeAsBytesSync(sizedPng(2));
+    final b = File('${tmp.path}/b.png')..writeAsBytesSync(sizedPng(3));
+    final row = await repo.importImages(
+        title: '排序合成', images: [c, a, b]); // 用户调整后的顺序
+    final pages = repo.files.pagePngs(row.id);
+    expect(pages, hasLength(3));
+    int dimOf(File f) =>
+        imgpkg.decodePng(f.readAsBytesSync())!.width;
+    expect(dimOf(pages[0]), 4); // c
+    expect(dimOf(pages[1]), 2); // a
+    expect(dimOf(pages[2]), 3); // b
+  });
+
   test('导入图片失败：行与文件双清理', () async {
     // 合法扩展名 + 坏字节：normalizeImage 抛 FormatException 触发清理路径。
     final good = File('${tmp.path}/good.jpg')..writeAsBytesSync(tinyPng());
@@ -198,7 +229,7 @@ void main() {
     expect(row.sourcePath, endsWith('source.gpx'));
   });
 
-  test('同名导入自动改名：Windows 语义（名 → 名 (2) → 名 (3)）', () async {
+  test('同名导入自动改名：递增从 (1) 起（名 → 名 (1) → 名 (2)）', () async {
     final f1 = File('${tmp.path}/a.png')..writeAsBytesSync(tinyPng());
     // 两份同名源文件（不同路径同文件名）。
     final sub = Directory('${tmp.path}/sub')..createSync();
@@ -208,13 +239,13 @@ void main() {
     final r2 = await repo.importScore(title: '名', source: f2);
     final r3 = await repo.importScore(title: '名', source: f3);
     expect(r1.title, '名');
-    expect(r2.title, '名 (2)');
-    expect(r3.title, '名 (3)');
-    // 删掉 (2) 后再导入 → 补空位拿回 (2)。
+    expect(r2.title, '名 (1)');
+    expect(r3.title, '名 (2)');
+    // 删掉 (1) 后再导入 → 补空位拿回 (1)。
     final rows = await repo.listScores();
-    await repo.deleteScore(rows.firstWhere((r) => r.title == '名 (2)').id);
+    await repo.deleteScore(rows.firstWhere((r) => r.title == '名 (1)').id);
     final f4 = File('${sub.path}/c.png')..writeAsBytesSync(tinyPng());
     final r4 = await repo.importScore(title: '名', source: f4);
-    expect(r4.title, '名 (2)');
+    expect(r4.title, '名 (1)');
   });
 }

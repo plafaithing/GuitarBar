@@ -77,20 +77,21 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
   }
 
-  testWidgets('重命名：同类型重名被拒并显示错误', (tester) async {
+  testWidgets('重命名：同类型重名自动递增（2026-11-07 语义）', (tester) async {
     final (db, tmp) = makeEnv();
     await seedTwo(tester, db);
     await pumpPage(tester, db, tmp);
     await tester.pumpAndSettle();
     // 列表按拼音首字母分组排序：第一行是甲曲（jia → J 组）。改成乙曲
-    // → 同类型重名。
+    //（撞名）→ 自动递增保存为「乙曲 (1)」。
     await openRenameViaCard(tester, '甲曲');
     await tester.enterText(dialogField(tester), '乙曲');
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('同类型已有同名曲谱'), findsOneWidget);
-    // 对话框未关（错误留在窗内）。
-    expect(find.text('重命名'), findsWidgets);
+    expect(find.text('乙曲 (1)'), findsOneWidget);
+    final rows = await db.select(db.scores).get();
+    expect(rows.where((r) => r.title == '乙曲 (1)'), hasLength(1));
+    expect(rows.where((r) => r.title == '乙曲'), hasLength(1)); // 原名仍在
   });
 
   testWidgets('重命名：内部空格允许、两侧空格 trim 后保存', (tester) async {
