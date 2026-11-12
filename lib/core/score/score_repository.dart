@@ -73,11 +73,13 @@ class ScoreRepository {
 
   /// 唯一化标题（2026-11-05 用户需求：同名文件重复导入不覆盖，自动
   /// 改名——Windows 新建同名文件夹同款）：`名` 已存在 → `名 (2)`、
-  /// `名 (3)`… 找第一个空位。全库查重不区分类型；**回收站条目不占名**
+  /// `名 (3)`… 找第一个空位。**同类型内查重**（2026-11-12 用户反馈：
+  /// 不同类型的同名文件不应连加——`a.gpx` 与 `a.pdf` 共存各保留原名，
+  /// 与 scores_page 重命名同款语义）；回收站条目不占名
   ///（Windows 回收站独立于命名空间）。
-  Future<String> _uniqueTitle(String base) async {
+  Future<String> _uniqueTitle(String base, String type) async {
     final existing = (await (_db.select(_db.scores)
-              ..where((s) => s.deletedAt.isNull()))
+              ..where((s) => s.deletedAt.isNull() & s.sourceType.equals(type)))
             .get())
         .map((s) => s.title)
         .toSet();
@@ -99,10 +101,11 @@ class ScoreRepository {
     if (!isPdf && !isGtp && !imageExts.contains(ext)) {
       throw ArgumentError('不支持的曲谱文件类型: .$ext');
     }
-    final uniqueTitle = await _uniqueTitle(title);
+    final type = isPdf ? 'pdf' : isGtp ? 'gtp' : 'image';
+    final uniqueTitle = await _uniqueTitle(title, type);
     final id = await _db.into(_db.scores).insert(ScoresCompanion.insert(
         title: uniqueTitle,
-        sourceType: isPdf ? 'pdf' : isGtp ? 'gtp' : 'image',
+        sourceType: type,
         sourcePath: ''));
     try {
       final saved = await files.saveSourceImage(id, source, ext);
@@ -112,7 +115,9 @@ class ScoreRepository {
         // （确定性数据无 AI 置信度）；无页图（谱面就是数据本身）。
         final bytes = await source.readAsBytes();
         final ir =
-            ext == 'gp5' ? parseGp5Bytes(bytes) : parseGpxBytes(bytes);
+            ext == 'gp5'
+            ? parseGp5Bytes(bytes)
+            : parseGpxBytes(bytes, sourceName: p.basename(source.path));
         await (_db.update(_db.scores)..where((s) => s.id.equals(id))).write(
             ScoresCompanion(
                 irJson: Value(jsonEncode(ir.toJson())),
@@ -226,7 +231,7 @@ class ScoreRepository {
       }
     }
     final id = await _db.into(_db.scores).insert(ScoresCompanion.insert(
-        title: await _uniqueTitle(title),
+        title: await _uniqueTitle(title, 'image'),
         sourceType: 'image',
         sourcePath: ''));
     try {

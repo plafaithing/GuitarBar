@@ -191,4 +191,29 @@ void main() {
     expect(player.playing, isFalse);
     expect(engine.scheduleCount, 0);
   });
+
+  test('变速轴一致（2026-11-11）：scale × rate + 位置连续 + 不误判曲终', () async {
+    final (player, engine, _) = make();
+    await player.play(fourNotes());
+    expect(engine.lastScale, 1.0);
+    // 播放到 1.2s（beat 1 已调度）后切 2x：
+    engine.engineTimeValue = const Duration(milliseconds: 1200);
+    player.onTick();
+    expect(player.positionSeconds.value, 1.2);
+    player.setRate(2.0);
+    expect(player.rate, 2.0);
+    // 谱面秒 V 连续（变速瞬间播放位置不跳）：仍 1.2；duration 同步
+    // 缩短为 raw(4.2)/2 + 1.2 = 3.3 → 曲终判定两轴一致不再误停（⑤）。
+    expect(player.positionSeconds.value, closeTo(1.2, 1e-9));
+    expect(player.durationSeconds, closeTo(4.0 / 2 + 1.2, 1e-9));
+    expect(player.playing, isTrue); // 未被误判停止（⑤ 根因回归）
+    // 时间再推进 1s（引擎 2.2s）：V = (2.2-(-1.2))/2 = 1.7。
+    engine.engineTimeValue = const Duration(milliseconds: 2200);
+    player.onTick();
+    expect(player.positionSeconds.value, closeTo(1.7, 0.01));
+    // 事件轴推进 0.5 谱面秒 → beat 2（time 2.0）入队，scale=2x。
+    expect(engine.scheduleCount, greaterThanOrEqualTo(3));
+    expect(engine.lastScale, closeTo(2.0, 1e-9));
+    await player.stop();
+  });
 }

@@ -132,6 +132,12 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
         _ir = ir;
         _pages = pages;
       });
+      // 采样预热（2026-11-08 gp8 对照：gp8 打开即预渲染，点播放立即出声
+      // ——我们点播放才现载采样，首播延迟 1-3s）。后台预载本曲触到的
+      // 全部采样，点播放时缓存全命中。
+      if (ir != null && ir.tracks.isNotEmpty && ir.tuning.length == 6) {
+        unawaited(_sampleBank.preloadFor(ir).catchError((_) {}));
+      }
     }
   }
 
@@ -302,33 +308,19 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     if (mounted) setState(() {});
   }
 
-  /// 速度切换（2026-11-01 跟练三件套）：采样路径在线重锚无缝变速；
-  /// KS 路径重渲染接续（保音调，beat 换算 ×rate）。
+  /// 速度切换（2026-11-11 实时变速终版）：**双路径一律声部级实时变速**
+  /// ——采样路径重锚调度轴；KS 路径 setVoiceSpeed（句柄实时变速）。
+  /// 均不停播、不重渲染、不 seek（旧 KS"停→重渲→seek"是用户实测
+  /// "变速后停止从头播放"的根因：渲染阻塞 0.3-1s + seek 轴错位）。
+  /// 采样变速自然变调（gp8 采样同此）；KS 声部变速同样变调。
   Future<void> _onRateChanged(double r) async {
-    final ir = _ir;
-    if (ir == null || _rendering) return;
     final active = _activePlayer;
-    if (identical(active, _samplePlayer) &&
-        (active.playing || active.paused)) {
+    if (identical(active, _samplePlayer)) {
       _samplePlayer.setRate(r);
-    } else if (active.playing || active.paused) {
-      // KS 路径：停 → 新速率重渲染 → 保持进度接续。
-      final pos = active.positionSeconds.value;
-      final wasPaused = active.paused;
-      await active.stop();
-      _player.rate = r;
-      setState(() => _rendering = true);
-      await WidgetsBinding.instance.endOfFrame;
-      try {
-        _player.load(renderScore(ir, rate: r));
-        await _player.start();
-        await _player.seekToSecond(pos);
-        if (wasPaused) _player.pause();
-      } finally {
-        if (mounted) setState(() => _rendering = false);
-      }
     } else {
+      // KS（含未播放：_handle null 只记 _rate，起播即生效）。
       _player.rate = r;
+      // 双播放器速率同步（下次切换路径不用重设）。
       _samplePlayer.rate = r;
     }
     if (mounted) setState(() {});
@@ -463,7 +455,10 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     return Scaffold(
       // v2：透明 Scaffold + 统一光晕背景层（独立路由，自带外壳）。
       backgroundColor: Colors.transparent,
-      appBar: AppBar(title: Text(_row?.title ?? '曲谱'), actions: [
+      // 曲谱文件名称居中（2026-11-08 用户反馈）。
+      appBar: AppBar(
+          centerTitle: true,
+          title: Text(_row?.title ?? '曲谱'), actions: [
         // 链接备注（2026-11-03 走查三件套）：有链接先显"打开"，编辑钮
         // 常驻（无备注 = 添加图标，有备注 = 编辑图标）。行未加载时隐藏
         //（dsh P3：点了没反应像坏掉）。
@@ -495,14 +490,17 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                   ? Center(
                       child: Text('谱面数据不可用', style: TextStyle(color: p.muted)))
                   // 调弦/变调夹信息条 + 谱面。宽窄两布局共用此 Column。
-                  : Column(children: [
+                  // 2026-11-08 用户反馈：调弦说明左对齐（原 Column 默认
+                  // center 把信息条挤到中间）。
+                  : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Padding(
                         // 左缩进 16 与谱面 TabLayout.leftPad 对齐。
                         padding: const EdgeInsets.only(left: 16, bottom: 8),
                         child: Text(
                             '${_tuningLabel(_ir!)}'
-                            '${_ir!.capo > 0 ? ' · Capo ${_ir!.capo}品' : ''}'
                             ' · ${_ir!.tempo.round()} BPM',
+                            // Capo 标注已在谱面第 1 小节上方（capo:N，
+                            // gp8 同位置）——信息条不再重复（2026-11-08）。
                             style: TextStyle(
                                 fontSize: 12,
                                 color: p.muted,
@@ -572,9 +570,14 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
       // playing/paused 态经 setState 切换（_togglePlay/_stopPlay）。
       bottomSheet: (_ir == null)
           ? null
-          : ListenableBuilder(
-              listenable: _activePlayer.positionSeconds,
-              builder: (ctx, _) => PlayBar(
+          // 透明底（2026-11-10 用户反馈"背景色块"修复：Scaffold
+          // bottomSheet 槽自带 Material 底色（暗带），盖住谱面下缘
+          // ——透明化后只留 PlayBar 悬浮卡本身）。
+          : Material(
+              color: Colors.transparent,
+              child: ListenableBuilder(
+                listenable: _activePlayer.positionSeconds,
+                builder: (ctx, _) => PlayBar(
                   playing: _activePlayer.playing,
                   paused: _activePlayer.paused,
                   positionSeconds: _activePlayer.positionSeconds.value,
@@ -588,7 +591,9 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                   loopA: _activePlayer.loopA,
                   loopB: _activePlayer.loopB,
                   onLoopA: _onLoopA,
-                  onLoopB: _onLoopB),
+                  onLoopB: _onLoopB,
+                ),
+              ),
             ),
     );
   }

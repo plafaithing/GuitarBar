@@ -82,8 +82,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     // 标准调弦命中内置预设名 Standard（_tuningLabel 预设匹配）。
-    expect(find.text('调弦 Standard · Capo 3品 · 90 BPM'),
-        findsOneWidget);
+    // Capo 标注已移到谱面 capo:N 文字（信息条去重，2026-11-08）。
+    expect(find.text('调弦 Standard · 90 BPM'), findsOneWidget);
   });
 
   // GTP 全屏（13.4）：谱面直接占满，无右侧查看器/TabBar/识谱按钮。

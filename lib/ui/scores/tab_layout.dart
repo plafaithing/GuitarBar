@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../core/score/score_ir.dart';
@@ -31,93 +33,133 @@ class TabLayout {
   static const measureGap = 0.0;
   static const rowGap = 32.0;
 
-  // 相邻音符需要的最小水平间距：两位品数字 16px + 余量。密集检测以
-  // "把这对音撑到 18px" 反推每拍所需像素。
-  static const _minNoteGapPx = 18.0;
-
-  // 连排降密度阈值（2026-11-01 走查用户定参二修）：同弦连排 ≥6（如
-  // Like A Star m71 "12×6"）所在行降为 2 小节/行拉长拍距；<6 的短连排
-  // 由拥挤修正趟排开（步长 16px 恰好两位数字），不降行密度。
-  static const _runThreshold = 6;
-
   int get beatsPerBar => int.tryParse(ir.timeSignature.split('/')[0]) ?? 4;
-  double get measureWidth => beatsPerBar * pxPerBeat;
-  double get rowHeight => topPad + 5 * stringGap + bottomPad;
 
-  /// 小节需要的宽度：**同弦连排链**检测（用户定参：链长 ≥8 才算密集）。
-  /// 短连排（如 "12×6"）由修正趟 16px 步长排开不占额外宽度；长连排的
-  /// 累积撑宽需求反推每拍像素。32 分极密封顶 2.8×标准宽。
-  double _needWidth(MeasureIr m) {
-    final byString = <int, List<double>>{};
-    for (final n in m.notes) {
-      byString.putIfAbsent(n.string, () => []).add(n.beat);
+  /// 小节级拍数（2026-11-10 Flower 1/4 pickup 修复）：MeasureIr 带
+  /// timeSignature 用之，否则继承全曲。小节宽按各自拍数（1/4 前奏小节
+  /// = 1/4 标准宽，音位不再错位）。
+  int beatsOfBar(int measureIndex) {
+    if (measureIndex < 0 ||
+        measureIndex >= ir.tracks.first.measures.length) {
+      return beatsPerBar;
     }
-    var maxRun = 0;
-    var maxRunSpan = 0.0; // 最长链首尾拍距
-    for (final beats in byString.values) {
-      beats.sort();
-      var run = 1;
-      var runStart = beats.first;
-      void close(double lastBeat) {
-        if (run > maxRun) {
-          maxRun = run;
-          maxRunSpan = lastBeat - runStart;
-        }
-      }
-
-      for (var i = 1; i < beats.length; i++) {
-        // 16 分以内（含）算连排延续；32 分谱同式覆盖。
-        if (beats[i] - beats[i - 1] <= 0.25 + 1e-9) {
-          run++;
-        } else {
-          close(beats[i - 1]);
-          run = 1;
-          runStart = beats[i];
-        }
-      }
-      close(beats.last);
-    }
-    if (maxRun < _runThreshold) return measureWidth;
-    final span = maxRunSpan < 0.25 ? 0.25 : maxRunSpan;
-    final needBeatPx = ((maxRun - 1) * _minNoteGapPx + 16.0) / span;
-    final w = beatsPerBar * needBeatPx + notePad * 2;
-    return w.clamp(measureWidth, measureWidth * 2.8);
+    final sig = ir.tracks.first.measures[measureIndex].timeSignature;
+    if (sig == null) return beatsPerBar;
+    return int.tryParse(sig.split('/')[0]) ?? beatsPerBar;
   }
 
+  double get measureWidth => beatsPerBar * pxPerBeat;
+  double measureWidthOf(int measureIndex) =>
+      beatsOfBar(measureIndex) * pxPerBeat;
+  double get rowHeight => topPad + 5 * stringGap + bottomPad;
+
+  /// 音符 label 墨半宽（拥挤阈/需求宽共用）：一位数 ~8px、两位数 ~16px、
+  /// 幽灵括号 ~21px、泛音尖括号 ~20px。
+  static double inkHalf(NoteIr n) {
+    if (n.ghost) return 12;
+    if (n.technique == 'H') return 11;
+    if (n.fret >= 10) return 8;
+    return 4;
+  }
+
+  List<MeasureIr> get measures =>
+      ir.tracks.isEmpty ? const <MeasureIr>[] : ir.tracks.first.measures;
+
   // 布局结果缓存（rowsFor 在 paint/hit/follow 各处重复调用）。
+  // （2026-11-12 折行 = 五档密度 ∩ 链模拟宽度校验 ∩ 2~5 铁律；
+  //  旧 needWidth/"每行最多 4 小节"机制均已演进，见 _layoutFor 注释。）
   final Map<double, _RowLayout> _layoutCache = {};
 
   /// 行布局：每行小节 index 列表 + 该行小节宽（行宽均分，密集行更宽）。
+  ///
+  /// 折行规则（2026-11-12 用户铁律定案）：**除最后一行外每行 2~5 小节**。
+  /// 密度档（行内最大单小节音列数）>32→≤2、>20→≤3、>14→≤4、否则≤5；
+  /// 叠加链模拟宽度校验（下方 rowFits）；cur 已有 1 小节时不得 flush
+  /// （哪怕超宽——压缩接受，单行独占根除）。
   _RowLayout _layoutFor(double maxWidth) {
     return _layoutCache.putIfAbsent(maxWidth, () {
       final measures =
           ir.tracks.isEmpty ? const <MeasureIr>[] : ir.tracks.first.measures;
       final avail = maxWidth - leftPad * 2;
+
+      // 链模拟（2026-11-12 六修·精确判据）：完全复刻拥挤趟——组链位
+      // = max(组内自然位, 同弦链前 + 墨阈和)；返回链条最大 x（相对小
+      // 节左缘）。判据：链尾 ≤ 右界内 12px。Σ亏空求和判据过严——亏空
+      // 会被后续大间隙吸收不累积（LAS m77 一对 0.125 拍距被误判成
+      // 整小节 1/行）。
+      double chainMaxX(MeasureIr m, double beatPx) {
+        if (m.notes.isEmpty) return 0;
+        final byBeat = <double, List<NoteIr>>{};
+        for (final n in m.notes) {
+          byBeat.putIfAbsent(n.beat, () => []).add(n);
+        }
+        final beats = byBeat.keys.toList()..sort();
+        final lastChainX = <int, double>{};
+        final lastChainN = <int, NoteIr>{};
+        var maxX = 0.0;
+        for (final b in beats) {
+          var gx = 0.0;
+          for (final n in byBeat[b]!) {
+            final prev = lastChainX[n.string];
+            final natural = notePad + n.beat * beatPx;
+            final want = prev == null
+                ? natural
+                : math.max(natural,
+                    prev + 1.0 + inkHalf(lastChainN[n.string]!) + inkHalf(n));
+            if (want > gx) gx = want;
+          }
+          for (final n in byBeat[b]!) {
+            lastChainX[n.string] = gx; // 组整组落位
+            lastChainN[n.string] = n;
+          }
+          if (gx > maxX) maxX = gx;
+        }
+        return maxX;
+      }
+
+      bool rowFits(List<int> members, double width) {
+        for (final mi in members) {
+          final bpm = (width - notePad * 2) / beatsOfBar(mi);
+          if (chainMaxX(measures[mi], bpm) > width - 12) return false;
+        }
+        return true;
+      }
+
       final rows = <List<int>>[];
       final widths = <double>[];
       var cur = <int>[];
-      var curNeed = 0.0;
+
+      var maxBarInCur = 0; // 行内最大单小节音列数
       void flush() {
         if (cur.isEmpty) return;
         rows.add(cur);
         widths.add(avail / cur.length);
         cur = <int>[];
-        curNeed = 0.0;
+        maxBarInCur = 0;
       }
 
       for (var i = 0; i < measures.length; i++) {
-        final need = _needWidth(measures[i]);
-        final n = cur.length + 1;
-        // 等宽约束：行内全部小节的 needed 宽 ≤ 行均分宽才可同行。
-        final maxNeed = curNeed > need ? curNeed : need;
-        if (avail / n >= maxNeed) {
-          cur.add(i);
-          curNeed = maxNeed;
-        } else {
+        final noteCount = measures[i].notes.length;
+        // 密度档上限（2026-11-10 五档；2026-11-12 用户铁律封顶 5）：
+        // 行内最大单小节音列数 >32 → ≤2；>20 → ≤3；>14 → ≤4；否则 ≤5。
+        final maxAfter = math.max(maxBarInCur, noteCount);
+        var maxBars = maxAfter > 32
+            ? 2
+            : maxAfter > 20
+                ? 3
+                : maxAfter > 14
+                    ? 4
+                    : 5;
+        // **每行 2~5 小节铁律**（2026-11-12 用户定案，末行豁免）：
+        // cur 已有 1 小节时不得 flush（哪怕新小节超宽——压缩接受）；
+        // ≥2 且超密度档/超宽才换行。单行独占（旧 m100/m1 现象）根除。
+        final wouldBreak = cur.isNotEmpty &&
+            !rowFits([...cur, i], avail / (cur.length + 1));
+        if (cur.length + 1 > maxBars || (wouldBreak && cur.length >= 2)) {
           flush();
-          cur.add(i);
-          curNeed = need;
         }
+        cur.add(i);
+        maxBarInCur = math.max(maxBarInCur, noteCount);
       }
       flush();
       return _RowLayout(rows, widths);
@@ -126,6 +168,15 @@ class TabLayout {
 
   /// 自动换行：每行小节 index 列表。
   List<List<int>> rowsFor(double maxWidth) => _layoutFor(maxWidth).rows;
+
+  /// 谱面排版宽度上限（2026-11-09 gp8 对照：宽屏下行宽随容器铺满导致
+  /// 每行小节数过多——上限 1300px，超出部分居中留白，gp8 同款密度）。
+  static double effectiveWidth(double containerWidth) =>
+      containerWidth > 1300 ? 1300 : containerWidth;
+
+  /// 谱面水平居中偏移（容器宽 - 排版宽）/2；hitTest 反算时同样扣除。
+  static double horizontalOffset(double containerWidth) =>
+      (containerWidth - effectiveWidth(containerWidth)) / 2;
 
   /// [measureIndex] 所在行的小节宽（行级可变，密集行更宽）。
   double measureWidthAt(int measureIndex, double maxWidth) {
@@ -163,7 +214,9 @@ class TabLayout {
   double noteX(int measureIndex, double beat, double maxWidth) {
     final rowW = measureWidthAt(measureIndex, maxWidth);
     // 拍距：小节两侧各留 notePad 净空后均分（行宽大则拍距自动拉长）。
-    final beatPx = (rowW - notePad * 2) / beatsPerBar;
+    // 拍数用**小节级**（2026-11-10 pickup 修复：1/4 小节内 2 音按
+    // 1 拍均分，不再按 4/4 压到左半）。
+    final beatPx = (rowW - notePad * 2) / beatsOfBar(measureIndex);
     return measureX(measureIndex, maxWidth) + notePad + beat * beatPx;
   }
 

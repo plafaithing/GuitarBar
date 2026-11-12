@@ -20,9 +20,11 @@ Future<void> main() async {
   // pdfrx 引擎初始化：导入流程在无 pdfrx 组件参与时直接调引擎 API，需先初始化。
   await pdfrxFlutterInitialize();
   await windowManager.ensureInitialized();
+  // 窗口比例（2026-11-10 用户定案）：**iPad Pro 11 寸竖屏**为准——
+  // 834×1194（4:3 竖向）初始即此尺寸；最小 700×900 保持竖向可用。
   const options = WindowOptions(
-    size: Size(1024, 768), // iPad 4:3
-    minimumSize: Size(768, 576),
+    size: Size(834, 1194), // iPad Pro 11" 竖屏
+    minimumSize: Size(700, 900),
     title: 'GuitarBar',
   );
   await windowManager.waitUntilReadyToShow(options, () async {

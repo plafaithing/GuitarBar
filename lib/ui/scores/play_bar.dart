@@ -61,15 +61,17 @@ class _PlayBarState extends State<PlayBar> {
   /// 50ms tick 的回拉被压制；松手 seek 后清空回归实时。
   double? _dragRatio;
 
-  /// 速度下拉（0.5-1.5 五档；KS 降级路径在 detail page 里重渲染接续）。
+  /// 速度下拉（2026-11-10 用户需求：**播放中实时变速**——0.25-2.0 八档
+  /// 精调；KS 降级路径在 detail page 里重渲染接续）。
   Widget _speedDropdown(
       BuildContext context, PlayBar w, GuitarBarPalette p) {
-    const rates = [0.5, 0.75, 1.0, 1.25, 1.5];
+    const rates = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
     return DropdownButton<double>(
       value: rates.contains(w.rate) ? w.rate : 1.0,
       underline: const SizedBox.shrink(),
       isDense: true,
       dropdownColor: p.panel,
+      borderRadius: BorderRadius.circular(10),
       items: [
         for (final r in rates)
           DropdownMenuItem(
@@ -79,7 +81,8 @@ class _PlayBarState extends State<PlayBar> {
                       fontSize: 12,
                       color: r == w.rate ? p.dataHue : p.muted))),
       ],
-      onChanged: w.busy ? null : (v) => w.onRateChanged(v!),
+      // 播放中可选（实时变速——sample_player 在线重锚；不再禁用）。
+      onChanged: (v) => w.onRateChanged(v!),
     );
   }
 
@@ -94,12 +97,17 @@ class _PlayBarState extends State<PlayBar> {
     // Container 会被拉满可用高度盖住谱面——Scaffold 实测三形态复现；
     // IconButton 48 + padding 16 = 64）。
     return SizedBox(
-      height: 64,
+      height: 72,
       child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
         decoration: BoxDecoration(
-          // 半透明（2026-10-31 用户反馈：播放条不过分遮挡曲谱，50% 透明度）。
-          color: p.panel.withValues(alpha: 0.5),
-          border: Border(top: BorderSide(color: p.border)),
+          // 圆角悬浮卡（2026-11-11 用户"背后色块"三轮定案：半透明
+          // panel 在浅色下整体呈灰块观感（众数色 (227,225,220) 实测）
+          // ——改**不透明 surface**：白卡自然悬浮，谱面透出的只有卡外
+          // 区域；阴影取消（浅色下渲染成灰带）。
+          color: p.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: p.border),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(children: [

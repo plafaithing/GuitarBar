@@ -77,9 +77,10 @@ class SoundEngine {
   Duration engineNow() => SoLoud.instance.getEngineTime();
 
   /// 绝对引擎时刻起播（第 12 个成员）：采样精确的节奏性调度；scale =
-  /// 相对播放速度（重移调 2^(半音差/12)），出生时原子生效无音高滑变；
-  /// duration 非空时到点自动停（闷音短音用）。atTime 已过则尽快起播。
-  /// [volume] 0-1（击勾弱击/闷音暗音色的力度层用）。
+  /// **播放速率**（soloud playScheduled.scale——变速播放的声部速率，
+  /// 2026-11-10 实时变速修复：此前恒 1.0 只用于移调，0.5x/0.25x 无效
+  /// 根因；重移调叠加 = 移调值 × 变速率）。atTime 已过则尽快起播。
+  /// duration 非空时到点自动停（闷音短音用）；[volume] 0-1。
   SoundHandle scheduleAt(
     AudioSource src, {
     required Duration atTime,
@@ -89,6 +90,15 @@ class SoundEngine {
   }) =>
       SoLoud.instance.playScheduled(src, atTime,
           volume: volume, scale: scale, duration: duration ?? Duration.zero);
+
+  /// 已调度声部的实时变速（2026-11-10 实时变速：soloud setRelativePlaySpeed
+  /// ——播放中改速率不停顿、音高随速率变（采样变速自然变调，gp8 采样
+  /// 变速同此行为）。失败静默（句柄失效非致命）。
+  void setVoiceSpeed(SoundHandle h, double speed) {
+    try {
+      SoLoud.instance.setRelativePlaySpeed(h, speed.clamp(0.05, 8.0));
+    } catch (_) {}
+  }
 
   /// 活跃声部上限（第 13 个成员，默认 16）：逐音采样 + 自然衰减会并发
   /// 叠加多条余振，16 不够（KS 路径是单条 PCM 流无此约束）。

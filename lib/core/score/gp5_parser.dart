@@ -237,6 +237,12 @@ class _Gp5Reader {
         for (var bit = 0; bit < 8; bit++)
           if (hd.repeatAlternative & (1 << bit) != 0) bit + 1,
       ];
+      // 小节级拍号（2026-11-10 Flower 1/4 pickup 根因修复）：与全曲不同
+      // 才写（如首小节 1/4 前奏）；相同则 null 继承全曲。
+      final mainSig = _headers.firstWhere((h) => h.numerator >= 4,
+          orElse: () => _headers.first);
+      final globalSig = '${mainSig.numerator}/${mainSig.denominator}';
+      final thisSig = '${hd.numerator}/${hd.denominator}';
       measures.add(MeasureIr(
         index: h,
         confidence: 0,
@@ -246,6 +252,7 @@ class _Gp5Reader {
         repeatEnd: hd.isRepeatClose,
         repeatCount: hd.repeatCount,
         endings: endings,
+        timeSignature: thisSig == globalSig ? null : thisSig,
       ));
     }
     if (measures.isEmpty) throw const FormatException('GP5 无小节');
@@ -256,12 +263,15 @@ class _Gp5Reader {
         if (midi > 0) Note(midi).name,
     ];
 
+    // 全局拍号取**最常见**（2026-11-10 Flower 修复：首小节 1/4 pickup
+    // 不代表全曲——取首个 4 拍小节的拍号为主体，fallback 首小节）。
+    final mainSig = _headers
+        .firstWhere((h) => h.numerator >= 4, orElse: () => _headers.first);
     return ScoreIr(
       version: 1,
       title: title.isEmpty ? '未命名' : title,
       tempo: tempo > 0 ? tempo.toDouble() : 90,
-      timeSignature:
-          '${_headers.first.numerator}/${_headers.first.denominator}',
+      timeSignature: '${mainSig.numerator}/${mainSig.denominator}',
       tuning: tuning,
       capo: track.capo,
       capoApplied: false, // fret = 绝对品，发声时由渲染器 +capo

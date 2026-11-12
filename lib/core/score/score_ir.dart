@@ -104,12 +104,19 @@ class MeasureIr {
     this.repeatEnd = false,
     this.repeatCount = 0,
     this.endings = const [],
+    this.fermatas = const [],
+    this.timeSignature,
   });
 
   final int index; // 全曲连续小节号（0 起）
   final double confidence; // 0-1；0 表示不可用
   final bool failed; // true = 识别失败占位，notes 恒空
   final List<NoteIr> notes;
+
+  /// 小节级拍号（2026-11-10 Flower gp5 根因修复：首小节可为 1/4
+  /// pickup 前奏——全局拍号 4/4 会把该小节音位/时长全部算错）。格式
+  /// "N/D"；null = 继承全曲 ScoreIr.timeSignature。
+  final String? timeSignature;
 
   // 反复记号（2026-11-02 走查：GP8 显示反复双竖线+圆点，v1 缺失）。
   // gpif MasterBar 的 Repeat start="true"/end="true"（count 为重复次数，
@@ -124,6 +131,12 @@ class MeasureIr {
   // gpif AlternativeEndings/Ending 的 number（该小节属于第 N 结尾）。
   final List<int> endings;
 
+  // 延长记号（2026-11-07 gp8 对照补完；月下之恋 8 处真值）：gpif
+  // MasterBar → Fermatas → Fermata。beat = 小节内拍位（Offset 分数
+  // "2/1"→2.0）；length = 延长比例（gpif Length 0.46 ≈ 该拍后顺延
+  // 0.46 拍，播放层采样事件轴顺延实现；显示层弧线符号待画）。
+  final List<FermataIr> fermatas;
+
   Map<String, dynamic> toJson() => {
         'index': index,
         'confidence': confidence,
@@ -133,6 +146,11 @@ class MeasureIr {
         if (repeatEnd) 'repeatEnd': true,
         if (repeatCount > 0) 'repeatCount': repeatCount,
         if (endings.isNotEmpty) 'endings': endings,
+        if (timeSignature != null) 'timeSignature': timeSignature,
+        if (fermatas.isNotEmpty)
+          'fermatas': [
+            for (final f in fermatas) [f.beat, f.length]
+          ],
       };
 
   static MeasureIr fromJson(Map<String, dynamic> j) => MeasureIr(
@@ -149,6 +167,14 @@ class MeasureIr {
         endings: [
           if (j['endings'] case final List l)
             for (final n in l) (n as num).toInt()
+        ],
+        timeSignature: j['timeSignature'] as String?,
+        fermatas: [
+          if (j['fermatas'] case final List l)
+            for (final f in l)
+              FermataIr(
+                  beat: (f[0] as num).toDouble(),
+                  length: (f[1] as num).toDouble())
         ],
       );
 
@@ -229,6 +255,14 @@ List<int> expandMeasures(List<MeasureIr> measures) {
   return out;
 }
 
+/// 延长记号（2026-11-07 gp8 对照补完）：beat = 小节内拍位；
+/// length = 延长比例（gpif Length，0.46 = 顺延 0.46 拍）。
+class FermataIr {
+  const FermataIr({required this.beat, required this.length});
+  final double beat;
+  final double length;
+}
+
 /// 弯音曲线点（2026-11-04 gp8 补完）：offset = 音符时值内位置 0-1，
 /// value = 半音（gpif y/4）。
 class BendPointIr {
@@ -272,6 +306,7 @@ class NoteIr {
     this.bend,
     this.whammy,
     this.harmonicOffset,
+    this.harmonicType,
   });
 
   final double beat; // 小节内拍位置，0 起
@@ -350,6 +385,10 @@ class NoteIr {
   // Natural(HFret12)/Artificial、Bluebird Natural——22 处真值。
   final double? harmonicOffset;
 
+  /// 泛音类型（'natural' | 'artificial'，gp8 六线谱 AH 文字标注区分用；
+  /// null = 非泛音）。2026-11-08 截图对照补。
+  final String? harmonicType;
+
   /// 有标注才写字段：无标注音符的 JSON 与旧格式一致（存量 irJson 兼容）。
   Map<String, dynamic> toJson() => {
         'beat': beat,
@@ -386,6 +425,7 @@ class NoteIr {
           'bend': [for (final p in bend!) [p.offset, p.value]],
         if (whammy != null) 'whammy': whammy,
         if (harmonicOffset != null) 'harmonicOffset': harmonicOffset,
+        if (harmonicType != null) 'harmonicType': harmonicType,
       };
 
   static NoteIr fromJson(Map<String, dynamic> j) => NoteIr(
@@ -431,6 +471,7 @@ class NoteIr {
             ?.map((v) => (v as num).toDouble())
             .toList(),
         harmonicOffset: (j['harmonicOffset'] as num?)?.toDouble(),
+        harmonicType: j['harmonicType'] as String?,
       );
 
   NoteIr copyWith({

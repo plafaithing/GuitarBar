@@ -48,8 +48,10 @@ Uint8List _gpifBytes(Uint8List bytes) {
 /// 最粗（其 tunings 低→高索引），与 GuitarBar IR（string 1 = 最细）相反，
 /// 故 IR string = 6 - gp（2026-10-31 修正，原 gp+1 造成谱面与音高双镜像）。
 /// v1 只取第一轨（多轨文件其余轨忽略），不做反复（repeat）展开。
-ScoreIr parseGpxBytes(Uint8List bytes) =>
-    parseGpif(utf8.decode(_gpifBytes(bytes)));
+/// [sourceName] 源文件名（已知源数据修正的触发条件用——部分 gpx 的
+/// gpif Title 为空，gp8 界面显示的是文件名，见 parseGpif 内修正表）。
+ScoreIr parseGpxBytes(Uint8List bytes, {String? sourceName}) =>
+    parseGpif(utf8.decode(_gpifBytes(bytes)), sourceName: sourceName);
 
 /// 解压 gpx 容器取 score.gpif XML 文本（13.4 源文件查看用）。
 /// 坏容器/非 gpx 返回 null（查看页提示），不抛异常。
@@ -134,7 +136,7 @@ Map<String, Uint8List> readBcfsFiles(Uint8List image) {
 }
 
 /// gpif XML（GP6/GP7 共用的扁平 id 引用 schema）→ ScoreIr。
-ScoreIr parseGpif(String xml) {
+ScoreIr parseGpif(String xml, {String? sourceName}) {
   XmlDocument doc;
   try {
     doc = XmlDocument.parse(xml);
@@ -239,6 +241,27 @@ ScoreIr parseGpif(String xml) {
         if (v != null) endings.add(v);
       }
     }
+    // 延长记号（2026-11-07 gp8 对照补完）：MasterBar → Fermatas → Fermata
+    //（月下之恋 8 处真值形态：Offset 分数拍位 "2/1"、Type Short/Medium/
+    // Long、Length 延长比例 0.46）。
+    final fermatas = <FermataIr>[];
+    final fermatasEl = masterBar.findElements('Fermatas').firstOrNull;
+    if (fermatasEl != null) {
+      for (final fm in fermatasEl.findElements('Fermata')) {
+        final offsetRaw = _childText(fm, 'Offset')?.trim() ?? '';
+        final parts = offsetRaw.split('/');
+        final num0 = double.tryParse(parts.first.trim());
+        if (num0 == null) continue;
+        final den = parts.length > 1
+            ? (double.tryParse(parts[1].trim()) ?? 1.0)
+            : 1.0;
+        final beat = den == 0 ? num0 : num0 / den;
+        final length =
+            double.tryParse(_childText(fm, 'Length')?.trim() ?? '') ?? 0.4;
+        if (length <= 0) continue;
+        fermatas.add(FermataIr(beat: beat, length: length));
+      }
+    }
     final notes = <NoteIr>[];
     for (final voiceId in _refs(_childText(bar, 'Voices'))) {
       final voice = voicesById[voiceId];
@@ -249,6 +272,23 @@ ScoreIr parseGpif(String xml) {
       _readVoice(
           voice, beatsById, rhythmsById, notesById, tieOrigins, capo, notes);
     }
+    // 已知源数据修正（2026-11-08 用户听感实锤，见 .claude 数据修正原则）：
+    // Like A Star 第 2 小节（index 1）的 6 弦 0 空弦低音 gpif 写在
+    // beat 0.125（十六分错位）——gp8 显示/听感中它与同小节 `<12>` 泛音
+    // 同拍（beat 0.0，低音与泛音同时发声，随后连线到 2 品 tap 实音）。
+    // 触发条件用**源文件名**（该 gpif 的 Title 本为空，gp8 界面显示的是
+    // 文件名；ir.title 不可用）。特例修正：该位置 beat → 0.0。
+    if (sourceName != null &&
+        sourceName.contains('Like A Star') &&
+        measureIndex == 1) {
+      for (var i = 0; i < notes.length; i++) {
+        final n = notes[i];
+        if (n.string == 6 && n.fret == 0 && (n.beat - 0.125).abs() < 1e-6) {
+          notes[i] = n.copyWith(beat: 0.0);
+          break;
+        }
+      }
+    }
     measures.add(MeasureIr(
         index: measureIndex++,
         confidence: 0,
@@ -257,7 +297,8 @@ ScoreIr parseGpif(String xml) {
         repeatStart: repeatStart,
         repeatEnd: repeatEnd,
         repeatCount: repeatCount,
-        endings: endings));
+        endings: endings,
+        fermatas: fermatas));
   }
   if (measures.isEmpty) throw const FormatException('gpif 无小节');
 
@@ -454,6 +495,7 @@ void _readVoice(
           bend: marks.bend,
           whammy: whammy,
           harmonicOffset: marks.harmonicOffset,
+          harmonicType: marks.harmonicTypeOut,
         ));
         // 链式 tie（dest 再连下一 dest）时 dest 也登记为 origin（实测无此形态，兜底）。
         tieOrigins[(gpString, fret)] = (out, out.length - 1);
@@ -503,6 +545,7 @@ void _readVoice(
         bend: marks.bend,
         whammy: whammy,
         harmonicOffset: marks.harmonicOffset,
+          harmonicType: marks.harmonicTypeOut,
       ));
       tieOrigins[(gpString, fret)] = (out, out.length - 1);
     }
@@ -603,6 +646,7 @@ class _NoteMarks {
   double? harmonicOffset; // 泛音发声偏移（半音，解析层按类型算好）
   String? harmonicTypeRaw; // 'natural'|'artificial'|...（原始小写）
   double? harmonicFret; // HFret 浮点（触点位置/相对距离）
+  String? harmonicTypeOut; // 输出到 NoteIr.harmonicType
 }
 
 bool _propEnabled(XmlElement note, String name) => note
@@ -684,9 +728,8 @@ _NoteMarks _noteMarks(XmlElement note) {
     // 按弦音 +12）。未知品兜底 +12（最常见 12 品触点）。
     final hf = m.harmonicFret;
     if (m.harmonicTypeRaw != null && hf != null) {
-      m.harmonicOffset = m.harmonicTypeRaw == 'artificial'
-          ? _naturalHarmonicOffset(hf)
-          : _naturalHarmonicOffset(hf);
+      m.harmonicOffset = _naturalHarmonicOffset(hf);
+      m.harmonicTypeOut = m.harmonicTypeRaw;
     }
   }
   // 兼容旧技法字母：连滑/击勾由专用弧线表达（渲染按品数判 H/P），

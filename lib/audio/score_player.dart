@@ -66,7 +66,20 @@ class ScorePlayer implements ScorePlayback {
   @override
   double get rate => _rate;
   @override
-  set rate(double r) => _rate = r.clamp(0.25, 3.0);
+  set rate(double r) {
+    // KS 实时变速（2026-11-11 用户"变速停止从头播放"根因修复）：旧实现
+    // 依赖上层 stop → renderScore(rate) → start → seek（0.3-1s 阻塞 +
+    // seek 轴错位 → 听感"停了从头播"）。改为声部级 setRelativePlaySpeed
+    // ——soloud 句柄实时变速（自然变调），position 由引擎按新速率推进，
+    // onTick 直接读取自洽。播放/暂停/未播三态都即时生效。
+    _rate = r.clamp(0.25, 3.0);
+    final h = _handle;
+    if (h != null) {
+      _sound.setVoiceSpeed(h, _rate);
+    }
+    // duration 是 PCM 固定长度（渲染时定），不随 rate 变——进度条
+    // 比例自然变化（同轴：媒体秒）。
+  }
 
   double? _loopA;
   @override

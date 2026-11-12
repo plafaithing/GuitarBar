@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart' show ByteData, rootBundle;
 import 'package:flutter_soloud/flutter_soloud.dart' show AudioSource;
 
+import '../core/music/note.dart';
+import '../core/score/score_ir.dart';
 import 'sound_engine.dart';
 
 /// GP8 12-Steel 采样库（assets/sounds/steel/ 的 114 个 ogg 真录钢弦采样）：
@@ -172,6 +174,33 @@ class SteelSampleBank {
     for (final s in sources) {
       // 释放失败静默（原 try/catch 语义）：关闭路径不该因单音源报错炸出。
       unawaited(_sound.disposeSource(s).catchError((_) {}));
+    }
+  }
+
+  /// 预载某曲触到的全部采样（2026-11-08 gp8 对照：gp8 打开文件即预渲染
+  /// 音频，点播放立即出声——我们点播放才现载采样，首播延迟 1-3s）。
+  /// 打开曲谱详情后后台调用，点播放时缓存全命中、零等待。
+  Future<void> preloadFor(ScoreIr ir) async {
+    if (ir.tuning.length != 6) return;
+    final tunings = [for (final s in ir.tuning) Note.parse(s)];
+    final files = <String>{};
+    for (final m in ir.tracks.first.measures) {
+      for (final n in m.notes) {
+        if (n.tieEnd) continue;
+        final capoShift = ir.capoApplied ? 0 : ir.capo;
+        final soundingMidi =
+            tunings[6 - n.string].midi + capoShift + n.fret;
+        final r = resolve(
+            string: n.string,
+            fret: n.fret,
+            soundingMidi: soundingMidi,
+            technique: n.technique,
+            harmonicOffset: n.harmonicOffset);
+        if (r != null) files.add(r.file);
+      }
+    }
+    for (final f in files) {
+      await load(f);
     }
   }
 }

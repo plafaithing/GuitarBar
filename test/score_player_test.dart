@@ -112,6 +112,12 @@ class FakeEngine implements SoundEngine {
   void setPitchShift(AudioSource src, SoundHandle h, double v) =>
       lastPitchShift[h.hashCode] = v;
 
+  final Map<int, double> lastVoiceSpeed = {};
+
+  @override
+  void setVoiceSpeed(SoundHandle h, double speed) =>
+      lastVoiceSpeed[h.hashCode] = speed;
+
   final Map<int, double> lastVoiceVolume = {};
 
   @override

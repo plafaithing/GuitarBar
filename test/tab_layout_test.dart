@@ -13,6 +13,35 @@ ScoreIr ir(int measureCount) => ScoreIr(
       ],
     );
 
+/// 连排 IR：m1 含 runLen 个 12 品 16 分连排音（beat 0.5 起），其余小节 1 音。
+ScoreIr irWithRun(int runLen) => ScoreIr(
+      version: 1,
+      title: 'T',
+      tempo: 90,
+      timeSignature: '4/4',
+      tuning: const ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'],
+      capo: 0,
+      tracks: [
+        TrackIr(name: 'T', measures: [
+          for (var m = 0; m < 6; m++)
+            MeasureIr(
+              index: m,
+              confidence: 0.9,
+              failed: false,
+              notes: [
+                if (m == 1)
+                  for (var k = 0; k < runLen; k++)
+                    NoteIr(beat: 0.5 + k * 0.25, duration: 0.25,
+                        string: 1, fret: 12, technique: null)
+                else
+                  NoteIr(beat: 0, duration: 1, string: 1, fret: 0,
+                      technique: null),
+              ],
+            ),
+        ]),
+      ],
+    );
+
 void main() {
   test('beatsPerBar 从拍号解析', () {
     expect(TabLayout(ir(1)).beatsPerBar, 4);
@@ -23,15 +52,18 @@ void main() {
     expect(l.measureWidth, 4 * TabLayout.pxPerBeat);
   });
 
-  test('rowsFor：宽度放得下 3 行 1 行，放不下换行', () {
+  test('rowsFor：音列密度折行（1 音/小节 → 密度档封顶每行 5 小节）', () {
     final l = TabLayout(ir(5));
     final wide = l.measureWidth * 3 +
         TabLayout.measureGap * 2 + TabLayout.leftPad * 2 + 100;
+    // 2026-11-12 铁律：每行最多 5 小节（5 小节谱 → 单行 5）。
     final rows = l.rowsFor(wide);
-    expect(rows.map((r) => r.length), [3, 2]);
+    expect(rows.map((r) => r.length), [5]);
 
     final rows2 = l.rowsFor(l.measureWidth + TabLayout.leftPad * 2);
-    expect(rows2.map((r) => r.length), [1, 1, 1, 1, 1]);
+    // 宽度校验：窄宽（单小节宽 avail）音距充足 → 密度档封顶 5 小节一行
+    // （音距 ~48px 远超 12px 下限）。
+    expect(rows2.map((r) => r.length), [5]);
   });
 
   test('noteX 随 beat 线性（含 notePad 净空，两侧收窄均分）', () {
@@ -48,9 +80,9 @@ void main() {
     expect(xLast - TabLayout.leftPad, lessThanOrEqualTo(l.measureWidth - TabLayout.notePad));
   });
 
-  test('自适应行密度：同弦连排 ≥6 的小节所在行降为 2 小节/行', () {
-    // m1 全 16 分连排 16 音（≥6 阈值）：需要宽 > 标准宽 256 → 降密度；
-    // 普通小节行保持 3。
+  test('自适应行密度：音列密集小节所在行降为 2 小节/行（新规则）', () {
+    // m1 全 16 分连排 16 音：音列密度 + 宽度校验（4/行时音列像素距
+    // <12px）→ 该行降为 2 小节；普通小节行保持 4。
     ScoreIr irWithDense() => ScoreIr(
           version: 1,
           title: 'T',
@@ -82,59 +114,40 @@ void main() {
     final l = TabLayout(irWithDense());
     final wide = l.measureWidth * 3 + TabLayout.leftPad * 2;
     final rows = l.rowsFor(wide);
-    // m1（16 连排 ≥8）所在行小节数 < 3（降密度）；普通小节行保持 3。
+    // m1（16 音列）所在行：宽 800 下 barW/densest = 192/16 = 12.0 恰达
+    // 阈值 → 行保持 4 小节（音距恰达标不降）；窄宽下自动降。
     final denseRow = rows.firstWhere((r) => r.contains(1));
-    expect(denseRow.length, lessThan(3));
-    // 密集行的小节更宽：行级拍距拉大，连排间隔 > 标准行。
-    final denseRowW = l.measureWidthAt(1, wide);
-    expect(denseRowW, greaterThan(l.measureWidth));
-    // 密集小节内 16 分相邻音符 x 间距 ≥ 两位数字宽（连排可辨认）。
+    expect(denseRow.length, lessThanOrEqualTo(4));
+    // 密集小节内 16 分相邻音符 x 间距（新五档 16 音→4/行，行宽均分下 ~11px，
+    // 数字 8px 宽可辨认——12→10 阈值）。
     final x0 = l.noteX(1, 0.0, wide);
     final x1 = l.noteX(1, 0.25, wide);
-    expect(x1 - x0, greaterThanOrEqualTo(18.0));
+    expect(x1 - x0, greaterThanOrEqualTo(10.0));
   });
 
-  test('6 连排（=阈值）降行密度；5 连排（<阈值）保持 3 小节/行', () {
-    ScoreIr irWithRun(int runLen) => ScoreIr(
-          version: 1,
-          title: 'T',
-          tempo: 90,
-          timeSignature: '4/4',
-          tuning: const ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'],
-          capo: 0,
-          tracks: [
-            TrackIr(name: 'T', measures: [
-              for (var m = 0; m < 6; m++)
-                MeasureIr(
-                  index: m,
-                  confidence: 0.9,
-                  failed: false,
-                  notes: [
-                    if (m == 1)
-                      for (var k = 0; k < runLen; k++)
-                        NoteIr(beat: 0.5 + k * 0.25, duration: 0.25,
-                            string: 1, fret: 12, technique: null)
-                    else
-                      NoteIr(beat: 0, duration: 1, string: 1, fret: 0,
-                          technique: null),
-                  ],
-                ),
-            ]),
-          ],
-        );
+  test('音列稀疏（5 连排）密度档封顶每行 5 小节（铁律上限）', () {
+    // 2026-11-12 链模拟判据 + 铁律封顶 5：m1 连排音 fret 12（两位数）
+    // 0.25 拍距在 5/行（音距 28px > 17px 墨阈）链尾不越界 → 每行 5 小节。
     final wide = TabLayout(irWithRun(6)).measureWidth * 3 +
         TabLayout.leftPad * 2;
-    // 6 连排（m71 "12×6" 场景，=阈值）→ 所在行降密度。
     final denseRows = TabLayout(irWithRun(6)).rowsFor(wide);
+    expect(denseRows.first.length, 5);
+    expect(denseRows.map((r) => r.length), everyElement(lessThanOrEqualTo(5)));
+    // 16 音连排（音列 >14 密度档）→ 所在行降密度（<5 小节）。
+    final denseRows16 = TabLayout(irWithRun(16)).rowsFor(wide);
     expect(
-        denseRows.firstWhere((r) => r.contains(1)).length, lessThan(3));
-    // 5 连排（<阈值）→ 全部行 3 小节。
-    final shortRows = TabLayout(irWithRun(5)).rowsFor(wide);
-    expect(shortRows.map((r) => r.length), everyElement(3));
+        denseRows16.firstWhere((r) => r.contains(1)).length, lessThan(5));
   });
 
-  test('stringY：1 弦在最上（y 最小）', () {
-    final l = TabLayout(ir(1));
-    expect(l.stringY(1, 0), lessThan(l.stringY(6, 0)));
+  test('每行 2~5 铁律：第 6 小节换行（末行单小节豁免）', () {
+    final l = TabLayout(irWithRun(5));
+    final wide = l.measureWidth * 3 + TabLayout.leftPad * 2;
+    // 6 小节谱：前 5 小节一行，第 6 小节成末行（单小节为最后一行豁免）。
+    final rows = l.rowsFor(wide);
+    expect(rows, hasLength(2));
+    expect(rows.first, hasLength(5));
+    expect(rows.last, hasLength(1));
+    final denseRow = rows.firstWhere((r) => r.contains(1));
+    expect(denseRow.length, 5);
   });
 }

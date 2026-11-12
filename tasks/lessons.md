@@ -86,3 +86,8 @@
 - 规则 15：**关闭类守护必须"事件武装"**（收到关闭信号才开始计时强杀），不做常驻心跳——常驻心跳无法区分"卡死"与"合法的长同步段"（启动初始化/渲染）。
 - 规则 16：**dart:io exit() 不保证终止进程**（native atexit 可挂）——必须死的场景用 TerminateProcess（lib/core/hard_exit.dart）。
 - 方法论：关闭路径从第一天就打点落盘日志，本次实锤全靠它；"async/timeout 守卫"只保护 Dart 层，跨 FFI/native 边界的挂死要换武器。
+
+## 2026-11-11 widget 探针假时钟挂死（连音修复验证轮）
+- 错误链：golden 探针连跑三次各挂 5-10 分钟超时——根因是 **TestWidgetsFlutterBinding 假时钟 zone 内真实异步（File IO / toImage 编码 / matchesGoldenFile 捕获）永不完成**，每轮都在等一个假时钟下不会 resolve 的 Future。
+- 规则 17：**widget 测试里一切真实异步 IO 必须 tester.runAsync 包裹**（文件写、toImage+toByteData、golden 捕获）；matchesGoldenFile 在本项目环境同样挂死，视觉验证探针一律用 runAsync + File.writeAsBytes 直写 PNG。
+- 方法论：探针测试超时先查"假时钟 vs 真实异步"，不是查业务代码——GOLDEN_BYTES 已打印还挂死 = 打印点之后的 await 在假 zone 里。

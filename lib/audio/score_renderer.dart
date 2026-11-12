@@ -43,9 +43,20 @@ RenderedScore renderScore(ScoreIr ir,
   // 累计拍位；failed 小节拍位照占（静音小节）。
   final t0 = ir.tracks.first;
   final order = expandMeasures(t0.measures);
-  final orderStarts = [
-    for (var k = 0; k < order.length; k++) k * beatsPerBar.toDouble()
+  // 各小节实际拍数（2026-11-10 Flower 1/4 pickup 修复）：展开时间轴
+  // 逐小节累计（小节级拍号优先）。
+  final beatsOf = [
+    for (final m in t0.measures)
+      m.timeSignature == null
+          ? beatsPerBar
+          : (int.tryParse(m.timeSignature!.split('/')[0]) ?? beatsPerBar),
   ];
+  final orderStarts = <double>[];
+  var acc = 0.0;
+  for (var k = 0; k < order.length; k++) {
+    orderStarts.add(acc);
+    acc += beatsOf[order[k]].toDouble();
+  }
   // 有结构 = 展开改变了序列长度（反复真的生效）；播放头元数据仅此需要。
   final structured = order.length != t0.measures.length;
 
@@ -54,7 +65,7 @@ RenderedScore renderScore(ScoreIr ir,
   for (var k = 0; k < order.length; k++) {
     final m = t0.measures[order[k]];
     for (final n in m.notes) {
-      final e = k * beatsPerBar +
+      final e = orderStarts[k] +
           n.beat +
           n.duration +
           tailSeconds * ir.tempo / 60;
@@ -95,7 +106,7 @@ RenderedScore renderScore(ScoreIr ir,
         final pcm = pluck(freq,
             sampleRate: sampleRate,
             seconds: n.technique == 'x' ? 0.3 : tailSeconds);
-        final off = ((k * beatsPerBar + n.beat) * beatSamples +
+        final off = ((orderStarts[k] + n.beat) * beatSamples +
                 k2 * sampleRate * 0.01)
             .round();
         for (var i = 0; i < pcm.length && off + i < total; i++) {
