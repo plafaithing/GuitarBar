@@ -99,15 +99,16 @@ class _PlayBarState extends State<PlayBar> {
     return SizedBox(
       height: 72,
       child: Container(
-        margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
         decoration: BoxDecoration(
-          // 圆角悬浮卡（2026-11-11 用户"背后色块"三轮定案：半透明
-          // panel 在浅色下整体呈灰块观感（众数色 (227,225,220) 实测）
-          // ——改**不透明 surface**：白卡自然悬浮，谱面透出的只有卡外
-          // 区域；阴影取消（浅色下渲染成灰带）。
-          color: p.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: p.border),
+          // 底板全透明（2026-11-12 四轮定案，用户三轮"背后色块"反馈根治）：
+          // ①"圆矩形色块"主源 = score_detail_page bottomSheet 的
+          //   Material(transparent) 包裹（在 bottomSheet 槽约束下画出不透明
+          //   panel 底，golden A/B 实验实锤——该包裹已去除，见 detail page）
+          // ②次源 = 本卡底板（panel@50% 半透明灰 / 11-11 surface 圆角卡
+          //   两版都是"比曲谱背景深一档的灰带"）。去底板去边框——控件
+          //   直接悬浮，透出与谱面同色的背景。控件布局不动（用户"播放器
+          //   样式不能变"）。
+          color: Colors.transparent,
         ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(children: [

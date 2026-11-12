@@ -570,29 +570,30 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
       // playing/paused 态经 setState 切换（_togglePlay/_stopPlay）。
       bottomSheet: (_ir == null)
           ? null
-          // 透明底（2026-11-10 用户反馈"背景色块"修复：Scaffold
-          // bottomSheet 槽自带 Material 底色（暗带），盖住谱面下缘
-          // ——透明化后只留 PlayBar 悬浮卡本身）。
-          : Material(
-              color: Colors.transparent,
-              child: ListenableBuilder(
-                listenable: _activePlayer.positionSeconds,
-                builder: (ctx, _) => PlayBar(
-                  playing: _activePlayer.playing,
-                  paused: _activePlayer.paused,
-                  positionSeconds: _activePlayer.positionSeconds.value,
-                  durationSeconds: _activePlayer.durationSeconds,
-                  busy: _rendering,
-                  onToggle: () => _togglePlay(),
-                  onStop: _stopPlay,
-                  onSeek: _onSeek,
-                  rate: _activePlayer.rate,
-                  onRateChanged: _onRateChanged,
-                  loopA: _activePlayer.loopA,
-                  loopB: _activePlayer.loopB,
-                  onLoopA: _onLoopA,
-                  onLoopB: _onLoopB,
-                ),
+          // 2026-11-12 四轮根治（用户三轮"背后色块"反馈）：**不加
+          // Material 包裹**——Material(transparent) 在 bottomSheet 槽的
+          // 约束下仍画出不透明 panel 底（浅色 (237,235,230) 全宽灰带，
+          // golden A/B 实验：Material 换红→整带变红；去掉→干净透底）。
+          // 11-10 加它本想盖"暗带"，实际它就是色块本体。裸放
+          // ListenableBuilder+PlayBar（底板已透明，见 play_bar），真机上
+          // bottomSheet 区透出 root 壳 ground（与谱面背景同色）。
+          : ListenableBuilder(
+              listenable: _activePlayer.positionSeconds,
+              builder: (ctx, _) => PlayBar(
+                playing: _activePlayer.playing,
+                paused: _activePlayer.paused,
+                positionSeconds: _activePlayer.positionSeconds.value,
+                durationSeconds: _activePlayer.durationSeconds,
+                busy: _rendering,
+                onToggle: () => _togglePlay(),
+                onStop: _stopPlay,
+                onSeek: _onSeek,
+                rate: _activePlayer.rate,
+                onRateChanged: _onRateChanged,
+                loopA: _activePlayer.loopA,
+                loopB: _activePlayer.loopB,
+                onLoopA: _onLoopA,
+                onLoopB: _onLoopB,
               ),
             ),
     );

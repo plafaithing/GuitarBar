@@ -278,6 +278,15 @@ class GuitarBarTheme {
       useMaterial3: true,
       colorScheme: scheme,
       scaffoldBackgroundColor: p.ground,
+      // persistent bottomSheet 槽透明化（2026-11-12 四轮根治）：Scaffold
+      // 自动把 bottomSheet 包进 _StandardBottomSheet→BottomSheet(Material
+      // elevation 1 + M3 默认色)——浅色下画全宽 panel(237) 灰带，即用户
+      // 三轮反馈的"播放器背后连到底部的圆矩形色块"（golden A/B+渲染树
+      // dump 实锤）。槽容器透明 + 零海拔 → 只留 PlayBar 控件悬浮，透出
+      // 与谱面同色的背景。modal（showModalBottomSheet）不走 color 而用
+      // modalBackgroundColor 默认值——note_edit_sheet 已显式传底色。
+      bottomSheetTheme: const BottomSheetThemeData(
+          backgroundColor: Colors.transparent, elevation: 0),
       // 全局字体：所有角色统一到微软雅黑（见 kUiFontFamily）。
       textTheme: _textThemeFor(p.ink)
           .apply(fontFamily: kUiFontFamily, fontFamilyFallback: kUiFontFallback),

@@ -525,6 +525,40 @@ REA（open_binary）重新分析。makeSlur 调用点均为 .rdata 函数表引�
   几何约束，弧 y-10..-14.5 与上弦 label 底 -12±8 重叠——极罕见场景
   文字层盖住，待用户反馈）
 
+## 剩余两问题（2026-11-12 晚，提交后开工）
+
+### 1. 调音器布局（吉他下方空白多）→ 已修
+
+- 根因：gaugeHeight 旧 0.14 系数 + 200 封顶——pad 竖屏下总内容
+  ~915px < 视口 1024，~109px 空白堆在吉他下方
+- 修复：网格区**吃掉全部剩余视口**（视口 − 设备栏96 − padding48 −
+  固定行区248 − 琴头 headHeight），clamp(120, 480)——音准方块区放大 +
+  吉他下移贴满；窗口矮时下限 120 → 整页滚动保底
+
+### 2. 播放器底部色块（三轮未解）→ 四轮根治
+
+- **真相链**（golden A/B + 渲染树 dump 实锤）：Scaffold 自动把
+  bottomSheet 包进 `_StandardBottomSheet→BottomSheet(Material
+  elevation 1 + M3 默认色)`——浅色下画**全宽 panel(237) 灰带**，即
+  用户"播放器背后连到底部的圆矩形色块"（比 ground 247 深一档）。
+  11-10 加的 Material(transparent) 包裹根本盖不住它（槽容器在更下层，
+  当时"暗带"就是这个 BottomSheet 容器）；11-11 的 surface 圆角卡、
+  11-12 的去 Material 包裹/透明底板都只动了上层
+- **根治**：主题 `bottomSheetTheme: BottomSheetThemeData(
+  backgroundColor: transparent, elevation: 0)`——槽容器透明零海拔。
+  PlayBar 底板同时全透明（panel@50% 灰板为次源），控件悬浮透出与
+  谱面同色背景；note_edit_sheet（唯一 modal）显式传 panel 底色保样式
+- 最终 golden 验证：底部纯 ground(247)，panel 灰带消失，控件正常
+- 280 全绿 + analyze 0 + exe 重建
+
+### 探针方法学教训（记档）
+
+- golden A/B 二分法定位渲染层时**必须同步确认 detail page 的
+  bottomSheet 状态**——本轮"逐个恢复控件全干净"是空 bottomSheet
+  假象（PlayBar 不在树里），浪费一轮二分
+- 渲染树 dump（visitChildren 找 Material elevation/color）比像素
+  A/B 快：一轮定位 _StandardBottomSheet 真凶
+
 ### ⏳ 记档：LAS r1 行首孤立墨带（pre-existing，未修）
 
 - LAS 第 2 行行首 x11-99、y 弦线 1±8 的 88×15px 实心墨带，覆盖左竖线

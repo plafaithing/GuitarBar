@@ -78,6 +78,9 @@ Future<NoteIr?> showNoteEditSheet(BuildContext ctx, NoteIr note,
   String? technique = note.technique;
   return showModalBottomSheet<NoteIr>(
     context: ctx,
+    // 2026-11-12：主题 bottomSheetTheme.color 已透明化（详情页播放条槽
+    // 根治色块），modal 单独显式底色保样式不变。
+    backgroundColor: ctx.palette.panel,
     builder: (ctx) {
       final p = ctx.palette;
       return StatefulBuilder(

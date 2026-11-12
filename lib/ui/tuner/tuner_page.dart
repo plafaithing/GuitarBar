@@ -235,10 +235,16 @@ class _TunerPageState extends State<TunerPage> {
     return LayoutBuilder(builder: (context, viewport) {
       final headHeight =
           ((viewport.maxHeight - 170) * 0.52).clamp(280.0, 720.0);
-      // 网格区（表盘）高度随屏幕连续缩放（2026-11-05 用户反馈：固定值
-      // 不自适应，拉长 app 时网格要跟着变高——0.14 系数 + 84/200 钳制）。
-      final gaugeHeight =
-          ((viewport.maxHeight - 170) * 0.14).clamp(84.0, 200.0);
+      // 网格区（表盘）高度 = **吃掉全部剩余视口**（2026-11-12 用户诉求：
+      // 「吉他下方至设备栏中间空白很多」→ 放大音准方块区、吉他下移填
+      // 充空白——旧 0.14 系数 + 200 封顶在 pad 竖屏留 ~109px 底部空白）。
+      // 剩余 = 视口 − 设备栏(96) − 滚动 padding(48) − 固定行区(228:
+      // 模式行 48 + 间距 4 + 预设行 52 + 间距 8 + pill 56 + 间距 12×2
+      // + 底距 12 + 估差) − 琴头。**固定区少算 20**（2026-11-12 用户
+      // 验收微调：吉他下移 20px——多出的 20 全部给网格区，琴头自然
+      // 下移）。窗口矮时 clamp 下限 120 → 整页滚动（保底不溢出）。
+      final gaugeHeight = (viewport.maxHeight - 96 - 48 - 228 - headHeight)
+          .clamp(120.0, 480.0);
       return SizedBox(
         height: viewport.maxHeight,
         child: Stack(children: [
