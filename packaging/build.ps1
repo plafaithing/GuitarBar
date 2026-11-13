@@ -1,16 +1,17 @@
 ﻿# GuitarBar 一键编译+打包（2026-11-05）
 # 用法：
-#   powershell -File packaging\build.ps1              # 编译 + 打包
-#   powershell -File packaging\build.ps1 -SkipBuild   # 跳过编译只重新打包
-# 产物：dist\GuitarBar-<日期>.zip（解压即用便携包，含内置卸载器）
-param([switch]$SkipBuild)
+#   powershell -File packaging\build.ps1                        # 编译 + 打包（日期名）
+#   powershell -File packaging\build.ps1 -Version V1.0          # 版本名（release 发版）
+#   powershell -File packaging\build.ps1 -SkipBuild -Version V1.0
+# 产物：dist\GuitarBar-<日期或版本>.zip（解压即用便携包，含内置卸载器）
+param([switch]$SkipBuild, [string]$Version = '')
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $rel = Join-Path $root 'build\windows\x64\runner\Release'
 $packaging = Join-Path $root 'packaging'
 $dist = Join-Path $root 'dist'
-$stamp = Get-Date -Format 'yyyyMMdd'
+$stamp = if ($Version) { $Version } else { Get-Date -Format 'yyyyMMdd' }
 $zip = Join-Path $dist "GuitarBar-$stamp.zip"
 
 # 1) 编译（-SkipBuild 跳过：只重打包）
