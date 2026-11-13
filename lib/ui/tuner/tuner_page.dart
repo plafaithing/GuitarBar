@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
@@ -45,6 +44,11 @@ class _TunerPageState extends State<TunerPage> {
   // T1：未检测提示「弹拨任意琴弦开始调音」2 秒后自动淡出。
   Timer? _hintTimer;
   bool _showHint = true;
+  // 最近一次有效检测的音名/音分（2026-11-13 渐隐防黑胶囊）：声音断续
+  // 时 targetNote 短暂 null——渐隐动画若切空内容，深色胶囊只剩 padding
+  // 撑壳（~48x16 黑点闪现）。缓存上次音名让胶囊带着内容淡出。
+  Note? _lastNote;
+  int _lastCents = 0;
 
   @override
   void initState() {
@@ -221,6 +225,11 @@ class _TunerPageState extends State<TunerPage> {
     final inTune = _freq != null && cents.abs() <= 3;
     // 当前命中弦（锁定优先，-1 = 未命中），弦块高亮/到位点用它。
     final hitIdx = _lockedString ?? autoIdx;
+    // 缓存有效检测（渐隐防黑胶囊，见 _lastNote 声明处注释）。
+    if (targetNote != null) {
+      _lastNote = targetNote;
+      _lastCents = cents;
+    }
 
     // 页面高度自适应：琴头（网格区）吃掉剩余竖向空间，让设备栏自然
     // 贴到可视底部——窄屏（pad 竖屏比例）时 body 位于底部导航之上，
@@ -235,23 +244,32 @@ class _TunerPageState extends State<TunerPage> {
     return LayoutBuilder(builder: (context, viewport) {
       final headHeight =
           ((viewport.maxHeight - 170) * 0.52).clamp(280.0, 720.0);
+      // 设备栏实际占位（2026-11-12 用户二轮：吉他和设备栏之间尽量减少
+      // 空间、增大网格）：底偏移 12 + 下拉行 48（诊断行开启 +40）。
+      // 旧预留 96 + 底距 24 → 吉他到设备栏 ~60px 空隙，收紧后 ~12px，
+      // 让出的空间全给网格区。
+      // 2026-11-12 二轮：去掉 kDebugMode 守卫——release 版里它恒 false，
+      // 用户开「调试模式」开关也永远看不到诊断行（实测"没什么变化"的
+      // 根因）。开关（debugDiagnostics）是唯一判据，release 也生效。
+      final diagnostics =
+          context.watch<ThemeSettingsState>().debugDiagnostics;
+      final devBarHeight = 48.0 + (diagnostics ? 40.0 : 0.0);
+      const devBarBottom = 12.0;
       // 网格区（表盘）高度 = **吃掉全部剩余视口**（2026-11-12 用户诉求：
       // 「吉他下方至设备栏中间空白很多」→ 放大音准方块区、吉他下移填
       // 充空白——旧 0.14 系数 + 200 封顶在 pad 竖屏留 ~109px 底部空白）。
-      // 剩余 = 视口 − 设备栏(96) − 滚动 padding(48) − 固定行区(228:
-      // 模式行 48 + 间距 4 + 预设行 52 + 间距 8 + pill 56 + 间距 12×2
-      // + 底距 12 + 估差) − 琴头。**固定区少算 20**（2026-11-12 用户
-      // 验收微调：吉他下移 20px——多出的 20 全部给网格区，琴头自然
-      // 下移）。窗口矮时 clamp 下限 120 → 整页滚动（保底不溢出）。
-      final gaugeHeight = (viewport.maxHeight - 96 - 48 - 228 - headHeight)
-          .clamp(120.0, 480.0);
+      // 剩余 = 视口 − 设备栏占位 − 滚动 padding(28: 顶24 底4) − 固定行区
+      // (228) − 琴头。窗口矮时 clamp 下限 120 → 整页滚动（保底不溢出）。
+      final gaugeHeight =
+          (viewport.maxHeight - (devBarBottom + devBarHeight + 12) - 28 - 228 - headHeight)
+              .clamp(120.0, 480.0);
       return SizedBox(
         height: viewport.maxHeight,
         child: Stack(children: [
           Positioned.fill(
-            bottom: 96,
+            bottom: devBarBottom + devBarHeight + 12,
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 4),
               child: Column(children: [
         Row(children: [
           SegmentedButton<_TunerMode>(
@@ -330,12 +348,16 @@ class _TunerPageState extends State<TunerPage> {
         const SizedBox(height: 8),
         // 网格区（T3/T4/T5）：调弦名行下方到琴头上方——小方格网格底 +
         // 中央参考竖线（基准）+ 固定目标环/小尖 + 随偏差滑动的指示线。
+        // 2026-11-13 用户诉求：环/pill 组**垂直居中**于网格——网格区吃满
+        // 剩余视口变高后内容挤上部，下半空（MainAxisAlignment.center）。
         Stack(children: [
           Positioned.fill(
             child: CustomPaint(
                 painter: _GridPainter(ink: context.palette.ink)),
           ),
-          Column(children: [
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
             _gaugeArea(cents.toDouble(), inTune, _freq != null,
                 height: gaugeHeight),
             const SizedBox(height: 8),
@@ -355,7 +377,7 @@ class _TunerPageState extends State<TunerPage> {
               onTapString: (i) => _onStringTap(state, i),
             ),
           ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 4),
       ]),
             ),
           ),
@@ -363,7 +385,7 @@ class _TunerPageState extends State<TunerPage> {
           Positioned(
             left: 24,
             right: 24,
-            bottom: 24,
+            bottom: devBarBottom,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               // 输入设备选择（长期保留）：默认设备是虚拟声卡时可一键切到真麦。
               Row(children: [
@@ -399,8 +421,7 @@ class _TunerPageState extends State<TunerPage> {
                 ),
               ]),
               // 诊断行（I2）：默认隐藏，个人中心「调试模式」开关打开才显示。
-              if (kDebugMode &&
-                  context.watch<ThemeSettingsState>().debugDiagnostics) ...[
+              if (diagnostics) ...[
                 const SizedBox(height: 4),
                 Text(
                     'chunks:${MicPitchStream.I.chunkCount}  窗:${MicPitchStream.I.windowCount}  cs:${MicPitchStream.I.lastChunkSamples}  ws:${MicPitchStream.I.lastWindowSamples}  rms:${MicPitchStream.I.lastRms.toStringAsFixed(6)}  dev:${MicPitchStream.I.currentDeviceName ?? '-'}  on:$_micOn',
@@ -455,9 +476,13 @@ class _TunerPageState extends State<TunerPage> {
           final w = constraints.maxWidth;
           const margin = 40.0; // ♭/♯ 字宽留白
           final x = w / 2 + (anim / 50) * (w / 2 - margin);
+          // 内容带（♭♯ 20 + 环 44 + 尖 8 ≈ 76）在 gauge 高度里垂直居中
+          // （2026-11-13 用户诉求：环在网格居中——旧 top 0/24/68 固定
+          // 顶部，gauge 撑高后内容挤上部）。
+          final contentTop = (height - 76) / 2;
           return Stack(fit: StackFit.expand, children: [
             Positioned(
-                top: 0,
+                top: contentTop,
                 left: 0,
                 right: 0,
                 child: Padding(
@@ -475,8 +500,8 @@ class _TunerPageState extends State<TunerPage> {
                       ]),
                 )),
             // 滑动目标环 + 环下小尖：与中央基准轴重合即准。
-            Positioned(top: 24, left: x - 22, child: _targetRing(anim, hasFreq)),
-            Positioned(top: 68, left: x - 6, child: _needleTip()),
+            Positioned(top: contentTop + 24, left: x - 22, child: _targetRing(anim, hasFreq)),
+            Positioned(top: contentTop + 68, left: x - 6, child: _needleTip()),
           ]);
         }),
       ),
@@ -536,29 +561,40 @@ class _TunerPageState extends State<TunerPage> {
           decoration: BoxDecoration(
               color: const Color(0xE6141414),
               borderRadius: BorderRadius.circular(32)),
-          child: targetNote == null
-              ? Text('弹拨任意琴弦开始调音',
+          // 渲染分支（2026-11-13 防黑胶囊）：提示只显示一次（首开 2 秒
+          // 窗口）；声音断续（targetNote 短暂 null）用**上次音名**渲染
+          // ——渐隐动画带着内容淡出，不闪空壳；从未检测过（提示窗外）
+          // = 空占位（opacity 恒 0，无渐隐场景，不可见）。
+          child: Builder(builder: (context) {
+            final note = targetNote ?? _lastNote;
+            final c = targetNote != null ? cents : _lastCents;
+            if (note == null) {
+              return _showHint
+                  ? Text('弹拨任意琴弦开始调音',
+                      style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white))
+                  : const SizedBox.shrink();
+            }
+            return Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(note.label(flats: _preferFlats(note)),
                   style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white))
-              : Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text(targetNote.label(flats: _preferFlats(targetNote)),
-                      style: TextStyle(
-                          fontSize: 40,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                          fontFeatures: const [
-                            FontFeature.tabularFigures()
-                          ])),
-                  const SizedBox(width: 10),
-                  Text(
-                      '${cents.abs()} 音分 ${cents > 0 ? '偏高' : cents < 0 ? '偏低' : ''}',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.white70,
-                          fontFeatures: const [FontFeature.tabularFigures()])),
-                ]),
+                      fontSize: 40,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                      fontFeatures: const [
+                        FontFeature.tabularFigures()
+                      ])),
+              const SizedBox(width: 10),
+              Text(
+                  '${c.abs()} 音分 ${c > 0 ? '偏高' : c < 0 ? '偏低' : ''}',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white70,
+                      fontFeatures: const [FontFeature.tabularFigures()])),
+            ]);
+          }),
         ),
       ),
     );
