@@ -158,6 +158,10 @@ class _Gp5Reader {
   /// tie 续接 / hopo 起点回溯登记：每声部一张 弦号 → 最近 note 表。
   late final List<Map<int, _NoteRef>> _voiceRefs;
 
+  /// 本拍是否合成了装饰音（readNote 置位、_readBeat 收尾回写 tieEnd
+  /// 数字锚后清零——拍内音序 1→6 弦，装饰音可能先于同拍 tieE 解析）。
+  bool _beatHasDeco = false;
+
   ScoreIr parse() {
     final version = _byteSizeString(30);
     final m = RegExp(r'5\.(\d)').firstMatch(version);
@@ -419,11 +423,14 @@ class _Gp5Reader {
       if (f1 & 0x20 != 0) _i8(); // slapEffect（tap/slap/pop）
       if (f2 & 0x04 != 0) _readBend(); // tremolo bar
       if (f1 & 0x40 != 0) {
-        // GP5 存储相对 GP3 对调：字节 1 = 上扫、字节 2 = 下扫
-        //（gp5 readBeatStroke = gp3 读取后 swapDirection）
+        // 方向（2026-11-18 用户 gp8 对照实证 Promise.gp5 全部反）：
+        // GP5 字节 1 = **下扫**、字节 2 = **上扫**——py 的 base 读取
+        // （byte1=down 变量、byte2=up 变量）+ swapDirection 的网络效
+        // 果与 gp8 相反（GP3 教训同族：py/TuxGuitar 的方向语义与
+        // gp8 相反，gp8 为准）。旧实现 byte1→up 反向。
         final a = _i8();
         final b = _i8();
-        brush = a > 0 ? 'up' : (b > 0 ? 'down' : null);
+        brush = a > 0 ? 'down' : (b > 0 ? 'up' : null);
       }
       if (f2 & 0x02 != 0) {
         final d = _i8(); // BeatStrokeDirection：1 = up, 2 = down
@@ -453,6 +460,20 @@ class _Gp5Reader {
         );
       }
     }
+
+    // 同拍 tieEnd 数字锚回写（gp34 同款——gp8 逐弧实证：tieE 拍含
+    // 装饰音 → tieE 裸数字；拍内音序 1→6 弦，装饰音可能先于同拍
+    // tieE 解析，beat 收尾统一回写）。
+    if (_beatHasDeco) {
+      for (var i = out.length - 1; i >= 0; i--) {
+        final p = out[i];
+        if ((p.beat - beatPos).abs() > 1e-9) break;
+        if (p.tieEnd && !p.tieAnchor) {
+          out[i] = p.copyWith(tieAnchor: true);
+        }
+      }
+    }
+    _beatHasDeco = false;
 
     // GP5 拍级第二段 flags（I16）+ 可选 break secondary beams
     final flags2 = _i16();
@@ -522,21 +543,22 @@ class _Gp5Reader {
     var tremoloPicking = false;
     var harmonic = false;
     var trill = false;
-    var grace = false;
+    // grace 装饰数据（2026-11-19 gp34 同款修复：此前 5 字节全丢——
+    // 装饰音合成见本体 add 处）。
+    ({int fret, int velocity, int transition, double duration})? graceData;
     String? slide;
     if (flags & 0x08 != 0) {
       final f1 = _i8();
       final f2 = _i8();
       hammer = f1 & 0x02 != 0;
       letRing = f1 & 0x08 != 0;
-      grace = f1 & 0x10 != 0;
       staccato = f2 & 0x01 != 0;
       palmMute = f2 & 0x02 != 0;
       tremoloPicking = f2 & 0x04 != 0;
       trill = f2 & 0x20 != 0;
       noteVibrato = f2 & 0x40 != 0;
       if (f1 & 0x01 != 0) _readBend();
-      if (f1 & 0x10 != 0) _readGrace();
+      if (f1 & 0x10 != 0) graceData = _readGrace();
       if (f2 & 0x04 != 0) _i8(); // tremolo picking 速度档
       if (f2 & 0x08 != 0) slide = _readSlides();
       if (f2 & 0x10 != 0) {
@@ -584,6 +606,29 @@ class _Gp5Reader {
       prev.list[prev.index] = prev.list[prev.index].copyWith(hopoStart: true);
     }
 
+    // grace 装饰音合成（2026-11-19 gp34 同款；用户决策：不当小号挂靠
+    // 形态——合成**普通音** NoteIr，正常数字/独立 dup 排布/时值自然
+    // 一闪；transition 仍映射连接属性。本体 grace=false）。
+    if (graceData != null) {
+      final g = graceData; // 流分析提升非空（无 !）
+      const tHammer = 3, tSlide = 1;
+      out.add(NoteIr(
+        beat: beatPos,
+        duration: g.duration, // _readGrace 已换算四分拍
+        string: stringNumber, // gp5 弦号 1 = 最细 = IR 1，恒等映射
+        fret: g.fret < 0 ? 0 : g.fret,
+        technique: g.fret < 0 ? 'x' : null,
+        // gp34 同款：deco 普通形态 + slide 连接（gp8 实图 sl 弧形态）+
+        // 同拍 tieEnd 回写数字锚（gp8 逐弧实证）。
+        deco: true,
+        slide: (g.transition == tHammer || g.transition == tSlide)
+            ? 'shift'
+            : null,
+        velocity: g.velocity > 0 ? g.velocity : null,
+      ));
+      _beatHasDeco = true; // beat 收尾统一回写同拍 tieEnd 数字锚
+    }
+
     out.add(NoteIr(
       beat: beatPos,
       duration: beats,
@@ -602,7 +647,6 @@ class _Gp5Reader {
       trill: trill,
       accent: accent || heavyAccent,
       staccato: staccato,
-      grace: grace,
       dynamicMark: dynamicMark,
       fadding: fadeIn ? 'in' : null,
       tremolo: tremoloPicking,
@@ -636,14 +680,24 @@ class _Gp5Reader {
     }
   }
 
-  /// grace note（gp5.py readGrace）：fret + 力度 + transition + duration
-  /// + flags，各 1 字节。
-  void _readGrace() {
-    _u8();
-    _u8();
-    _u8();
-    _u8();
-    _u8();
+  /// grace note（py gp5.readGrace 序）：fret U8 + velocity U8（unpack
+  /// = 16v-1）+ transition U8 + duration 编码值 U8 + flags U8（**序与
+  /// GP3 不同**：GP3 是 fret/vel/durCode/transition）。duration 编码：
+  /// 1=32 分 2=24 分 3=16 分，py 同款换算 Duration = 1<<(7-code)，IR
+  /// 四分拍 = 4/value。flags：0x01 dead、0x02 onBeat（合成不用）。
+  /// transition：0 none / 1 slide / 2 bend / 3 hammer。
+  ({int fret, int velocity, int transition, double duration}) _readGrace() {
+    final fret = _u8();
+    final velocity = (_u8() * 16 - 1).clamp(1, 127);
+    final transition = _u8();
+    final durationCode = _u8();
+    _u8(); // flags：0x01 dead / 0x02 onBeat——合成不消费
+    return (
+      fret: fret,
+      velocity: velocity,
+      transition: transition,
+      duration: 4 / (1 << (7 - durationCode)),
+    );
   }
 
   /// slide（gp5.py readSlides）：位掩码 0x01 shift / 0x02 legato /

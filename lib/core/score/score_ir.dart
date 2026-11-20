@@ -187,6 +187,24 @@ class MeasureIr {
   int get hashCode => jsonEncode(toJson()).hashCode;
 }
 
+/// 小节四分拍数（2026-11-19 Prologue"指针到了不响"根治）：拍号 N/D 的
+/// 小节在**四分拍口径**下占 N × 4 / D 拍（6/8 = 3，12/8 = 6，2/2 = 4）。
+/// 全 IR 音符 beat/duration 都是四分拍（八分 = 0.5），播放时间轴与播放
+/// 头线性轴必须同口径——此前 X/8 拍号按分子计拍（6/8 小节被当 6 拍
+/// 4.8s），音符只占前 3 拍，每小节末 2.4s 空白 + 指针爬出小节盒后
+/// snap 回下一小节起点（用户"小节末指针返回才响"实证）。
+/// [fallback] = 全曲拍号口径（小节级 timeSignature null 时继承；全曲
+/// 级调用缺省 4 = 4/4）。
+double measureQuarterBeats(String? sig, {double fallback = 4}) {
+  if (sig == null) return fallback;
+  final parts = sig.split('/');
+  final num = int.tryParse(parts[0]);
+  if (num == null || num <= 0) return fallback;
+  final den = parts.length > 1 ? (int.tryParse(parts[1]) ?? 4) : 4;
+  if (den <= 0) return fallback;
+  return num * 4 / den;
+}
+
 /// 播放反复展开（2026-11-02 走查：复刻 GP8 播放结构——反复跳回 + 结尾
 /// 走向）。返回**播放顺序的小节 index 序列**：
 /// - repeatEnd（count 次，缺省 2）：未满遍数跳回最近未闭合 repeatStart
@@ -298,6 +316,8 @@ class NoteIr {
     this.accent = false,
     this.staccato = false,
     this.grace = false,
+    this.deco = false,
+    this.tieAnchor = false,
     this.dynamicMark,
     this.fadding,
     this.wah = false,
@@ -354,6 +374,15 @@ class NoteIr {
   final bool accent;
   final bool staccato;
   final bool grace;
+  // 装饰音（2026-11-19 GP3/4/5 grace effect 数据合成的普通形态装饰音
+  // ——grace 标志保留给 gpif 的小号挂靠形态；deco = "当成单独的音"
+  // 形态（用户决策）：正常数字 + slide 弧连接本体。解析层同拍 tieEnd
+  // 回写 tieAnchor 的识别源）。
+  final bool deco;
+  // tie 延续音的数字显示锚（gp8 逐弧实证 2026-11-19：tieE 所在拍含
+  // 装饰音 → 该 tieE 以裸数字显示——m4 3弦0/m17 2弦3，121 例唯一例外
+  // 通道；其余小节内 tieE 隐藏、跨小节（小节首拍）tieE 显示 (N)）。
+  final bool tieAnchor;
   final String? dynamicMark; // 小写规范化（'f'/'mf'/'p'...）
   final String? fadding; // 'in' | 'out'
   final bool wah;
@@ -416,6 +445,8 @@ class NoteIr {
         if (accent) 'accent': true,
         if (staccato) 'staccato': true,
         if (grace) 'grace': true,
+        if (deco) 'deco': true,
+        if (tieAnchor) 'tieAnchor': true,
         if (dynamicMark != null) 'dynamicMark': dynamicMark,
         if (fadding != null) 'fadding': fadding,
         if (wah) 'wah': true,
@@ -454,6 +485,8 @@ class NoteIr {
         accent: j['accent'] as bool? ?? false,
         staccato: j['staccato'] as bool? ?? false,
         grace: j['grace'] as bool? ?? false,
+        deco: j['deco'] as bool? ?? false,
+        tieAnchor: j['tieAnchor'] as bool? ?? false,
         dynamicMark: j['dynamicMark'] as String?,
         fadding: j['fadding'] as String?,
         wah: j['wah'] as bool? ?? false,
@@ -500,6 +533,8 @@ class NoteIr {
     bool? accent,
     bool? staccato,
     bool? grace,
+    bool? deco,
+    bool? tieAnchor,
     String? dynamicMark,
     String? fadding,
     bool? wah,
@@ -530,6 +565,8 @@ class NoteIr {
           accent: accent ?? this.accent,
           staccato: staccato ?? this.staccato,
           grace: grace ?? this.grace,
+          deco: deco ?? this.deco,
+          tieAnchor: tieAnchor ?? this.tieAnchor,
           dynamicMark: dynamicMark ?? this.dynamicMark,
           fadding: fadding ?? this.fadding,
           wah: wah ?? this.wah);

@@ -135,7 +135,18 @@ class _ScoresPageState extends State<ScoresPage> {
         acceptedTypeGroups: [
           const XTypeGroup(
               label: '乐谱文件（GTP/PDF/图片）',
-              extensions: ['gpx', 'gp5', 'pdf', 'png', 'jpg', 'jpeg', 'webp']),
+              extensions: [
+                'gpx',
+                'gp5',
+                'gp4',
+                'gp3',
+                'gtp',
+                'pdf',
+                'png',
+                'jpg',
+                'jpeg',
+                'webp'
+              ]),
         ]);
     if (files.isEmpty || !mounted) return;
     // 目录记忆：取第一个文件所在文件夹（多选跨目录时以首个为准）。
@@ -217,11 +228,18 @@ class _ScoresPageState extends State<ScoresPage> {
           const SnackBar(content: Text('文件夹里没有图片（png/jpg/jpeg/webp）')));
       return;
     }
+    // 排序确认（2026-11-19 用户需求：文件夹导入与批量导入能力一致——
+    // 拖拽调整顺序，预填自然排序）。
+    final confirmed = await showDialog<List<File>>(
+      context: context,
+      builder: (ctx) => _ImageOrderDialog(files: images),
+    );
+    if (confirmed == null || confirmed.isEmpty || !mounted) return;
     final title = await _askTitle(p.basename(dirPath));
     if (title == null || title.trim().isEmpty || !mounted) return;
     setState(() => _busy = true);
     try {
-      await repo.importImages(title: title.trim(), images: images);
+      await repo.importImages(title: title.trim(), images: confirmed);
       await _reload();
     } catch (e) {
       if (mounted) {
@@ -398,7 +416,8 @@ class _ScoresPageState extends State<ScoresPage> {
               menuChildren: [
                 MenuItemButton(
                     onPressed: repo == null || _busy ? null : _importFile,
-                    child: const Text('导入文件（gpx/gp5/PDF/图片）')),
+                    child: const Text(
+                        '导入文件（gtp/gp3/gp4/gp5/gpx/PDF/图片）')),
                 MenuItemButton(
                     onPressed: repo == null || _busy ? null : _importFolder,
                     child: const Text('导入文件夹（多图合成多页）')),

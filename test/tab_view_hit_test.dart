@@ -5,6 +5,8 @@ import 'package:guitarbar/ui/scores/tab_layout.dart';
 import 'package:guitarbar/ui/scores/tab_view.dart';
 import 'package:guitarbar/ui/theme.dart';
 
+import 'font_setup.dart';
+
 /// 命中测试坐标按 TabLayout 公开常量推算（测试视口 800×600）：
 /// 折行规则（2026-11-09 音列密度驱动）：13 音/小节 → 每行 3 小节
 ///（perRow=3）；noteX = leftPad + col*measureWidth + notePad +
@@ -78,6 +80,7 @@ Future<void> pumpTab(
 }
 
 void main() {
+  setUpAll(loadScoreFonts);
   testWidgets('未滚动点击音符：回调正确的 measureIndex/noteIndex', (tester) async {
     (int, int, NoteIr)? hit;
     await pumpTab(tester, makeIr(1), onNoteTap: (m, i, n) => hit = (m, i, n));

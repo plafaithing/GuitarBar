@@ -72,8 +72,13 @@ class FakeEngine implements SoundEngine {
     lastAt = atTime;
     lastScale = scale;
     lastDuration = duration;
+    // 全量记录（2026-11-19 Prologue 覆盖诊断用：atTime + duration）。
+    scheduleLog.add((atTime, duration));
     return const SoundHandle(3);
   }
+
+  /// scheduleAt 全量记录（诊断覆盖地图用）。
+  final List<(Duration, Duration?)> scheduleLog = [];
 
   @override
   Duration engineNow() => engineTimeValue;

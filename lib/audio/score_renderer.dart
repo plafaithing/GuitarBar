@@ -11,6 +11,7 @@ class RenderedScore {
       required this.seconds,
       this.order,
       this.orderStarts,
+      this.barBeatsQuarter,
       this.beatsPerBar = 4,
       this.tempo = 90});
   final Int16List pcm;
@@ -21,7 +22,15 @@ class RenderedScore {
   // 展开时间轴 → 线性谱面拍位反查用。
   final List<int>? order;
   final List<double>? orderStarts;
-  final int beatsPerBar;
+
+  /// 各线性小节的四分拍数（2026-11-19 Prologue 根治：拍号 N/D 按
+  /// N×4/D 计——KS linearBeatAt 变拍号/ X/8 拍反查用；null = 旧式
+  /// 全局 beatsPerBar 近似）。
+  final List<double>? barBeatsQuarter;
+
+  /// 全曲四分拍数（fallback 口径；X/8 拍号此前按分子计拍——6/8 小节
+  /// 被当 6 拍，播放时长 2x）。
+  final double beatsPerBar;
   final double tempo; // 点音起播秒换算用
 }
 
@@ -37,19 +46,20 @@ RenderedScore renderScore(ScoreIr ir,
   }
   final beatSamples = 60.0 / (ir.tempo * rate) * sampleRate;
   const tailSeconds = 1.2;
-  final beatsPerBar = int.tryParse(ir.timeSignature.split('/')[0]) ?? 4;
+  // 全曲/小节级四分拍数（2026-11-19 Prologue 根治：6/8 = 3 四分拍，
+  // 按分子计拍此前小节时长 2x——score_ir.measureQuarterBeats 唯一
+  // 事实源）。
+  final beatsPerBar = measureQuarterBeats(ir.timeSignature);
 
   // 反复展开（2026-11-02 GP8 复刻）：播放按展开序，时间轴 = 展开位
   // 累计拍位；failed 小节拍位照占（静音小节）。
   final t0 = ir.tracks.first;
   final order = expandMeasures(t0.measures);
-  // 各小节实际拍数（2026-11-10 Flower 1/4 pickup 修复）：展开时间轴
+  // 各小节实际四分拍数（2026-11-10 Flower 1/4 pickup 修复）：展开时间轴
   // 逐小节累计（小节级拍号优先）。
   final beatsOf = [
     for (final m in t0.measures)
-      m.timeSignature == null
-          ? beatsPerBar
-          : (int.tryParse(m.timeSignature!.split('/')[0]) ?? beatsPerBar),
+      measureQuarterBeats(m.timeSignature, fallback: beatsPerBar),
   ];
   final orderStarts = <double>[];
   var acc = 0.0;
@@ -131,6 +141,7 @@ RenderedScore renderScore(ScoreIr ir,
       seconds: total / sampleRate,
       order: structured ? order : null,
       orderStarts: structured ? orderStarts : null,
+      barBeatsQuarter: beatsOf,
       beatsPerBar: beatsPerBar,
       tempo: ir.tempo);
 }

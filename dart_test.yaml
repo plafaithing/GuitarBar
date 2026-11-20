@@ -1,0 +1,7 @@
+# dart test 配置（2026-11-17 测试耗时优化）：
+# - heavy tag：全量探针（158 库 3376 文件分桶并行，约 6~8 分钟）
+# - 日常命令：flutter test --exclude-tags=heavy（套件 ~2 分钟）
+# - 终验命令：flutter test（全跑）
+tags:
+  heavy:
+    timeout: 25m

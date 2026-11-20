@@ -67,9 +67,11 @@ class SampleScorePlayer implements ScorePlayback {
   // 播放头反查谱面位置用。
   final List<double> playbackOrderStarts = [];
   final List<int> playbackOrderMeasures = [];
-  int _beatsPerBar = 4;
-  // 各小节实际拍数（2026-11-10 pickup 修复；下标=线性小节号）。
-  List<int> _beatsOfMeasures = const [];
+  // 四分拍口径（2026-11-19 Prologue 根治：score_ir.measureQuarterBeats
+  // 唯一事实源——X/8 拍号此前按分子计拍，小节时长 2x、每小节末空白）。
+  double _beatsPerBar = 4;
+  // 各小节实际四分拍数（2026-11-10 pickup 修复；下标=线性小节号）。
+  List<double> _beatsOfMeasures = const [];
   double _beatSeconds = 0;
 
   /// 展开时间轴拍位 → 线性谱面拍位（播放头定位）。无展开结构时 null
@@ -88,16 +90,16 @@ class SampleScorePlayer implements ScorePlayback {
             ? _beatsOfMeasures[mIdx]
             : _beatsPerBar;
     final inMeasure =
-        (playBeat - playbackOrderStarts[k]).clamp(0.0, barBeats.toDouble());
+        (playBeat - playbackOrderStarts[k]).clamp(0.0, barBeats);
     // 线性谱面拍位 = 线性小节序 × 基准拍数 + 小节内偏移（近似映射，
     // 供 TabView 播放头；1/4 pickup 小节按 1 拍计）。
-    var linearBars = 0;
+    var linearBars = 0.0;
     for (var i = 0; i < mIdx; i++) {
       linearBars += _beatsOfMeasures.length > i
           ? _beatsOfMeasures[i]
           : _beatsPerBar;
     }
-    return linearBars.toDouble() + inMeasure;
+    return linearBars + inMeasure;
   }
 
   /// 线性小节+拍位 → 展开轴起播秒（点音起播；精确到点击音符——2026-11-03
@@ -275,16 +277,16 @@ class SampleScorePlayer implements ScorePlayback {
     _pending.clear();
     if (ir.tuning.length != 6) return false; // 钢弦采样库按 6 弦录制
     final tunings = [for (final s in ir.tuning) Note.parse(s)];
-    final globalBeats =
-        int.tryParse(ir.timeSignature.split('/')[0]) ?? 4;
+    // 全曲/小节级四分拍数（2026-11-19 Prologue 根治：6/8 = 3 四分拍，
+    // 按分子计拍此前小节时长 2x——score_ir.measureQuarterBeats 唯一
+    // 事实源）。
+    final globalBeats = measureQuarterBeats(ir.timeSignature);
     _beatsPerBar = globalBeats;
-    // 各小节实际拍数（2026-11-10 Flower 1/4 pickup 修复：小节级拍号
-    // 参与，展开时间轴累计不再按全局 4/4 错位）。
+    // 各小节实际四分拍数（2026-11-10 Flower 1/4 pickup 修复：小节级
+    // 拍号参与，展开时间轴累计不再按全局拍数错位）。
     final beatsOf = [
       for (final m in ir.tracks.first.measures)
-        m.timeSignature == null
-            ? globalBeats
-            : (int.tryParse(m.timeSignature!.split('/')[0]) ?? globalBeats),
+        measureQuarterBeats(m.timeSignature, fallback: globalBeats),
     ];
     _beatsOfMeasures = beatsOf;
     final beatSeconds = 60.0 / ir.tempo;
@@ -308,11 +310,24 @@ class SampleScorePlayer implements ScorePlayback {
     var endBeat = 0.0;
     // 交替拨弦（2026-11-01 技法音效）：同弦出音轮换 Up/Down 层。
     final strokeFlip = <int, bool>{};
+    // tie 链尾查表（2026-11-19 Prologue 修复：sample 路径 tieEnd 此前
+    // 直接跳过不延长链首音——KS 路径有"时长累计回链首"，sample 没有
+    // → 押尾持续低音类长音被截断在链首时值、repeat 末小节听感无声
+    // （用户"指针到了不响、返回才响"实测：m28 三个 tie 音无新事件）。
+    // 同弦最近发声事件 = 链首（gp3/4 拍级 tie 同弦链语义）。
+    final lastEventOfString = <int, _PendingEvent>{};
     for (var k = 0; k < order.length; k++) {
       final m = measures[order[k]];
       final baseBeat = starts[k]; // 小节级拍数累计（pickup 修复）
       for (final n in m.notes) {
-          if (n.tieEnd) continue; // tie 续接端不出音（时长已累计回链首）
+          if (n.tieEnd) {
+            // tie 续接端不出音（时长累计回链首——KS 路径同款）。
+            final head = lastEventOfString[n.string];
+            if (head != null) {
+              head.noteSeconds += n.duration * beatSeconds;
+            }
+            continue;
+          }
           // 弦号映射与渲染器同款：string 1（最细）→ tunings[5]；
           // 发声 MIDI 按通道语义（渲染器同款 capoApplied 公式）：
           // gpx=绝对品（+capo）、AI=夹后品（已含不补）。
@@ -349,9 +364,12 @@ class SampleScorePlayer implements ScorePlayback {
           if (n.accent) volume *= 1.15;
           // 时值截短（gp8 同款发声行为）：
           // - Staccato 断音 = 时值减半（留空拍感）
-          // - Grace 装饰音 = 极短一闪（~30-40ms 量级）
+          // - Grace 装饰音 = 快速一闪（~60ms；2026-11-19 改钳制口径：
+          //   GP3/4/5 装饰音 IR 时值已是 64 分级短值 0.0625 拍=50ms，
+          //   ×0.12 只剩 6ms 几乎无声；gpif beat 级 grace 时值较长。
+          //   两种来源统一钳到 60ms 一闪，与 gp8 装饰听感一致）
           if (n.staccato) noteSeconds *= 0.5;
-          if (n.grace) noteSeconds *= 0.12;
+          if (n.grace) noteSeconds = math.min(noteSeconds, 0.06);
           // Dynamic 力度映射（2026-11-02 gp8 播放复刻）：力度记号影响
           // 发声音量（GP8 同款——ff 到 pp 的 MIDI 力度带）。
           volume *= _dynamicVolume(n.dynamicMark);
@@ -377,7 +395,8 @@ class SampleScorePlayer implements ScorePlayback {
                   volume: volume * (k == 0 ? 1.0 : 0.8),
                   slide: false,
                   string: n.string,
-                  absBeat: baseBeat + t));
+                  absBeat: baseBeat + t,
+                  fixedDur: true));
               t += seg;
               k++;
             }
@@ -403,7 +422,8 @@ class SampleScorePlayer implements ScorePlayback {
                   volume: volume * (k.isEven ? 1.0 : 0.85),
                   slide: false,
                   string: n.string,
-                  absBeat: baseBeat + t);
+                  absBeat: baseBeat + t,
+                  fixedDur: true);
               if (k.isOdd) e.pitchFixed = 2.0; // 交替粒 +2 半音
               _pending.add(e);
               t += step;
@@ -426,7 +446,10 @@ class SampleScorePlayer implements ScorePlayback {
               arpeggio: n.arpeggio,
               brush: n.brush,
               vibrato: n.vibrato,
-              fade: n.fadding));
+              fade: n.fadding,
+              fixedDur: n.staccato || n.grace));
+          // tie 链首登记（Prologue 修复：tieEnd 时长累计目标）。
+          lastEventOfString[n.string] = _pending.last;
           // 弯音/摇把（2026-11-04 gp8 补完）：bend 曲线首尾优先，
           // 否则拍级摇把 origin→destination。首尾相等（全 0 占位）不挂。
           // 泛音不走 pitchFixed（2026-11-07：音高由泛音采样的 speed 全权
@@ -468,7 +491,38 @@ class SampleScorePlayer implements ScorePlayback {
         fermataExtra += extra;
       }
     }
-    _pending.sort((a, b) => a.time.compareTo(b.time));
+    // 构造序号（add 序全序化——同 time 翻转防护，dsh 三轮 P1）。
+    for (var i = 0; i < _pending.length; i++) {
+      _pending[i].seq = i;
+    }
+    _pending.sort((a, b) => a.time != b.time
+        ? a.time.compareTo(b.time)
+        : a.seq.compareTo(b.seq));
+    // 余振自适应（2026-11-19 Prologue 全曲每小节末 1.5-2.5s 空白根治）：
+    // 拨弦音长 = 时值 + 0.08s 截停在慢速段掐掉延音（2026-10-31 防快谱
+    // 抢拍收窄的副作用——快谱对、慢谱断）。修：noteSeconds 补齐到
+    // **同弦下一事件**（衔接不断）或自然衰减上限 1.2s（真实吉他拨弦
+    // 衰减量级）——快谱音距小则余振小（不叠不抢）、慢谱小节末长空
+    // 段余振 1.2s（延音连续）。muted/tremolo/trill 的既有短值不覆盖
+    // （natural > 原值才补）。
+    for (var i = 0; i < _pending.length; i++) {
+      final e = _pending[i];
+      var nextSame = double.infinity;
+      for (var j = i + 1; j < _pending.length; j++) {
+        if (_pending[j].string == e.string) {
+          nextSame = _pending[j].time;
+          break;
+        }
+      }
+      final natural =
+          math.min(1.2, nextSame - e.time).clamp(0.0, double.infinity);
+      // 刻意短时值（断音/装饰/震音/颤音颗粒）不补齐（dsh 终审 P1-2：
+      // 注释声称的"既有短值不覆盖"仅指 natural 更小的情形——孤立短音
+      // 后静默 ≥1.2s 时 natural 反超，技法语义被吞）。
+      if (!e.fixedDur && natural > e.noteSeconds) {
+        e.noteSeconds = natural;
+      }
+    }
     _staggerArpeggios();
     _attachSlideTargets();
     // 时长含尾音（与渲染器同款 1.2s）：末音采样自然衰减不受限，
@@ -765,12 +819,13 @@ class _PendingEvent {
       this.arpeggio,
       this.brush,
       this.vibrato = false,
-      this.fade});
+      this.fade,
+      this.fixedDur = false});
   double time; // 可变：琶音依次发声的错开偏移（事件轴原速秒）
   final String file;
   final double speed;
   final bool muted;
-  final double noteSeconds; // 采样时长限制（音符时值+0.15s 余振）
+  double noteSeconds; // 采样时长限制（音符时值+余振；tie 链延长可写）
   final double volume; // 力度（击勾弱击/闷音暗音色的力度层用）
   final bool slide; // 滑音起音（起播后 PitchShift ramp 向终点）
   double? slideEndSpeed; // 滑音终点的重移调 speed（_attachSlideTargets 回填）
@@ -786,6 +841,16 @@ class _PendingEvent {
   double? pitchTo;
   // 颤音 Trill 交替粒的固定移调（半音；恒定 PitchShift 非 ramp）。
   double? pitchFixed;
+  // 短时值刻意音（2026-11-19 dsh 终审 P1-2）：staccato/grace/tremolo/
+  // trill 的时长是技法语义（断音减半/装饰一闪/等长颗粒），余振自适应
+  // 不得补齐覆盖（此前孤立 staccato 被拉到 1.2s 延音、颗粒末粒同理）。
+  bool fixedDur;
+  // 构造序号（2026-11-19 dsh 三轮 P1）：Dart List.sort 不保证稳定——
+  // 装饰音与本体同 beat → time 精确相等，翻转后余振自适应的
+  // nextSame 跳过本体（被补齐 1.2s 长鸣）+ slide 接线丢目标（dsh
+  // 实测 680 对中 40 次翻转）。sort 比较器同 time 时按 seq（= add
+  // 序，deco 先于本体）全序确定。
+  int seq = 0;
   AudioSource? src;
 }
 

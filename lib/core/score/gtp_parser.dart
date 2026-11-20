@@ -12,7 +12,7 @@ import 'score_ir.dart';
 /// - `BCFZ`（GP6）：自定义位级 LZ 压缩——**不是 zlib/deflate**（文件里不存在任何
 ///   deflate 流）→ 解压得 "BCFS" 扇区镜像（4096 字节/扇区的迷你文件系统）→ score.gpif。
 /// - `PK`（GP7）：标准 zip 容器 → score.gpif。
-Uint8List _gpifBytes(Uint8List bytes) {
+Uint8List gpifBytes(Uint8List bytes) {
   if (bytes.length < 4) throw const FormatException('文件太小');
   final magic = String.fromCharCodes(bytes.sublist(0, 4));
   if (magic == 'BCFZ') {
@@ -51,13 +51,13 @@ Uint8List _gpifBytes(Uint8List bytes) {
 /// [sourceName] 源文件名（已知源数据修正的触发条件用——部分 gpx 的
 /// gpif Title 为空，gp8 界面显示的是文件名，见 parseGpif 内修正表）。
 ScoreIr parseGpxBytes(Uint8List bytes, {String? sourceName}) =>
-    parseGpif(utf8.decode(_gpifBytes(bytes)), sourceName: sourceName);
+    parseGpif(utf8.decode(gpifBytes(bytes)), sourceName: sourceName);
 
 /// 解压 gpx 容器取 score.gpif XML 文本（13.4 源文件查看用）。
 /// 坏容器/非 gpx 返回 null（查看页提示），不抛异常。
 String? extractGpifXml(Uint8List bytes) {
   try {
-    return utf8.decode(_gpifBytes(bytes));
+    return utf8.decode(gpifBytes(bytes));
   } catch (_) {
     return null;
   }
@@ -302,7 +302,7 @@ ScoreIr parseGpif(String xml, {String? sourceName}) {
   }
   if (measures.isEmpty) throw const FormatException('gpif 无小节');
 
-  return ScoreIr(
+  final ir = ScoreIr(
     version: 1,
     title: title.isEmpty ? '未命名' : title,
     tempo: tempo,
@@ -314,6 +314,54 @@ ScoreIr parseGpif(String xml, {String? sourceName}) {
       TrackIr(name: trackName.isEmpty ? '主旋律' : trackName, measures: measures),
     ],
   );
+
+  // GP6+ 隐式击勾弦（2026-11-18 LAS.gpx 实证：gpif 无 Hopo 属性
+  // （HopoOrigin/Destination = 0）而 gp8 画出大量击勾弧——GP6+ 由
+  // **同弦音高顺序隐式判定**（显式属性优先的 GP3/4/5 通道不走此推
+  // 导）。规则：同弦相邻（时间序）、非 tie（tie 显式优先）、非
+  // dead、品差 ≠ 0（同品 = 重复拨弦不画弧）→ hopoStart/End 对，
+  // 渲染层按品向画 H/P 弧。
+  // GP6+ 击勾弦（2026-11-18 LAS.gpx 实证：gpif 无 Hopo 属性、Note
+  // 级无 XProperty——**GP6+ 不存弧线信息**，gp8 对同一文件画出大量
+  // 弧 = gp8 有隐式推导。**首版"同弦相邻品差≠0 全成弧"规则用户实
+  // 测连线错误**（685 对与 gp8 分布不符）→ 已回退，暂时不画（少而
+  // 不错优于多而错）。重启用条件：gp8 的 LAS 弧线分布对照截图 →
+  // 推导 gp8 的隐式规则（哪些音对成弧、方向）→ 按规则实现。
+  // _NoteRef 结构保留（推导恢复时用）。
+  for (final track in ir.tracks) {
+    final byString = <int, List<_NoteRef>>{};
+    for (final m in track.measures) {
+      for (var i = 0; i < m.notes.length; i++) {
+        byString
+            .putIfAbsent(m.notes[i].string, () => [])
+            .add(_NoteRef(m, i));
+      }
+    }
+    byString.forEach((s, list) {
+      for (var i = 1; i < list.length; i++) {
+        final a = list[i - 1];
+        final b = list[i];
+        if (a.note.tieEnd || b.note.tieEnd) continue; // tie 显式优先
+        if (a.note.technique == 'x' || b.note.technique == 'x') {
+          continue; // 闷音
+        }
+        // 品差 = 0（同品重复拨弦）不画弧；品差 ≠ 0 的隐式弧规则待
+        // gp8 对照推导（见上注释），暂时不自动成弧。
+        a.measure.notes[a.index] = a.note;
+        b.measure.notes[b.index] = b.note;
+      }
+    });
+  }
+
+  return ir;
+}
+
+/// 隐式击勾弦推导的音符定位（小节引用 + 索引，供原地写回）。
+class _NoteRef {
+  _NoteRef(this.measure, this.index);
+  final MeasureIr measure;
+  final int index;
+  NoteIr get note => measure.notes[index];
 }
 
 final RegExp _ws = RegExp(r'\s+');

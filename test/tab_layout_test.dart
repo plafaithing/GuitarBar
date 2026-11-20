@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:guitarbar/core/score/score_ir.dart';
 import 'package:guitarbar/ui/scores/tab_layout.dart';
 
+import 'font_setup.dart';
+
 ScoreIr ir(int measureCount) => ScoreIr(
       version: 1, title: 'T', tempo: 90, timeSignature: '4/4',
       tuning: const ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'], capo: 0,
@@ -43,6 +45,7 @@ ScoreIr irWithRun(int runLen) => ScoreIr(
     );
 
 void main() {
+  setUpAll(loadScoreFonts);
   test('beatsPerBar 从拍号解析', () {
     expect(TabLayout(ir(1)).beatsPerBar, 4);
   });

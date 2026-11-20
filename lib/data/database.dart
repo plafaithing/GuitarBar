@@ -32,7 +32,7 @@ class Settings extends Table {
 class Scores extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get title => text()();
-  // 'image' | 'pdf' | 'gtp'（gpx/gp5）
+  // 'image' | 'pdf' | 'gtp'（gtp/gp3/gp4/gp5/gpx）
   TextColumn get sourceType => text()();
   // 相对应用支持目录：scores/<id>/source.<ext>（原谱文件，永不改动）
   TextColumn get sourcePath => text()();

@@ -177,7 +177,10 @@ void main() {
       expect(m0.notes[2].fret, 0);
       expect(m0.notes[3].string, 6);
       expect(m0.notes[3].fret, 4);
-      // 全曲：809 个音符（含 76 个 tie 续接端，均入列表）
+      // 全曲：811 个音符（含 76 个 tie 续接端，均入列表）。2026-11-19
+      // grace 装饰音合成修复后 809→811：py 基线 809 不含装饰音（py 把
+      // grace 挂在 Note.effect 上不算独立音），gp8 语义装饰音是可见
+      // 可听的独立音（Distance 含 2 个 grace 装饰）→ +2 正确偏差。
       var total = 0;
       var tieEnds = 0;
       var tieStarts = 0;
@@ -186,7 +189,7 @@ void main() {
         tieEnds += m.notes.where((n) => n.tieEnd).length;
         tieStarts += m.notes.where((n) => n.tieStart).length;
       }
-      expect(total, 809);
+      expect(total, 811);
       expect(tieEnds, 76);
       // 76 个续接端中 2 个无链首（m31 声部1 弦6、m33 声部2 弦1——该声部
       // 该弦此前从未出音，PyGuitarPro getTiedNoteValue 返回 -1 → 品值夹 0），

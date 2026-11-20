@@ -8,6 +8,8 @@ import 'package:guitarbar/core/score/score_ir.dart';
 import 'package:guitarbar/ui/scores/tab_view.dart';
 import 'package:guitarbar/ui/theme.dart';
 
+import 'font_setup.dart';
+
 ScoreIr _makeIr(int measureCount, {String? technique}) => ScoreIr(
       version: 1,
       title: 'T',
@@ -46,6 +48,7 @@ double _scrollOffset(WidgetTester tester) =>
     tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels;
 
 void main() {
+  setUpAll(loadScoreFonts);
   testWidgets('followPlayhead：播放头跳到第 14 小节（row 3）→ 自动滚动跟随',
       (tester) async {
     await tester.pumpWidget(_host(_makeIr(18),

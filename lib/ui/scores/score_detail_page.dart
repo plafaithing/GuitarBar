@@ -141,13 +141,78 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     }
   }
 
+  /// 线性小节 [m] 起始四分拍（无展开结构谱的秒换算 fallback：
+  /// per-measure 四分拍累计——2026-11-19 X/8 拍号口径统一，与
+  /// TabLayout.linearStarts / sample_player.playbackOrderStarts 同源）。
+  double _linearMeasureBeat(ScoreIr ir, int m) {
+    final ms = ir.tracks.first.measures;
+    final global = measureQuarterBeats(ir.timeSignature);
+    var acc = 0.0;
+    for (var i = 0; i < m && i < ms.length; i++) {
+      acc += measureQuarterBeats(ms[i].timeSignature, fallback: global);
+    }
+    return acc;
+  }
+
   /// 音符点选编辑：弹层确认后回写 IR（confidence=1 人工确认）并刷新。
   Future<void> _editNote(int m, int i, NoteIr n) async {
     final ir = _ir;
-    if (ir == null || _repo == null || _writing) return;
+    if (ir == null) return;
+    // 长按操作菜单（2026-11-19 AB 谱面点选主路径——业界标准：谱面
+    // 直接点选区间端点；播头快捷键路径保留在 PlayBar A/B 钮）。
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.edit_outlined),
+            title: const Text('编辑音符'),
+            onTap: () => Navigator.pop(ctx, 'edit'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.repeat_outlined),
+            title: const Text('设为循环 A 点（起点）'),
+            onTap: () => Navigator.pop(ctx, 'a'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.repeat_one_outlined),
+            title: const Text('设为循环 B 点（终点）'),
+            onTap: () => Navigator.pop(ctx, 'b'),
+          ),
+        ]),
+      ),
+    );
+    if (action == null || !mounted) return;
+    if (action == 'a' || action == 'b') {
+      // 音符精确秒（与 _playFromNote 同款换算：展开结构取首次遍次）。
+      final active = _activePlayer;
+      final start = active.startSecondsForBeat(
+          m, n.beat);
+      // 无展开结构 fallback：per-measure 四分拍累计（2026-11-19 X/8
+      // 拍号口径统一——分子计拍此前 6/8 秒位 2x）。
+      final secs =
+          start ??
+          (_linearMeasureBeat(ir, m) + n.beat) * 60.0 / ir.tempo;
+      if (action == 'a') {
+        active.loopA = secs;
+      } else {
+        active.loopB = secs;
+      }
+      // 误序容错（与 _setLoop 同款）。
+      final a = active.loopA, b = active.loopB;
+      if (a != null && b != null && b < a) {
+        active.loopA = b;
+        active.loopB = a;
+      }
+      setState(() {});
+      return;
+    }
+    if (_repo == null || _writing) return;
     _writing = true;
     try {
-      final beatsPerBar = int.tryParse(ir.timeSignature.split('/').first) ?? 4;
+      // 时值上限口径（2026-11-19 X/8 统一：四分拍 6/8=3——分子计拍
+      // 此前允许写出 2x 超小节时值）。
+      final beatsPerBar = measureQuarterBeats(ir.timeSignature).round();
       final result =
           await showNoteEditSheet(context, n, beatsPerBar: beatsPerBar);
       if (result == null || !mounted) return;
@@ -280,8 +345,9 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
   Future<void> _playFromNote(int m, int i, NoteIr n) async {
     final ir = _ir;
     if (ir == null || _rendering) return;
-    final beatsPerBar = int.tryParse(ir.timeSignature.split('/').first) ?? 4;
-    final linearBeat = m * beatsPerBar + n.beat;
+    // 线性谱面拍位（无展开结构 fallback 用；per-measure 四分拍累计
+    // ——2026-11-19 X/8 拍号口径统一）。
+    final linearBeat = _linearMeasureBeat(ir, m) + n.beat;
     final seconds = linearBeat * 60.0 / ir.tempo;
     final active = _activePlayer;
     // 精确定位到点击音符（2026-11-03 走查：停止/暂停后点音总是从所在
@@ -520,11 +586,28 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                                     (60.0 / _ir!.tempo);
                             final linear =
                                 _activePlayer.linearBeatAt(playBeat);
+                            // AB 循环段谱面标记（2026-11-19 用户需求：
+                            // 秒 → 线性拍，与播放头同款换算）。
+                            final secsPerBeat = 60.0 / _ir!.tempo;
+                            final (loopA, loopB) = (
+                              _activePlayer.loopA,
+                              _activePlayer.loopB
+                            );
                             return TabView(
                               ir: _ir!,
                               playheadBeat: _activePlayer.playing
                                   ? (linear ?? playBeat)
                                   : null,
+                              loopABeats: (
+                                loopA == null
+                                    ? null
+                                    : _activePlayer.linearBeatAt(
+                                        loopA / secsPerBeat),
+                                loopB == null
+                                    ? null
+                                    : _activePlayer.linearBeatAt(
+                                        loopB / secsPerBeat),
+                              ),
                               // 播放时谱面自动滚动跟随（走查反馈 ②）。
                               followPlayhead: true,
                               // 点击音符=从此起播（2026-11-01 走查）；

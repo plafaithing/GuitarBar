@@ -6,7 +6,9 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../data/database.dart';
+import 'gp34_parser.dart';
 import 'gp5_parser.dart';
+import 'gtp12_parser.dart';
 import 'gtp_parser.dart';
 import 'image_normalize.dart';
 import 'pdf_raster.dart';
@@ -92,12 +94,39 @@ class ScoreRepository {
     return '$base ($i)';
   }
 
+  /// GP 二进制魔数判定：读头 31 字节（1 长度 + 30 定长版本串）。
+  /// 返回 'gtp12' / 'gp34' / 'gp5' / 'gpx'；null = 版本串不认识（坏文件）。
+  String? _gpBinaryFlavor(List<int> bytes) {
+    if (bytes.length < 31) return null;
+    final head4 = latin1.decode(bytes.sublist(0, 4));
+    if (head4 == 'BCFZ' || head4.startsWith('PK')) return 'gpx';
+    final size = bytes[0];
+    final raw = latin1.decode(bytes.sublist(1, 31));
+    final version = (size < 1 ? '' : raw.substring(0, size < 30 ? size : 30)).trim();
+    if (version.contains('GUITARE') ||
+        version.contains('GUITAR PRO v1') ||
+        version.contains('v2.20') ||
+        version.contains('v2.21')) {
+      return 'gtp12';
+    }
+    if (version.contains('v3.') ||
+        version.contains('v4.') ||
+        version.contains('L4.')) {
+      return 'gp34';
+    }
+    if (version.contains('v5.')) return 'gp5';
+    return null;
+  }
+
   /// 导入：插行拿 id → 原图落盘 → 生成页图（PDF 逐页转 PNG / 图片规范化单页）。
   Future<Score> importScore({required String title, required File source}) async {
     final ext = p.extension(source.path).replaceFirst('.', '').toLowerCase();
     final isPdf = ext == 'pdf';
-    // GTP 系：gpx（GP6/7 容器）与 gp5（Guitar Pro 5 二进制）。
-    final isGtp = ext == 'gpx' || ext == 'gp5';
+    // GTP 系：gpx（GP6/7 容器）、gp5（GP5 二进制）、gp3/gp4（GP3/GP4
+    // 二进制）、gtp（GP1/GP2 老格式，444 份曲库实测）。
+    final isGtp =
+        ext == 'gpx' || ext == 'gp5' || ext == 'gp3' || ext == 'gp4' ||
+            ext == 'gtp';
     if (!isPdf && !isGtp && !imageExts.contains(ext)) {
       throw ArgumentError('不支持的曲谱文件类型: .$ext');
     }
@@ -114,10 +143,17 @@ class ScoreRepository {
         // GTP 精确导入（设计 §13.3）：解析即入库，confidence 全 null
         // （确定性数据无 AI 置信度）；无页图（谱面就是数据本身）。
         final bytes = await source.readAsBytes();
-        final ir =
-            ext == 'gp5'
-            ? parseGp5Bytes(bytes)
-            : parseGpxBytes(bytes, sourceName: p.basename(source.path));
+        // 魔数路由（158 曲库实测 46 个 gp3/gp4 扩展名 + 73 个 .gtp 扩展
+        // 名是错标的）：版本串判 GP1/2、GP3/4、GP5（错标自愈——.gtp 实为
+        // GP3/4 走 gp34 通道）；BCFZ/zip 头判 gpx 容器。
+        final ir = switch (_gpBinaryFlavor(bytes)) {
+          'gtp12' => parseGtp12Bytes(bytes),
+          'gp34' => parseGp34Bytes(bytes),
+          'gp5' => parseGp5Bytes(bytes),
+          'gpx' => parseGpxBytes(bytes, sourceName: p.basename(source.path)),
+          _ => throw const FormatException(
+              '不支持的 Guitar Pro 版本串（文件头无法识别）'),
+        };
         await (_db.update(_db.scores)..where((s) => s.id.equals(id))).write(
             ScoresCompanion(
                 irJson: Value(jsonEncode(ir.toJson())),

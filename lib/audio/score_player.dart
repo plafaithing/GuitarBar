@@ -102,14 +102,28 @@ class ScorePlayer implements ScorePlayback {
     while (k > 0 && starts[k] > playBeat + 1e-9) {
       k--;
     }
-    final inMeasure = (playBeat - starts[k]).clamp(0.0, beatsPerBarCache.toDouble());
-    return order[k] * beatsPerBarCache + inMeasure;
+    // 四分拍口径（2026-11-19 Prologue 根治：per-measure 表优先——
+    // X/8 拍号与变拍号此前按全局分子近似错拍；表缺省回全局口径）。
+    final barBeats = lastBarBeats;
+    final mIdx = order[k];
+    final thisBar = (barBeats != null && mIdx >= 0 && mIdx < barBeats.length)
+        ? barBeats[mIdx]
+        : beatsPerBarCache;
+    final inMeasure = (playBeat - starts[k]).clamp(0.0, thisBar);
+    var linear = 0.0;
+    for (var i = 0; i < mIdx; i++) {
+      linear += (barBeats != null && i < barBeats.length)
+          ? barBeats[i]
+          : beatsPerBarCache;
+    }
+    return linear + inMeasure;
   }
 
   /// renderScore 展开元数据（load 时从 RenderedScore 复制）。
   List<int>? lastOrder;
   List<double>? lastOrderStarts;
-  int beatsPerBarCache = 4;
+  List<double>? lastBarBeats;
+  double beatsPerBarCache = 4;
   double _tempo = 90;
 
   /// 线性小节 → 展开轴起播秒（点音起播；该小节首次出现的遍次）。
@@ -161,6 +175,7 @@ class ScorePlayer implements ScorePlayback {
     // 反复展开元数据（播放头反查；renderScore 无结构谱为 null）。
     lastOrder = r.order;
     lastOrderStarts = r.orderStarts;
+    lastBarBeats = r.barBeatsQuarter;
     beatsPerBarCache = r.beatsPerBar;
     _tempo = r.tempo;
   }
