@@ -11,11 +11,17 @@ import '../theme.dart';
 ///
 /// 手势全手写分派（不用 InteractiveViewer：其内置滚轮缩放经 PointerSignalResolver
 /// 先注册先赢，嵌套时外层"纯滚轮翻页"永远收不到滚轮事件）：
-/// - 翻页（Windows）：垂直滚轮逐页翻 + 横向拖动；触摸单指横拉同一路径；
-///   缩放态翻页锁定（滚轮与拖动自动改为平移）。
-/// - 缩放：Ctrl+滚轮（锚点视口中心）/ 双指捏合（锚点指间）/ 双击（2.5x 居中 ↔ 复位）。
-/// - 平移：缩放态单指/鼠标拖动，clamp 到内容边界。
+/// - 横看（分页，默认）：垂直滚轮逐页翻 + 横向拖动；触摸单指横拉同一路径；
+///   缩放态翻页锁定（滚轮与拖动自动改为平移）。**循环翻页**（2026-11-23
+///   用户需求）：末页右滑回第一页重头查看（PageView 无限页 + 取模显示）。
+/// - 竖看（连续滚动，随时切换）：全部页竖排 fit 宽度，滚轮/拖动连续滚动；
+///   **滚到底继续滚 → 回第一页重头看**（overscroll 累积阈值跳顶）。
+/// - 缩放（仅横看）：Ctrl+滚轮（锚点视口中心）/ 双指捏合（锚点指间）/
+///   双击（2.5x 居中 ↔ 复位）。竖看为连续流读，不做矩阵缩放。
+/// - 平移：横看缩放态单指/鼠标拖动，clamp 到内容边界。
 /// - gpxSourceText：源文件文本模式（单页等宽文本；滚轮滚动、拖动平移、复制按钮）。
+enum _ViewMode { paged, scroll }
+
 class SourceViewer extends StatefulWidget {
   const SourceViewer({super.key, required this.pagePngs, this.gpxSourceText});
   final List<File> pagePngs;
@@ -37,11 +43,16 @@ class _SourceViewerState extends State<SourceViewer>
   static const double _maxScale = 6;
   static const double _doubleTapScale = 2.5;
   static const double _flickVelocity = 350; // px/s，甩动翻页阈值
+  static const double _loopOverscroll = 260; // 竖看到底继续滚的回顶阈值（px）
+  static const int _pageBase = 100000; // 无限 PageView 的起始偏移（防负页）
 
   late final PageController _controller;
+  late final ScrollController _scroll;
   late final AnimationController _matrixAnim; // 双击缩放/复位的补间
   Animation<Matrix4>? _matrixTween;
   int _index = 0;
+  _ViewMode _mode = _ViewMode.paged; // 横看/竖看（随时切换）
+  double _loopAccum = 0; // 竖看到底后继续滚动的累积量
   // 当前页变换（p' = p·s + t）；翻页复位 identity——主流看图翻页回开头。
   Matrix4 _matrix = Matrix4.identity();
 
@@ -68,11 +79,13 @@ class _SourceViewerState extends State<SourceViewer>
   bool get _isTextMode => widget.gpxSourceText != null;
   int get _pageCount => widget.pagePngs.length;
   bool get _zoomed => _matrix.getMaxScaleOnAxis() > _minScale + 0.001;
+  bool get _isScrollMode => _mode == _ViewMode.scroll && !_isTextMode;
 
   @override
   void initState() {
     super.initState();
-    _controller = PageController();
+    _controller = PageController(initialPage: _pageBase);
+    _scroll = ScrollController();
     _matrixAnim = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 180))
       ..addListener(() {
@@ -80,11 +93,26 @@ class _SourceViewerState extends State<SourceViewer>
           setState(() => _matrix = _matrixTween!.value);
         }
       });
+    // 首图宽高比（竖看页高估算用；一次解析即够——页图同尺寸导出）。
+    if (widget.pagePngs.isNotEmpty) {
+      final stream =
+          Image.file(widget.pagePngs.first).image.resolve(const ImageConfiguration());
+      late final ImageStreamListener listener;
+      listener = ImageStreamListener((info, _) {
+        final w = info.image.width, h = info.image.height;
+        if (w > 0 && h > 0 && mounted) {
+          setState(() => _aspectCache = w / h);
+        }
+        stream.removeListener(listener);
+      });
+      stream.addListener(listener);
+    }
   }
 
   @override
   void dispose() {
     _controller.dispose();
+    _scroll.dispose();
     _matrixAnim.dispose();
     super.dispose();
   }
@@ -164,8 +192,10 @@ class _SourceViewerState extends State<SourceViewer>
     return Offset((a.dx + it.current.dx) / 2, (a.dy + it.current.dy) / 2);
   }
 
-  /// 单指起始：页模式非缩放态 → 翻页拖动；缩放态 / 文本模式 → 平移。
+  /// 单指起始：页模式非缩放态 → 翻页拖动；竖看交给 ListView 原生滚动
+  ///（不做矩阵平移，避免与滚动竞争）；缩放态 / 文本模式 → 平移。
   void _beginDrag(Offset pos, Duration timeStamp) {
+    if (_isScrollMode) return;
     if (!_isTextMode && !_zoomed) {
       final pos0 = _controller.position;
       _pageDragStartOffset = pos0.hasContentDimensions ? pos0.pixels : null;
@@ -217,13 +247,11 @@ class _SourceViewerState extends State<SourceViewer>
             s);
       });
     } else if (_pageDragStartOffset != null && _pageDragStartPos != null) {
-      // 非缩放态横拖 → 驱动翻页（jumpTo，物理关闭）
+      // 非缩放态横拖 → 驱动翻页（jumpTo，物理关闭；无限页无边界 clamp）
       final pos0 = _controller.position;
       if (!pos0.hasContentDimensions) return;
-      pos0.jumpTo(_clampD(
-          _pageDragStartOffset! - (e.localPosition.dx - _pageDragStartPos!.dx),
-          pos0.minScrollExtent,
-          pos0.maxScrollExtent));
+      pos0.jumpTo(_pageDragStartOffset! -
+          (e.localPosition.dx - _pageDragStartPos!.dx));
       // 简易甩动速度（低通平滑）：offset 增速，向左拖为正 → 下一页
       final dt = (e.timeStamp - _pageDragLastTime).inMicroseconds / 1e6;
       if (dt > 0) {
@@ -307,14 +335,35 @@ class _SourceViewerState extends State<SourceViewer>
       setState(() {
         _matrix = _pannedMatrix(_matrix, Offset(0, -d), vp, content: content);
       });
+    } else if (_isScrollMode) {
+      // 竖看：滚轮交给内层 ListView 原生滚动；此处只处理**到底循环**——
+      // 已在最大滚动位仍向下滚 → 累积超过阈值回第一页。
+      if (_scroll.hasClients &&
+          _scroll.position.pixels >=
+              _scroll.position.maxScrollExtent - 2 &&
+          d > 0) {
+        _loopAccum += d;
+        if (_loopAccum >= _loopOverscroll) {
+          _loopAccum = 0;
+          _scroll.jumpTo(0);
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(const SnackBar(
+                  content: Text('已重头查看'), duration: Duration(seconds: 1)));
+          }
+        }
+      } else {
+        _loopAccum = 0;
+      }
     } else {
-      _go(d > 0 ? 1 : -1); // 下/右滚 = 下一页
+      _go(d > 0 ? 1 : -1); // 下/右滚 = 下一页（循环）
     }
   }
 
   void _onDoubleTap() {
     final vp = _viewport;
-    if (vp == Size.zero) return;
+    if (vp == Size.zero || _isScrollMode) return; // 竖看不做矩阵缩放
     _matrixAnim.stop();
     if (_zoomed) {
       _animateMatrix(Matrix4.identity());
@@ -326,19 +375,18 @@ class _SourceViewerState extends State<SourceViewer>
     }
   }
 
-  // ---- 翻页 ----
+  // ---- 翻页（横看 · 无限循环）----
 
   /// 逐页翻（滚轮/按钮共用）；快速连滚按当前动画目标累加（page 取整）。
   void _go(int delta) {
     if (_pageCount == 0 || !_controller.hasClients) return;
     final page = _controller.page;
-    _animateToPage((page?.round() ?? _index) + delta);
+    _animateToPage((page?.round() ?? _pageBase) + delta); // 无 clamp = 循环
   }
 
   void _animateToPage(int page) {
     if (_pageCount == 0 || !_controller.hasClients) return;
-    _controller.animateToPage(
-        math.min(math.max(page, 0), _pageCount - 1),
+    _controller.animateToPage(page,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOutCubic);
   }
@@ -368,6 +416,38 @@ class _SourceViewerState extends State<SourceViewer>
     }
   }
 
+  /// 横看 ↔ 竖看切换：保留当前页（竖看跳到当前页顶部，页高按首图
+  /// 宽高比估算）。
+  void _toggleMode() {
+    setState(() {
+      if (_mode == _ViewMode.paged) {
+        _mode = _ViewMode.scroll;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_scroll.hasClients) return;
+          _scroll.jumpTo(math.max(0, _index * _pageHeight - 8));
+        });
+      } else {
+        _mode = _ViewMode.paged;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_controller.hasClients) return;
+          _controller.jumpTo((_pageBase + _index).toDouble());
+        });
+      }
+    });
+  }
+
+  double? _aspectCache; // 首图宽高比（竖看页高估算）
+
+  /// 竖看模式下单页渲染高度（视口宽 ÷ 首图宽高比；比例未载入时按视口高兜底）。
+  double get _pageHeight {
+    final vp = _viewport;
+    if (vp == Size.zero) return 400;
+    if (_aspectCache != null && _aspectCache! > 0) {
+      return vp.width / _aspectCache!;
+    }
+    return vp.height;
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = context.palette;
@@ -378,80 +458,146 @@ class _SourceViewerState extends State<SourceViewer>
     final multi = _pageCount > 1;
     return Stack(children: [
       Positioned.fill(
-        child: Listener(
-          behavior: HitTestBehavior.opaque,
-          onPointerDown: _onPointerDown,
-          onPointerMove: _onPointerMove,
-          onPointerUp: _endPointer,
-          onPointerCancel: _endPointer,
-          onPointerSignal: _onPointerSignal,
-          child: PageView.builder(
-            controller: _controller,
-            itemCount: _pageCount,
-            // 翻页手势全手写（滚轮/横拖/按钮）：物理恒关闭——既防拖动竞争，
-            // 也让 Scrollable 不注册滚轮（滚轮归外层 Listener 翻页）。
-            physics: const NeverScrollableScrollPhysics(),
-            onPageChanged: (i) => setState(() {
-              _index = i;
-              _matrixTween = null; // 先断补间（reset 触发 listener 不得回写）
-              _matrixAnim.reset();
-              _matrix = Matrix4.identity(); // 翻页复位缩放
-            }),
-            itemBuilder: (ctx, i) => GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onDoubleTap: _onDoubleTap,
-              child: Transform(
-                key: SourceViewer.transformKey,
-                transform: _matrix,
-                child: Center(
-                    child:
-                        Image.file(widget.pagePngs[i], fit: BoxFit.contain)),
+        child: _isScrollMode
+            ? NotificationListener<ScrollNotification>(
+                onNotification: (n) {
+                  // 竖看到底后继续向下滚（ListBody 边界内 overscroll 通知）
+                  // → 累积回顶（滚轮与触控拖动统一走此通道）。
+                  if (n is OverscrollNotification && n.overscroll > 0) {
+                    _loopAccum += n.overscroll;
+                    if (_loopAccum >= _loopOverscroll) {
+                      _loopAccum = 0;
+                      _scroll.jumpTo(0);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context)
+                          ..hideCurrentSnackBar()
+                          ..showSnackBar(const SnackBar(
+                              content: Text('已重头查看'),
+                              duration: Duration(seconds: 1)));
+                      }
+                    }
+                  } else if (n is ScrollUpdateNotification) {
+                    _loopAccum = 0;
+                  }
+                  return false;
+                },
+                child: Listener(
+                  behavior: HitTestBehavior.opaque,
+                  onPointerDown: _onPointerDown,
+                  onPointerMove: _onPointerMove,
+                  onPointerUp: _endPointer,
+                  onPointerCancel: _endPointer,
+                  onPointerSignal: _onPointerSignal,
+                  child: ListView.builder(
+                    controller: _scroll,
+                    itemCount: _pageCount,
+                    itemBuilder: (ctx, i) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Image.file(widget.pagePngs[i],
+                          fit: BoxFit.fitWidth),
+                    ),
+                  ),
+                ),
+              )
+            : Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: _onPointerDown,
+                onPointerMove: _onPointerMove,
+                onPointerUp: _endPointer,
+                onPointerCancel: _endPointer,
+                onPointerSignal: _onPointerSignal,
+                child: PageView.builder(
+                  controller: _controller,
+                  // **无限页循环**（2026-11-23 用户需求：末页右滑回第一页
+                  // 重头查看）——itemCount 无限，取模显示真实页。
+                  itemCount: null,
+                  // 翻页手势全手写（滚轮/横拖/按钮）：物理恒关闭——既防拖动竞争，
+                  // 也让 Scrollable 不注册滚轮（滚轮归外层 Listener 翻页）。
+                  physics: const NeverScrollableScrollPhysics(),
+                  onPageChanged: (raw) => setState(() {
+                    _index = ((raw - _pageBase) % _pageCount + _pageCount) %
+                        _pageCount;
+                    _matrixTween = null; // 先断补间（reset 触发 listener 不得回写）
+                    _matrixAnim.reset();
+                    _matrix = Matrix4.identity(); // 翻页复位缩放
+                  }),
+                  itemBuilder: (ctx, raw) {
+                    final i = ((raw - _pageBase) % _pageCount + _pageCount) %
+                        _pageCount;
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onDoubleTap: _onDoubleTap,
+                      child: Transform(
+                        key: SourceViewer.transformKey,
+                        transform: _matrix,
+                        child: Center(
+                            child: Image.file(widget.pagePngs[i],
+                                fit: BoxFit.contain)),
+                      ),
+                    );
+                  },
+                ),
               ),
-            ),
-          ),
-        ),
       ),
       if (multi) ...[
-        // 左右翻页按钮（桌面明确交互，缩放态也可用——翻页即复位缩放）。
-        Positioned(
-          left: 8,
-          top: 0,
-          bottom: 28,
-          child: Center(
-            child: _PageButton(
-                enabled: _index > 0,
-                icon: Icons.chevron_left,
-                onTap: () => _go(-1)),
+        // 左右翻页按钮（横看；循环翻页下恒可用——末页右滑回第一页）。
+        if (!_isScrollMode) ...[
+          Positioned(
+            left: 8,
+            top: 0,
+            bottom: 28,
+            child: Center(
+              child: _PageButton(
+                  enabled: true,
+                  icon: Icons.chevron_left,
+                  onTap: () => _go(-1)),
+            ),
           ),
-        ),
-        Positioned(
-          right: 8,
-          top: 0,
-          bottom: 28,
-          child: Center(
-            child: _PageButton(
-                enabled: _index < _pageCount - 1,
-                icon: Icons.chevron_right,
-                onTap: () => _go(1)),
+          Positioned(
+            right: 8,
+            top: 0,
+            bottom: 28,
+            child: Center(
+              child: _PageButton(
+                  enabled: true,
+                  icon: Icons.chevron_right,
+                  onTap: () => _go(1)),
+            ),
           ),
-        ),
-        // 页码指示。
+        ],
+        // 页码 + 横看/竖看切换（随时变更，保留当前页）。
         Positioned(
           left: 0,
           right: 0,
           bottom: 6,
           child: Center(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
               decoration: BoxDecoration(
                 color: p.panel,
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: Text('${_index + 1} / $_pageCount',
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: p.muted,
-                      fontFeatures: const [FontFeature.tabularFigures()])),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text('${_index + 1} / $_pageCount',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: p.muted,
+                        fontFeatures: const [FontFeature.tabularFigures()])),
+                const SizedBox(width: 10),
+                InkWell(
+                  onTap: _toggleMode,
+                  child: Padding(
+                    padding: const EdgeInsets.all(2),
+                    child: Icon(
+                        _isScrollMode
+                            ? Icons.swap_horiz
+                            : Icons.view_agenda_outlined,
+                        size: 16,
+                        color: p.ink),
+                  ),
+                ),
+              ]),
             ),
           ),
         ),

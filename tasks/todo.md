@@ -1267,6 +1267,19 @@ REA（open_binary）重新分析。makeSlur 调用点均为 .rdata 函数表引�
   装饰音数据）：m4 3弦0/2弦3 应在本体 10/7 正下方同列 + 装饰 3
   左侧独立槽 + sl 弧 + 小节内 tie 干净
 
+## 2026-11-23 八：图片/PDF 查看器循环 + 双模式（用户需求）
+
+- [x] **横看循环**：PageView 无限页（itemCount null + 取模显示，
+  _pageBase=100000 起始防负）——末页右滑回第一页重头查看；翻页按钮
+  恒可用；页码显示取模后页号
+- [x] **竖看模式**（随时切换，页码条旁按钮）：全部页竖排 fit 宽度
+  连续滚动（ListView）；**滚到底继续滚累积 260px → 回第一页**（重头
+  查看 + 轻提示）；竖看为流读不做矩阵缩放、拖动交还 ListView 原生
+- [x] 模式切换保留当前页（互跳定位）；PDF 与图片同渲染源（页图），
+  能力自动对齐
+- [x] analyze 0 + score_detail 测试 4 绿 + exe 重建 ✓
+- [ ] 用户重验（图片末页右滑回一页；PDF 横/竖切换、竖看到底继续滚）
+
 ## 交接点（持续更新）
 
 1. **用户待验证**（重启 app 后）：Prologue 滑音方向（升╱降╲）、
@@ -1281,3 +1294,14 @@ REA（open_binary）重新分析。makeSlur 调用点均为 .rdata 函数表引�
    `flutter test --exclude-tags=heavy`（94 秒）
 4. **未 commit**——全部改动等用户验收 + dsh 复测后用户发话才提交
 5. 测试提速已落地：全量探针 4 桶并行 + heavy tag + 快速探针雷区谱集
+
+
+## 2026-11-23 V1.1 发版完成
+
+- [x] commit 85592ab（指板重做/横向窗口/调音器三改 + pubspec 1.1.0+2）
+  推送 origin/master ✓
+- [x] **GitHub Release**：https://github.com/plafaithing/GuitarBar/releases/tag/V1.1
+  （tag V1.1 @ 85592ab，zip 20MB 附件）✓
+- 教训：dist zip 不入 git 仓库（误提交 c6b34b8 已 reset+force 清历史；
+  reset --hard 顺带删工作区 zip → -SkipBuild 重打包）；发版流程 =
+  build.ps1 -Version Vx.y → gh release create tag "dist/包"
