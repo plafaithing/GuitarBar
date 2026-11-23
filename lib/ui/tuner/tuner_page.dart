@@ -85,7 +85,17 @@ class _TunerPageState extends State<TunerPage> {
             deviceId: _selectedDeviceId.isEmpty ? null : _selectedDeviceId);
         _sub = stream.listen(
           (f) {
-            if (mounted) setState(() => _freq = f);
+            if (mounted) {
+              setState(() {
+                _freq = f;
+                // 用户立即调音（音高流出值）→ 引导提示即刻消失
+                //（2026-11-20 用户需求：不与观感抢戏；timer 一并撤）。
+                if (f != null && _showHint) {
+                  _showHint = false;
+                  _hintTimer?.cancel();
+                }
+              });
+            }
           },
           // 错误契约（见 MicPitchStream）：错误原样转发、结束时收到 done。
           onError: (Object _) {
@@ -561,21 +571,23 @@ class _TunerPageState extends State<TunerPage> {
           decoration: BoxDecoration(
               color: const Color(0xE6141414),
               borderRadius: BorderRadius.circular(32)),
-          // 渲染分支（2026-11-13 防黑胶囊）：提示只显示一次（首开 2 秒
-          // 窗口）；声音断续（targetNote 短暂 null）用**上次音名**渲染
-          // ——渐隐动画带着内容淡出，不闪空壳；从未检测过（提示窗外）
-          // = 空占位（opacity 恒 0，无渐隐场景，不可见）。
+          // 渲染分支（2026-11-13 防黑胶囊 + 2026-11-20 提示分支同病补
+          // 修）：提示**保持文字内容渐隐**（此前 hint 超时切 shrink →
+          // 300ms 渐隐期壳剩 padding 黑矩形一闪——用户实证）；声音断
+          // 续（targetNote 短暂 null）用**上次音名**渲染——渐隐动画带
+          // 着内容淡出，不闪空壳。
           child: Builder(builder: (context) {
             final note = targetNote ?? _lastNote;
             final c = targetNote != null ? cents : _lastCents;
             if (note == null) {
-              return _showHint
-                  ? Text('弹拨任意琴弦开始调音',
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.white))
-                  : const SizedBox.shrink();
+              // 提示文字恒渲染（可见性由外层 AnimatedOpacity 管：
+              // _showHint false → opacity 0，文字带着内容淡出，壳随
+              // 文字宽收缩；弹弦即刻消失路径同款）。
+              return Text('弹拨任意琴弦开始调音',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white));
             }
             return Row(mainAxisSize: MainAxisSize.min, children: [
               Text(note.label(flats: _preferFlats(note)),
