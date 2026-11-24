@@ -63,6 +63,30 @@ class SampleScorePlayer implements ScorePlayback {
   @override
   double? loopB;
 
+  // —— 渐进提速（2026-11-23 跟练）：AB 循环每 3 遍 rate +5% 直到 1.0
+  // 自动停——把「练熟就手动提一点速」自动化（Anytune 验证过的跟练
+  // 王牌）。计数在循环边界（pos ≥ b）；setRate 递归 onTick 用守卫防
+  // 计数双计（见 onTick AB 分支注释）。
+  bool _progOn = false;
+  int _progCount = 0;
+  bool _inLoopBoundary = false;
+  static const int _progEvery = 3;
+  static const double _progStep = 0.05;
+  @override
+  bool get progressiveOn => _progOn;
+  @override
+  set progressiveOn(bool v) {
+    _progOn = v;
+    _progCount = 0;
+    // 开启时若已是原速 → **主动降速起步**（0.75，用户实测反馈"点击后
+    // 速度没有变化"——渐进语义 = 从慢练爬升，不是在原速原地计数）。
+    // 已在慢速（<1.0）则保持当前速度爬升。
+    if (v && _rate >= 1.0 - 1e-9) setRate(0.75);
+  }
+
+  @override
+  void Function(double newRate)? onAutoRate; // 渐进每档回调（UI 提示）
+
   // 反复展开（2026-11-02 GP8 复刻）：播放序元素起始拍 + 对应线性小节，
   // 播放头反查谱面位置用。
   final List<double> playbackOrderStarts = [];
@@ -157,11 +181,15 @@ class SampleScorePlayer implements ScorePlayback {
   /// "天然保调"的旧复核结论是错的：scale 恒 1 时采样原速播，调度时刻
   /// 压缩只造成提前结束，速率从未变化）。KS 降级路径由上层重渲染接续。
   void setRate(double r) {
-    // 先算再设：pos 是变速后秒（_positionSeconds ÷ 旧 rate）；换挡后零点
-    // 以旧轴 pos 重锚（_t0 = now - pos×新rate），听感连续（2026-11-11
-    // 根因修复的轴一致化）。
+    _progCount = 0; // 手动变速接管：渐进计数清零（重新练熟起点）
+    // 先算再设：pos 是变速后秒（_positionSeconds ÷ 旧 rate）——**必须
+    // 在 _rate 赋值前算**（轴依赖旧 rate）；换挡后零点以旧轴 pos 重锚
+    // （_t0 = now - pos×新rate），听感连续（2026-11-11 轴一致化）。
     final pos = _playing ? _positionSeconds() : (_pendingSeek ?? 0);
     _rate = r.clamp(0.25, 3.0);
+    // 手动调整到 ≥1.0：渐进停止增加（用户语义；渐进自身提到 1.0 也
+    // 走此路径同样停）。
+    if (_rate >= 1.0 - 1e-9) _progOn = false;
     if (_playing) {
       _reanchor(pos, keepPause: _paused);
     } else {
@@ -224,19 +252,55 @@ class SampleScorePlayer implements ScorePlayback {
   /// 解析 IR → 预载本曲触到的采样 → 开始调度。返回 false 表示采样路径
   /// 不可用（资源缺失/引擎不可用/无可发音符），调用方降级 KS。
   /// 预载耗时 ~0.1-0.5s（首次，之后缓存命中）：调用方负责忙碌反馈。
+  /// 最近一次 sample→KS 降级原因（UI 提示用；null = 未降级/未播过）。
+  String? lastFailReason;
+
   Future<bool> play(ScoreIr ir) async {
     if (_playing) return true;
     await stop();
     final gen = _gen;
     try {
-      if (!_collectEvents(ir)) return false;
-    } catch (_) {
+      if (!_collectEvents(ir)) {
+        lastFailReason = '无可发音符（_collectEvents 返回 false）';
+        debugPrint('[sample] 降级 KS：$lastFailReason');
+        return false;
+      }
+    } catch (e, st) {
+      lastFailReason = '解析异常 $e';
+      debugPrint('[sample] 降级 KS：_collectEvents 异常 $e\n$st');
       return false; // 调弦解析失败等坏 IR：整曲降级 KS
     }
     for (final e in _pending) {
-      final src = await _bank.load(e.file);
+      var src = await _bank.load(e.file);
       if (gen != _gen) return false; // 预载期间被 stop：放弃起播
-      if (src == null) return false; // 采样缺失是系统性问题：整曲降级
+      if (src == null) {
+        // **单采样失败兜底**（2026-11-23 用户实证：泛音 ogg 解码失败
+        // 曾把整曲打回 KS 合成音色——数据层扫描全绿后实锤为运行时解
+        // 码问题）：回退同弦普通拨弦采样（最近品 speed 移调近似），
+        // 音色略偏但播放继续——不为一枚采样放弃整曲真采样。
+        final fb = SteelSampleBank.resolve(
+            string: e.string,
+            fret: 0,
+            soundingMidi: e.soundingMidi,
+            technique: null,
+            downstroke: false,
+            harmonicOffset: null);
+        if (fb != null) {
+          src = await _bank.load(fb.file);
+          if (src != null) {
+            debugPrint('[sample] 单采样兜底 ${e.file} → ${fb.file}');
+            e.file = fb.file;
+            e.speed = fb.speed;
+          }
+        }
+      }
+      if (src == null) {
+        lastFailReason = _bank.lastLoadError != null
+            ? '采样加载失败 ${e.file}：${_bank.lastLoadError}'
+            : '采样加载失败 ${e.file}';
+        debugPrint('[sample] 降级 KS：$lastFailReason');
+        return false; // 连兜底都缺：系统性问题才整曲降级
+      }
       e.src = src;
       // PitchShift 滤镜激活（source 级一次性，滑音 ramp 用；未设句柄
       // shift 默认 1.0 = 不移调，非滑音 voice 无感）。
@@ -396,7 +460,8 @@ class SampleScorePlayer implements ScorePlayback {
                   slide: false,
                   string: n.string,
                   absBeat: baseBeat + t,
-                  fixedDur: true));
+                  fixedDur: true,
+                  soundingMidi: soundingMidi));
               t += seg;
               k++;
             }
@@ -423,7 +488,8 @@ class SampleScorePlayer implements ScorePlayback {
                   slide: false,
                   string: n.string,
                   absBeat: baseBeat + t,
-                  fixedDur: true);
+                  fixedDur: true,
+                  soundingMidi: soundingMidi);
               if (k.isOdd) e.pitchFixed = 2.0; // 交替粒 +2 半音
               _pending.add(e);
               t += step;
@@ -443,6 +509,7 @@ class SampleScorePlayer implements ScorePlayback {
               slide: n.slide != null,
               string: n.string,
               absBeat: absBeat,
+              soundingMidi: soundingMidi,
               arpeggio: n.arpeggio,
               brush: n.brush,
               vibrato: n.vibrato,
@@ -621,8 +688,28 @@ class SampleScorePlayer implements ScorePlayback {
     _advanceVolumeRamps();
     final pos = _positionSeconds();
     // AB 循环（2026-11-01 跟练）：越 B 点重锚回 A（A/B 均设才生效）。
+    // 渐进提速在边界计数（每 3 遍 +5%）；setRate 内部重锚会递归 onTick
+    //（pos 仍在 b 附近会再进本分支）——_inLoopBoundary 守卫防计数双计，
+    // 递归期间照常调度（重锚回 a 前不漏音）。
     final a = loopA, b = loopB;
-    if (a != null && b != null && b > a && pos >= b) {
+    if (a != null && b != null && b > a && pos >= b && !_inLoopBoundary) {
+      _inLoopBoundary = true;
+      try {
+        if (_progOn && _rate < 1.0 - 1e-9) {
+          _progCount++;
+          if (_progCount >= _progEvery) {
+            _progCount = 0;
+            final next = (_rate + _progStep).clamp(0.25, 1.0).toDouble();
+            setRate(next);
+            onAutoRate?.call(next); // UI 提示「渐进提速至 x.xx」
+            if (next >= 1.0 - 1e-9) _progOn = false; // 达原速自动停
+          }
+        } else {
+          _progCount = 0; // 未开渐进 / 已到原速：计数不累计
+        }
+      } finally {
+        _inLoopBoundary = false;
+      }
       _reanchor(a, keepPause: false);
       return;
     }
@@ -820,10 +907,11 @@ class _PendingEvent {
       this.brush,
       this.vibrato = false,
       this.fade,
-      this.fixedDur = false});
+      this.fixedDur = false,
+      required this.soundingMidi});
   double time; // 可变：琶音依次发声的错开偏移（事件轴原速秒）
-  final String file;
-  final double speed;
+  String file; // 可写（2026-11-23 预载兜底：单采样失败回退拨弦采样）
+  double speed; // 可写（同上：回退时重算移调比）
   final bool muted;
   double noteSeconds; // 采样时长限制（音符时值+余振；tie 链延长可写）
   final double volume; // 力度（击勾弱击/闷音暗音色的力度层用）
@@ -831,6 +919,7 @@ class _PendingEvent {
   double? slideEndSpeed; // 滑音终点的重移调 speed（_attachSlideTargets 回填）
   final int string;
   final double absBeat;
+  final int soundingMidi; // 发声 MIDI（预载兜底重 resolve 用）
   final String? arpeggio; // 琶音方向（'up'|'down'，依次发声用）
   final String? brush; // 扫弦方向（'up'|'down'，各弦快速依次发声）
   final bool vibrato; // 揉弦（音高往复循环 ramp）

@@ -21,6 +21,8 @@ class PlayBar extends StatefulWidget {
       this.loopB,
       required this.onLoopA,
       required this.onLoopB,
+      this.progressiveOn,
+      this.onToggleProgressive,
       this.busy = false});
   final bool playing;
 
@@ -45,6 +47,11 @@ class PlayBar extends StatefulWidget {
   /// AB 循环：A=当前位打起点、B=当前位打终点；再点同钮清除。
   final double? loopA;
   final double? loopB;
+
+  /// 渐进提速开关（2026-11-23）：AB 已设才可用；开启后每 3 遍 +5%
+  /// 直到原速自动停（播放器内部逻辑）。null = 不显示（无播放器能力）。
+  final bool? progressiveOn;
+  final VoidCallback? onToggleProgressive;
   final VoidCallback onLoopA;
   final VoidCallback onLoopB;
 
@@ -160,6 +167,29 @@ class _PlayBarState extends State<PlayBar> {
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
                       color: w.loopB != null ? p.dataHue : p.muted))),
+          // 渐进提速（2026-11-23 跟练）：AB 已设才可用——开启时自动降
+          // 0.75 起步、每 3 遍 +5% 到原速自动停；**开启中图标位显示当
+          // 前速度数字**（实时变化可见——用户实测"没感觉"的修正）。
+          if (w.progressiveOn != null)
+            IconButton(
+                tooltip: '渐进提速：AB 循环每 3 遍 +5%，到原速自动停'
+                    '（开启时自动降 0.75 起步）',
+                visualDensity: VisualDensity.compact,
+                onPressed: (w.loopA != null && w.loopB != null)
+                    ? w.onToggleProgressive
+                    : null,
+                icon: (w.progressiveOn ?? false)
+                    ? Text(w.rate.toStringAsFixed(2),
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: p.dataHue,
+                            fontFeatures: const [FontFeature.tabularFigures()]))
+                    : Icon(Icons.speed,
+                        size: 20,
+                        color: (w.loopA != null && w.loopB != null)
+                            ? p.muted
+                            : p.muted.withValues(alpha: 0.4))),
           Text(
             '${w.positionSeconds.toStringAsFixed(1)}/${w.durationSeconds.toStringAsFixed(1)}s',
             style: TextStyle(

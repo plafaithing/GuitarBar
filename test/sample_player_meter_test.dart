@@ -225,4 +225,55 @@ void main() {
     expect(decoCount, 3, reason: '3 个装饰音须保持 0.13s（sort 翻转会变 1.2s）');
     await player.stop();
   });
+
+  test('渐进提速 AB：每 3 遍 +5% 到 1.0 自动停（2026-11-23 跟练）', () async {
+    // 2 小节 6/8 @75bpm：AB a=0、b=2.4（第一小节）。rate 0.85 起、
+    // progressiveOn：每 3 个循环边界 +5%——边界 9 个后应达 1.0 且自动停。
+    final ir = ScoreIr(
+      version: 1, title: 'T', tempo: 75, timeSignature: '6/8',
+      tuning: const ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'], capo: 0,
+      tracks: [
+        TrackIr(name: 'T', measures: [
+          for (var m = 0; m < 2; m++)
+            MeasureIr(
+              index: m,
+              confidence: 0.9,
+              failed: false,
+              notes: [
+                for (var k = 0; k < 6; k++)
+                  NoteIr(beat: k * 0.5, duration: 0.5, string: 1,
+                      fret: 0, technique: null),
+              ],
+            ),
+        ]),
+      ],
+    );
+    final engine = FakeEngine();
+    final bank = SteelSampleBank(engine, assetLoader: (_) async => ByteData(4));
+    final player = SampleScorePlayer(engine, bank);
+    expect(await player.play(ir), isTrue);
+    player.setRate(0.85);
+    player.loopA = 0;
+    player.loopB = 2.4;
+    player.progressiveOn = true;
+
+    var rateTrail = <double>[];
+    // 推时钟跨 12 个潜在边界（4.8s 时长 / 2.4s AB 段 = 每 2.4s 一边界；
+    // rate 变化改变 duration 轴——用固定步数推进，每步 onTick 自判）。
+    for (var step = 0; step < 60 && player.playing; step++) {
+      engine.engineTimeValue =
+          Duration(microseconds: (step * 0.4 * 1e6).round());
+      final before = player.rate;
+      player.onTick();
+      if (player.rate != before) rateTrail.add(player.rate);
+    }
+    expect(player.rate, 1.0, reason: '渐进提速最终应达原速');
+    expect(player.progressiveOn, isFalse, reason: '达原速后自动停');
+    // 提速轨迹 = 0.85 → 0.90 → 0.95 → 1.0（每档 3 遍，速度单调升）。
+    expect(rateTrail.length, 3);
+    for (var i = 0; i < 3; i++) {
+      expect(rateTrail[i], closeTo(0.90 + i * 0.05, 1e-9));
+    }
+    await player.stop();
+  });
 }

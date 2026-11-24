@@ -56,6 +56,20 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     _samplePlayer =
         SampleScorePlayer(SoundEngine.I, _sampleBank, onEnded: _onPlayEnded);
     _initRepo();
+    // 渐进提速自动档回调（两播放器同接；KS 路径不触发渐进）。
+    _samplePlayer.onAutoRate = _showAutoRate;
+    _player.onAutoRate = _showAutoRate;
+  }
+
+  /// 渐进自动提速提示（播放器每档触发）。
+  void _showAutoRate(double r) {
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+            content: Text('渐进提速至 ${r.toStringAsFixed(2)}x'),
+            duration: const Duration(seconds: 1)));
+    }
   }
 
   /// 当前生效的播放器：采样播放/暂停中读采样播放器，否则读 KS 播放器
@@ -311,6 +325,14 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
       if (!await _samplePlayer.play(ir)) {
         // 渲染在主 isolate 直接做（0.3-1s）：忙碌态由 _rendering 承担；
         // M5 变速重渲染时再 Isolate.run（Task 15 备案）。
+        // 降级原因可见化（2026-11-23）：静默降级让「渐进不生效」类问题
+        // 无从排查（用户实证）——原因一次性提示（缺失采样文件名等）。
+        final reason = _samplePlayer.lastFailReason;
+        if (mounted && reason != null) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('采样音色不可用（$reason），已切换合成音色'),
+              duration: const Duration(seconds: 3)));
+        }
         final rendered = renderScore(ir);
         if (rendered.seconds == 0) {
           if (mounted) {
@@ -677,6 +699,19 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                 loopB: _activePlayer.loopB,
                 onLoopA: _onLoopA,
                 onLoopB: _onLoopB,
+                progressiveOn: _activePlayer.progressiveOn,
+                onToggleProgressive: () {
+                  final opening = !_activePlayer.progressiveOn;
+                  setState(() => _activePlayer.progressiveOn = opening);
+                  if (opening && mounted) {
+                    // 开启反馈：原速开启时播放器自动降 0.75 起步。
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(
+                            '渐进提速已开：当前 ${_activePlayer.rate.toStringAsFixed(2)}x，'
+                            '每 3 遍 +5% 到原速自动停'),
+                        duration: const Duration(seconds: 2)));
+                  }
+                },
               ),
             ),
     );

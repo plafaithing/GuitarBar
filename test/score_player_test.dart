@@ -234,6 +234,31 @@ void main() {
     await player.stop();
   });
 
+  test('KS 渐进提速：1.0 开启自动降 0.75，每 3 边界 +5%（2026-11-23）',
+      () async {
+    final engine = FakeEngine();
+    final player = ScorePlayer(engine);
+    await player.load(_score(12.5));
+    await player.start();
+    player.progressiveOn = true; // 1.0 开启 → 自动降 0.75 起步
+    expect(player.rate, 0.75);
+    expect(engine.lastVoiceSpeed.values.last, 0.75); // 声部级变速已下发
+    player.loopA = 1;
+    player.loopB = 3;
+    engine.positionValue = const Duration(seconds: 3); // pos ≥ b
+    player.onTick(); // 边界 1（回 A + 计数）
+    player.onTick(); // 边界 2
+    expect(player.rate, 0.75);
+    player.onTick(); // 边界 3 → +5%
+    expect(player.rate, closeTo(0.80, 1e-9));
+    expect(engine.lastSeek, const Duration(seconds: 1)); // 每边界回 A
+    expect(player.progressiveOn, isTrue); // 未到原速仍在爬升
+    // 手动调到 ≥1.0：停止增加（图标灭）。
+    player.rate = 1.0;
+    expect(player.progressiveOn, isFalse);
+    await player.stop();
+  });
+
   test('pause/resume 空操作守卫：未播放/重复调用不触引擎', () async {
     final engine = FakeEngine();
     final player = ScorePlayer(engine);

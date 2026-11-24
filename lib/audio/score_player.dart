@@ -32,6 +32,15 @@ abstract interface class ScorePlayback {
   set loopA(double? v);
   set loopB(double? v);
 
+  /// 渐进提速（2026-11-23 跟练）：AB 循环每 3 遍 rate +5% 直到 1.0
+  /// 自动停。**仅 sample 路径生效**——KS 变速走声部级/重渲染（渐进
+  /// 的中途换挡无法无缝），字段仅供 UI 状态一致；KS 下置位无行为。
+  bool get progressiveOn;
+  set progressiveOn(bool v);
+
+  /// 渐进自动提速回调（每档触发；UI 显示「提速至 x.xx」用）。KS 不触发。
+  void Function(double newRate)? onAutoRate;
+
   /// 反复展开（2026-11-02 GP8 复刻）：展开时间轴拍位 → 线性谱面拍位
   ///（播放头定位）。无反复结构的谱返回 null（调用方走原式换算）。
   double? linearBeatAt(double playBeat);
@@ -73,6 +82,9 @@ class ScorePlayer implements ScorePlayback {
     // ——soloud 句柄实时变速（自然变调），position 由引擎按新速率推进，
     // onTick 直接读取自洽。播放/暂停/未播三态都即时生效。
     _rate = r.clamp(0.25, 3.0);
+    // 手动调整到 ≥1.0：渐进停止增加（用户语义 2026-11-23；渐进自身
+    // 提到 1.0 也走此 setter 同样停）。
+    if (_rate >= 1.0 - 1e-9) _progOn = false;
     final h = _handle;
     if (h != null) {
       _sound.setVoiceSpeed(h, _rate);
@@ -93,11 +105,33 @@ class ScorePlayer implements ScorePlayback {
   @override
   set loopB(double? v) => _loopB = v;
 
+  // 渐进提速（2026-11-23 补齐到 KS）：用户实测反馈"1.00x 不降、3 遍
+  // 不停"——KS 降级路径此前空转。KS 的变速已是声部级实时变速（可无
+  // 缝换挡），渐进补齐同款逻辑（边界计数在 onTick AB 分支）。
+  bool _progOn = false;
+  int _progCount = 0;
+  @override
+  bool get progressiveOn => _progOn;
+  @override
+  set progressiveOn(bool v) {
+    _progOn = v;
+    _progCount = 0;
+    // 开启时若已是原速 → 主动降速起步 0.75（sample 路径同款语义）。
+    if (v && _rate >= 1.0 - 1e-9) rate = 0.75;
+  }
+  @override
+  void Function(double newRate)? onAutoRate;
+
   // 反复展开反查表（KS 路径；load 时由 renderScore 展开序填充由外部）。
   @override
   double? linearBeatAt(double playBeat) {
     final order = lastOrder, starts = lastOrderStarts;
-    if (order == null || starts == null || order.isEmpty) return null;
+    if (order == null || starts == null || order.isEmpty) {
+      // **无反复结构的谱**（renderScore 不填展开元数据）：展开轴 = 线性
+      // 轴 1:1——直接返回输入拍位（2026-11-23 用户实证：LSA 选 AB 无
+      // 插针——此前 null → AB 谱面标记条件不成立）。
+      return playBeat;
+    }
     var k = starts.length - 1;
     while (k > 0 && starts[k] > playBeat + 1e-9) {
       k--;
@@ -224,8 +258,22 @@ class ScorePlayer implements ScorePlayback {
     final pos = _sound.position(h).inMicroseconds / 1e6;
     positionSeconds.value = pos.clamp(0.0, durationSeconds).toDouble();
     // AB 循环（2026-11-01 跟练）：越 B 点跳回 A（A/B 均设才生效）。
+    // 渐进提速边界计数（2026-11-23 补齐到 KS）：每 3 遍 rate +5% 到
+    // 1.0 自动停——KS 的 rate setter 是声部级实时变速（无缝换挡）。
     final a = _loopA, b = _loopB;
     if (a != null && b != null && b > a && pos >= b) {
+      if (_progOn && _rate < 1.0 - 1e-9) {
+        _progCount++;
+        if (_progCount >= 3) {
+          _progCount = 0;
+          // 走 rate setter（声部级 setRelativePlaySpeed 实时变速生效）。
+          rate = (_rate + 0.05).clamp(0.25, 1.0).toDouble();
+          onAutoRate?.call(_rate);
+          if (_rate >= 1.0 - 1e-9) _progOn = false; // 达原速自动停
+        }
+      } else {
+        _progCount = 0;
+      }
       unawaited(seekToSecond(a));
     }
   }

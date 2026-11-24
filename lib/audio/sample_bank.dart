@@ -1,6 +1,7 @@
 import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show ByteData, rootBundle;
 import 'package:flutter_soloud/flutter_soloud.dart' show AudioSource;
 
@@ -20,7 +21,6 @@ import 'sound_engine.dart';
 class SteelSampleBank {
   SteelSampleBank(this._sound, {Future<ByteData> Function(String)? assetLoader})
       : _assetLoader = assetLoader ?? rootBundle.load;
-
   final SoundEngine _sound;
   final Future<ByteData> Function(String) _assetLoader;
   final Map<String, AudioSource> _cache = {};
@@ -139,29 +139,45 @@ class SteelSampleBank {
     return _speed(soundingMidi, base + best);
   }
 
-  /// 文件名与 .gp7bank 解出物一一对应：拨弦品的 MIDI 三位补零，
-  /// 泛音文件名里泛音位两位、空弦 MIDI 原样。拨层 Up/Down（力层固定 01）。
+  /// 文件名与重建 WAV 一一对应（2026-11-24 真采样复活：原 .ogg 为
+  /// GP8 采样库 vorbis 碎片不可解码，重组解码后改发 .wav——拨弦
+  /// 68 音位全弦覆盖；泛音 18 片在缺头流待后续重组，暂走拨弦移调
+  /// 兜底）。拨弦品的 MIDI 三位补零，拨层 Up/Down（力层固定 01）。
   static String _pluckFile(int string, int sampleMidi,
           {bool? downstroke}) =>
       'Mrg12-Pck-Sus-${downstroke == true ? 'Down' : 'Up'}-01-'
       '${_stringId[string]}${_stringBaseMidi[string]}'
-      '-${sampleMidi.toString().padLeft(3, '0')}-none-none.ogg';
+      '-${sampleMidi.toString().padLeft(3, '0')}-none-none.wav';
 
   static String _harmonicFile(int string, int fret, int base) =>
       'Mrg12-Hrm-Nat-${fret.toString().padLeft(2, '0')}-none-'
-      '${_stringId[string]}$base-none-none-none.ogg';
+      '${_stringId[string]}$base-none-none-none.wav';
 
   /// 取音源（缓存优先；未载则读 assets ogg 经 loadMem 解码）。
   /// 失败（资源缺失/引擎不可用）返回 null → 调用方整曲降级 KS 合成。
+  /// **失败负缓存**（2026-11-23 用户实证"加载好一会"）：失败文件记入
+  /// _failedSet——同一失败文件不重复尝试（每谱几十个事件共享同一批
+  /// 采样，无负缓存时失败重试风暴拖垮预载）。
+  final Set<String> _failedSet = {};
+
+  /// 最近一次 loadOgg 的引擎错误原文（诊断用，SnackBar 显示）。
+  String? lastLoadError;
+
   Future<AudioSource?> load(String file) async {
     final hit = _cache[file];
     if (hit != null) return hit;
+    if (_failedSet.contains(file)) return null;
     try {
       final data = await _assetLoader('assets/sounds/steel/$file');
       final src = await _sound.loadOgg(file, data.buffer.asUint8List());
       _cache[file] = src;
       return src;
-    } catch (_) {
+    } catch (e, st) {
+      // 降级原因可见化（2026-11-23 用户实证泛音采样解码失败）：catch
+      // 吞掉异常让根因无从查——引擎错误必须落日志并上抛细节。
+      lastLoadError = '$e';
+      debugPrint('[sample-bank] loadOgg 失败 $file: $e\n$st');
+      _failedSet.add(file);
       return null;
     }
   }
