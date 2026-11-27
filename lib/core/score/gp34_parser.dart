@@ -225,7 +225,7 @@ class _Gp34Reader {
     final mainSig = _headers
         .firstWhere((h) => h.numerator >= 4, orElse: () => _headers.first);
     return ScoreIr(
-      version: 1,
+      version: irParserVersion,
       title: title.isEmpty ? '未命名' : title,
       tempo: tempo > 0 ? tempo.toDouble() : 90,
       timeSignature: '${mainSig.numerator}/${mainSig.denominator}',
@@ -374,10 +374,10 @@ class _Gp34Reader {
         }
         if (f1 & 0x40 != 0) {
           // GP3 stroke：字节 1 = 上扫速度、字节 2 = 下扫速度（py gp3.py
-          // 的 docstring "stroke up and stroke down" 与 gp8 实测一致——
+          // 的 docstring "stroke up and stroke down" 与 制谱基准 实测一致——
           // py 代码按 down 先读是它自己的 bug，TuxGuitar 照抄同错；
           // gp5 的 readBeatStroke+swapDirection 网络效果即 byte1→up，
-          // 三代格式存储同序）。用户 gp8 对照实证（哆啦A梦.gp3）。
+          // 三代格式存储同序）。用户 制谱基准 对照实证（哆啦A梦.gp3）。
           final a = _i8();
           final b = _i8();
           brush = a > 0 ? 'up' : (b > 0 ? 'down' : null);
@@ -391,12 +391,12 @@ class _Gp34Reader {
         if (f1 & 0x20 != 0) _i8(); // slapEffect（GP4 无 tremolo 转换分支）
         if (f2 & 0x04 != 0) _readBend(); // tremolo bar = 完整 bend
         if (f1 & 0x40 != 0) {
-          // GP4 stroke 方向（2026-11-18 用户 gp8 对照实证 Promise.gp4
+          // GP4 stroke 方向（2026-11-18 用户 制谱基准 对照实证 Promise.gp4
           // 全部反）：GP4 字节 1 = **下扫**、字节 2 = 上扫——与 GP3
-          // 的"字节 1 = 上扫"（哆啦A梦 gp8 实证）**相反**，两代格式
+          // 的"字节 1 = 上扫"（哆啦A梦 制谱基准 实证）**相反**，两代格式
           // 语义不同须分开（py GP4 沿用 gp3 基类读法 byte1=down 变量
-          // 且无 swap → py 的 down = 文件 byte1 > 0 = gp8 的 down ✓
-          // py 与 gp8 一致，旧实现 byte1→up 反向）。
+          // 且无 swap → py 的 down = 文件 byte1 > 0 = 制谱基准 的 down ✓
+          // py 与 制谱基准 一致，旧实现 byte1→up 反向）。
           final a = _i8();
           final b = _i8();
           brush = a > 0 ? 'down' : (b > 0 ? 'up' : null);
@@ -430,7 +430,7 @@ class _Gp34Reader {
       }
     }
 
-    // 同拍 tieEnd 数字锚回写（gp8 逐弧实证 121 例唯一例外：tieE 所在
+    // 同拍 tieEnd 数字锚回写（制谱基准 逐弧实证 121 例唯一例外：tieE 所在
     // 拍含装饰音 → 该 tieE 裸数字显示——m4 3弦0/m17 2弦3；其余小节内
     // tieE 隐藏）。**拍内音序 1→6 弦**（py/图双重实证）——装饰音挂在
     // 高音弦音上时，同拍 tieE 音（更低弦）尚未解析 → 合成时向前回写
@@ -582,11 +582,11 @@ class _Gp34Reader {
       prev.list[prev.index] = prev.list[prev.index]
           .copyWith(duration: prev.list[prev.index].duration + beats, tieStart: true);
     }
-    // GP3/GP4 hammer 标志 = **原音语义**（2026-11-17 哆啦A梦 gp8 对照
-    // 实证：gp8 m1 弧为 10→9/7→9/10→9/7→9，弧起点恰为带标志音——
-    // TuxGuitar/py 的 destination 语义（标志音=弧终点）与 gp8 相反，
+    // GP3/GP4 hammer 标志 = **原音语义**（2026-11-17 哆啦A梦 制谱基准 对照
+    // 实证：制谱基准 m1 弧为 10→9/7→9/10→9/7→9，弧起点恰为带标志音——
+    // TuxGuitar/py 的 destination 语义（标志音=弧终点）与 制谱基准 相反，
     // 旧实现弧整体前移一音、出现 7→7 同品弧）。hopoEnd 不设（弧由
-    // 渲染层 hopoStart→同弦下一音画出；gp8 老格式读取器 v1-4 同路径，
+    // 渲染层 hopoStart→同弦下一音画出；制谱基准 老格式读取器 v1-4 同路径，
     // gtp12 通道同改）。
     // if (hammer && prev != null) { ...hopoStart 移到标志音... }
 
@@ -608,7 +608,11 @@ class _Gp34Reader {
         string: stringNumber,
         fret: g.fret < 0 ? 0 : g.fret,
         technique: g.fret < 0 ? 'x' : null,
-        // gp8 实图形态（2026-11-19 逐弧精读）：装饰音 = 小号数字+↗+
+        // 尾部淡出（2026-11-25 LSA 用户实测 `<12>^2` 泛音装饰与主音
+        // "混在一起"）：deco 音音量渐弱收尾——硬切尾与主音起音叠出
+        // 混浊，fade out 柔化交接。
+        fadding: 'out',
+        // 制谱基准 实图形态（2026-11-19 逐弧精读）：装饰音 = 小号数字+↗+
         // TAB 上方 "sl" 弧——连接属性用 slide:'shift'（渲染 sl 弧；
         // hammer 也显示 sl 非 H）。播放：slide ramp 滑向本体音高。
         deco: true,

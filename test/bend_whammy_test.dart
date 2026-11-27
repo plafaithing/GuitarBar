@@ -2,11 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:guitarbar/core/score/gtp_parser.dart';
 import 'package:guitarbar/core/score/score_ir.dart';
 
-// Bend/Whammy 解析（2026-11-04 gp8 播放能力补完）。
+// Bend/Whammy 解析（2026-11-04 制谱基准 播放能力补完）。
 // 曲库真实样本无 Bend、Whammy 全 0.0 占位——合成 fixture 验证解析语义，
 // 换算系数（y/4 半音、x/60 拍内位置）待真实谱校准。
 void main() {
-  test('parseGpif：泛音（gp8 逆向）——Natural/Artificial 发声偏移', () {
+  test('parseGpif：泛音（制谱基准 对照解析）——Natural/Artificial 发声偏移', () {
     // Natural：触点品 12 → +12；触点品 7 → +19（谐波系列表）。
     final nat = parseGpif(_harmonicGpif('Natural', 12));
     final n = nat.tracks.first.measures.first.notes.first;
@@ -40,7 +40,7 @@ void main() {
     }
   });
 
-  test('parseGpif：Whammy 全 0（gp8 导出占位）不写入 IR', () {
+  test('parseGpif：Whammy 全 0（制谱基准 导出占位）不写入 IR', () {
     final ir = parseGpif(_whammyZeroGpif);
     final notes = ir.tracks.first.measures.first.notes;
     for (final n in notes) {
@@ -109,7 +109,7 @@ const _whammyGpif = '''<?xml version="1.0" encoding="UTF-8"?>
   <Rhythms><Rhythm id="0"><NoteValue>Quarter</NoteValue></Rhythm></Rhythms>
 </GPIF>''';
 
-// 全 0 占位（gp8 导出常态）→ 不写 IR。
+// 全 0 占位（制谱基准 导出常态）→ 不写 IR。
 const _whammyZeroGpif = '''<?xml version="1.0" encoding="UTF-8"?>
 <GPIF>
   <Score><Title><![CDATA[Whammy Zero]]></Title></Score>

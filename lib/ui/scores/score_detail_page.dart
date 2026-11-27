@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -42,7 +43,7 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
   List<File>? _pages;
   bool _writing = false; // 回写串行守卫：防连点两次，第二次基于旧 _ir 覆盖第一次编辑
   late final ScorePlayer _player;
-  // GP8 真录钢弦采样路径（构造不触引擎；play 时才预载/调度）。
+  // 制谱基准 真录钢弦采样路径（构造不触引擎；play 时才预载/调度）。
   late final SteelSampleBank _sampleBank;
   late final SampleScorePlayer _samplePlayer;
   bool _rendering = false; // 渲染忙碌（0.3-1s 真实谱）
@@ -55,10 +56,45 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     _sampleBank = SteelSampleBank(SoundEngine.I);
     _samplePlayer =
         SampleScorePlayer(SoundEngine.I, _sampleBank, onEnded: _onPlayEnded);
+    // 播放头拍位直连（2026-11-24 跟随针重构）：positionSeconds 变化
+    // → 线性拍 → _playheadBeat（painter repaint 直连，不走 build）。
+    // 两播放器都挂（非活动者 position 恒定，更新无害）。
+    _player.positionSeconds.addListener(_syncPlayheadBeat);
+    _samplePlayer.positionSeconds.addListener(_syncPlayheadBeat);
     _initRepo();
     // 渐进提速自动档回调（两播放器同接；KS 路径不触发渐进）。
     _samplePlayer.onAutoRate = _showAutoRate;
     _player.onAutoRate = _showAutoRate;
+  }
+
+  /// 播放头拍位（ValueNotifier）：TabView 的播放头 painter repaint 直连。
+  final ValueNotifier<double> _playheadBeat = ValueNotifier(0);
+
+  /// 插针位置（2026-11-25）：停止态点击曲谱的记忆——点播放跨播放器
+  /// 传递（插针落在当时 active 的 KS，播放走采样优先，pendingSeek 不
+  /// 跨播放器，实测"点播放从头"根因）。
+  double? _insertedSeek;
+
+  /// 秒 → 展开拍 → 线性谱面拍（与旧 builder 同款换算，移出 build）。
+  // 播放头显示延迟（2026-11-25 用户实测"指针比播放快"）：轴对齐插桩
+  // 实证调度轴同速（gap 恒定零漂移）——超前感来自 soloud 输出链缓冲
+  // 延迟（音频实际出声晚于调度时刻 ~80ms，指针实时走）。显示端延迟
+  // 补偿（播放器业界做法）：指针读数后移 80ms 与出声对齐。
+  static const double _playheadVisualDelay = 0.08;
+
+  /// 秒 → 展开拍 → 线性谱面拍。展开拍一律经 `playBeatAt`（延长记号
+  /// 顺延的逆映射在播放器里，2026-11-27）——页面层不再自己 `秒 ÷ 拍长`。
+  double _linearBeatAt(double secs) {
+    final p = _axisPlayer;
+    final playBeat = p.playBeatAt(secs);
+    return math.max(
+        0.0, p.linearBeatAt(playBeat) ?? playBeat.clamp(0.0, double.infinity));
+  }
+
+  void _syncPlayheadBeat() {
+    if (_ir == null) return;
+    _playheadBeat.value =
+        _linearBeatAt(_activePlayer.positionSeconds.value - _playheadVisualDelay);
   }
 
   /// 渐进自动提速提示（播放器每档触发）。
@@ -79,6 +115,18 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
           ? _samplePlayer
           : _player;
 
+  /// 秒 ↔ 拍换算用的播放器（时间轴播放器，2026-11-27）：必须与**将来
+  /// 实际发声**的轴同源。播放/暂停中 = 活动播放器（它在响）；停止态 =
+  /// 采样播放器（采样优先策略下下次播放走采样，其轴含延长记号顺延，
+  /// 且 prepare 已建表）——活动播放器此时是 KS（线性轴），在延长号谱
+  /// 上两轴不等价，混用即"停止态插针显示错位、起播偏早"（2026-11-27
+  /// 用户实测）。非 6 弦谱采样器无表 → 回落活动播放器（两轴皆线性）。
+  ScorePlayback get _axisPlayer {
+    final active = _activePlayer;
+    if (active.playing || active.paused) return active;
+    return _samplePlayer.timelineReady ? _samplePlayer : active;
+  }
+
   /// 曲终自动停止：tick 已同步清理播放态，这里只刷新按钮/进度。
   void _onPlayEnded() {
     if (mounted) setState(() {});
@@ -86,6 +134,8 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
 
   @override
   void dispose() {
+    _player.positionSeconds.removeListener(_syncPlayheadBeat);
+    _samplePlayer.positionSeconds.removeListener(_syncPlayheadBeat);
     unawaited(_shutdownAudio());
     super.dispose();
   }
@@ -133,6 +183,12 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
         ir = null; // 坏 IR 按无谱面数据处理
       }
     }
+    // 解析器版本升级（2026-11-25）：IR 缓存落后 → 自动重解析（泛音表
+    // 等解析修正即时生效，不靠用户重新导入）。
+    if (ir != null && ir.version < irParserVersion) {
+      final fresh = await repo.reparseGtp(widget.scoreId);
+      if (fresh != null && fresh.version >= ir.version) ir = fresh;
+    }
     final pages = repo.files.pagePngs(widget.scoreId);
     if (mounted) {
       // 播放中 _ir 被替换（编辑回写）：立即停播——旧调度/旧 PCM 对不上
@@ -146,12 +202,15 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
         _ir = ir;
         _pages = pages;
       });
-      // 采样预热（2026-11-08 gp8 对照：gp8 打开即预渲染，点播放立即出声
+      // 采样预热（2026-11-08 制谱基准 对照：制谱基准 打开即预渲染，点播放立即出声
       // ——我们点播放才现载采样，首播延迟 1-3s）。后台预载本曲触到的
       // 全部采样，点播放时缓存全命中。
       if (ir != null && ir.tracks.isNotEmpty && ir.tuning.length == 6) {
         unawaited(_sampleBank.preloadFor(ir).catchError((_) {}));
       }
+      // 时间轴预建（2026-11-27）：停止态（从未播放过）点音插针 / AB
+      // 标记也走与播放同一套秒 ↔ 拍换算（含延长记号顺延）。
+      if (ir != null) _samplePlayer.prepare(ir);
     }
   }
 
@@ -199,9 +258,10 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     if (action == null || !mounted) return;
     if (action == 'a' || action == 'b') {
       // 音符精确秒（与 _playFromNote 同款换算：展开结构取首次遍次）。
+      // 秒值经 _axisPlayer（时间轴播放器）——与将来的发声轴同源。
+      final axis = _axisPlayer;
       final active = _activePlayer;
-      final start = active.startSecondsForBeat(
-          m, n.beat);
+      final start = axis.startSecondsForBeat(m, n.beat);
       // 无展开结构 fallback：per-measure 四分拍累计（2026-11-19 X/8
       // 拍号口径统一——分子计拍此前 6/8 秒位 2x）。
       final secs =
@@ -316,13 +376,19 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     // 再渲染，否则 spinner 与播放态同帧出现、忙碌反馈形同虚设。
     await WidgetsBinding.instance.endOfFrame;
     try {
-      // 采样优先：GP8 真录钢弦逐音调度；返回 false（预载失败/无可发
+      // 采样优先：制谱基准 真录钢弦逐音调度；返回 false（预载失败/无可发
       // 音符）降级离线 KS 渲染——"还没有可演奏的音符"提示也由该路径出。
       // startAt 先记入播放器的 pendingSeek（播放器内部 start 时生效）。
-      if (startAt != null) {
-        await _samplePlayer.seekToSecond(startAt);
+      // 插针跨播放器（2026-11-25）：停止态点击的 _insertedSeek 落在
+      // 当时 active 的播放器——实际起播走采样优先，位置显式带到两个
+      // 播放器（KS 的 pendingSeek 不跨切换）。
+      final insert = startAt ?? _insertedSeek;
+      _insertedSeek = null;
+      if (insert != null) {
+        // KS 兜底路径的位置记忆（采样成功时 startAt 随 play 原子传入）。
+        await _player.seekToSecond(insert);
       }
-      if (!await _samplePlayer.play(ir)) {
+      if (!await _samplePlayer.play(ir, startAt: insert)) {
         // 渲染在主 isolate 直接做（0.3-1s）：忙碌态由 _rendering 承担；
         // M5 变速重渲染时再 Isolate.run（Task 15 备案）。
         // 降级原因可见化（2026-11-23）：静默降级让「渐进不生效」类问题
@@ -342,10 +408,10 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
           return;
         }
         await _player.load(rendered);
-        if (startAt != null) {
-          // KS 路径：无 pendingSeek 机制内建（PCM 已加载），start 后立即 seek。
+        if (insert != null) {
+          // KS 路径：start 后立即 seek 到插针/传入位置。
           await _player.start();
-          await _player.seekToSecond(startAt);
+          await _player.seekToSecond(insert);
         } else {
           await _player.start();
         }
@@ -375,14 +441,33 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
     // 精确定位到点击音符（2026-11-03 走查：停止/暂停后点音总是从所在
     // 小节开头播——startSecondsForMeasure 只有小节粒度，丢了小节内
     // 拍位）。展开结构谱：小节首次遍次起点 + 小节内拍偏移；线性谱：
-    // 线性秒。暂停/停止/播放中三种状态一致用精确位置。
-    final start = active.startSecondsForBeat(m, n.beat);
-    if (active.playing || active.paused) {
-      await active.seekToSecond(start ?? seconds);
-      if (mounted) setState(() {});
-      return;
-    }
-    await _togglePlay(startAt: start ?? seconds);
+    // 线性秒。**秒值经 _axisPlayer**（与将来实际发声的采样轴同源——
+    // 停止态活动播放器是 KS，其线性秒在采样轴上偏早"顺延之和"，
+    // 2026-11-27"停止态插针显示错位/起播偏早"根因）。
+    final start = _axisPlayer.startSecondsForBeat(m, n.beat);
+    // 插针语义（2026-11-25 用户需求）：播放中点击 = 跳转；暂停/停止
+    // = **只插针不播**——位置记忆（未播放 seek 存 _pendingSeek、暂停
+    // seek 更新续播点）+ 指针插在该处，点播放即从此起。
+    await active.seekToSecond(start ?? seconds);
+    _insertedSeek = start ?? seconds;
+    _setPlayheadFromSeconds(start ?? seconds);
+    if (mounted) setState(() {});
+  }
+
+  /// 秒 → 线性谱面拍直写播放头（插针用：停止态 positionSeconds 不动、
+  /// listener 不触发，手动设；播放/暂停态 listener 也会自动同步）。
+  void _setPlayheadFromSeconds(double secs) {
+    if (_ir == null) return;
+    final active = _activePlayer;
+    // 输出链补偿（_playheadVisualDelay）只对**正在出声**的播放有意义
+    //（soloud 调度时刻 ≠ 出声时刻，11-25 用户实测校准）。停止/暂停中
+    // 音频静默、无出声时刻可对齐——插针是纯位置标记，扣了前偏 80ms
+    // ≈ 半个十六分音（2026-11-27 用户两轮实测：停止态、暂停态点击
+    // "指针靠前一点"；恢复播放后自动跟随带补偿接管，对齐不受影响）。
+    final delay = (active.playing && !active.paused)
+        ? _playheadVisualDelay
+        : 0.0;
+    _playheadBeat.value = _linearBeatAt(secs - delay);
   }
 
   /// 进度条拖动定位（松手回调）：播放/暂停中即时 seek；未播放从该处起播。
@@ -400,7 +485,7 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
   /// ——采样路径重锚调度轴；KS 路径 setVoiceSpeed（句柄实时变速）。
   /// 均不停播、不重渲染、不 seek（旧 KS"停→重渲→seek"是用户实测
   /// "变速后停止从头播放"的根因：渲染阻塞 0.3-1s + seek 轴错位）。
-  /// 采样变速自然变调（gp8 采样同此）；KS 声部变速同样变调。
+  /// 采样变速自然变调（制谱基准 采样同此）；KS 声部变速同样变调。
   Future<void> _onRateChanged(double r) async {
     final active = _activePlayer;
     if (identical(active, _samplePlayer)) {
@@ -588,7 +673,7 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                             '${_tuningLabel(_ir!)}'
                             ' · ${_ir!.tempo.round()} BPM',
                             // Capo 标注已在谱面第 1 小节上方（capo:N，
-                            // gp8 同位置）——信息条不再重复（2026-11-08）。
+                            // 制谱基准 同位置）——信息条不再重复（2026-11-08）。
                             style: TextStyle(
                                 fontSize: 12,
                                 color: p.muted,
@@ -597,49 +682,35 @@ class _ScoreDetailPageState extends State<ScoreDetailPage> {
                                 ])),
                       ),
                       Expanded(
-                        child: ListenableBuilder(
-                          // 播放头 50ms 刷新（position notifier 驱动）。
-                          listenable: _activePlayer.positionSeconds,
-                          builder: (ctx, _) {
-                            // 展开拍位（含反复跳回）→ 线性谱面拍位
-                            //（2026-11-02 GP8 复刻：反复播放头指回段首）。
-                            final playBeat =
-                                _activePlayer.positionSeconds.value /
-                                    (60.0 / _ir!.tempo);
-                            final linear =
-                                _activePlayer.linearBeatAt(playBeat);
-                            // AB 循环段谱面标记（2026-11-19 用户需求：
-                            // 秒 → 线性拍，与播放头同款换算）。
-                            final secsPerBeat = 60.0 / _ir!.tempo;
-                            final (loopA, loopB) = (
-                              _activePlayer.loopA,
-                              _activePlayer.loopB
-                            );
-                            return TabView(
-                              ir: _ir!,
-                              playheadBeat: _activePlayer.playing
-                                  ? (linear ?? playBeat)
-                                  : null,
-                              loopABeats: (
-                                loopA == null
-                                    ? null
-                                    : _activePlayer.linearBeatAt(
-                                        loopA / secsPerBeat),
-                                loopB == null
-                                    ? null
-                                    : _activePlayer.linearBeatAt(
-                                        loopB / secsPerBeat),
-                              ),
-                              // 播放时谱面自动滚动跟随（走查反馈 ②）。
-                              followPlayhead: true,
-                              // 点击音符=从此起播（2026-11-01 走查）；
-                              // 编辑移到长按。
-                              onNoteTap: _playFromNote,
-                              onNoteLongPress: _editNote,
-                              onFailedTap: _clearMeasure,
-                            );
-                          },
-                        ),
+                        child: Builder(builder: (ctx) {
+                          // 播放头走 positionListenable（painter repaint
+                          // 直连，2026-11-24 重构）——这里只在 setState
+                          // 时重建（AB 打点/播放态切换），不再 16ms 一次。
+                          // 展开拍位（含反复跳回）→ 线性谱面拍位换算移到
+                          // _syncPlayheadBeat（listener，不走 build）；AB
+                          // 标记同样经 playBeatAt（延长记号顺延）。
+                          final p = _axisPlayer;
+                          final (loopA, loopB) = (p.loopA, p.loopB);
+                          return TabView(
+                            ir: _ir!,
+                            positionListenable: _playheadBeat,
+                            loopABeats: (
+                              loopA == null
+                                  ? null
+                                  : p.linearBeatAt(p.playBeatAt(loopA)),
+                              loopB == null
+                                  ? null
+                                  : p.linearBeatAt(p.playBeatAt(loopB)),
+                            ),
+                            // 播放时谱面自动滚动跟随（走查反馈 ②）。
+                            followPlayhead: true,
+                            // 点击音符=从此起播（2026-11-01 走查）；
+                            // 编辑移到长按。
+                            onNoteTap: _playFromNote,
+                            onNoteLongPress: _editNote,
+                            onFailedTap: _clearMeasure,
+                          );
+                        }),
                       ),
                     ]);
               if (wide) {

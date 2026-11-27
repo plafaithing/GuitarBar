@@ -31,7 +31,7 @@ void main() {
     final m17 = ir.tracks.first.measures[16];
     // 结构断言（2026-11-19 三轮形态）：装饰音（fret3 + deco + slide
     // 'shift' + 64 分时值）先于本体（fret10/7）同拍；本体 grace/deco
-    // 均 false、tie 链首保留；同拍 tieEnd 音带 tieAnchor（gp8 逐弧
+    // 均 false、tie 链首保留；同拍 tieEnd 音带 tieAnchor（制谱基准 逐弧
     // 实证：装饰拍 tieE 裸数字显示）。
     final g4 = m4.notes.firstWhere(
         (n) => n.string == 2 && n.fret == 3 && n.deco);
@@ -40,7 +40,7 @@ void main() {
     expect(g4.beat, main4.beat);
     expect(g4.duration, moreOrLessEquals(0.0625, epsilon: 1e-6));
     expect(g4.grace, false);
-    expect(g4.slide, 'shift'); // gp8 sl 弧形态（hammer→sl 非 H）
+    expect(g4.slide, 'shift'); // 制谱基准 sl 弧形态（hammer→sl 非 H）
     expect(g4.hopoStart, false);
     expect(g4.velocity, 95);
     expect(main4.grace, false);

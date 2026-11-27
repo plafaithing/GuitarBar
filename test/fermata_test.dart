@@ -1,4 +1,4 @@
-// Fermata 延长记号解析（2026-11-07 gp8 对照补完；月下之恋 8 处真值形态）。
+// Fermata 延长记号解析（2026-11-07 制谱基准 对照补完；月下之恋 8 处真值形态）。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:guitarbar/core/score/gtp_parser.dart';
 

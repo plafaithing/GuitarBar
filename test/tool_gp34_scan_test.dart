@@ -18,6 +18,13 @@ import 'package:guitarbar/core/score/score_ir.dart';
 const _root = r'D:\Guitar\158吉他谱电子版大全';
 const _pyVerdict = r'C:\Users\plafa\AppData\Local\Temp\gb_gp34_pyverdict.json';
 
+/// 曲库内已知损坏文件（"小节/音轨数非法"——仅 3090 B 的残缺文件；
+/// 解析器抛异常是正确行为，导入时同样报错不崩）。原靠 Temp 的
+/// pyverdict.json 跳过，Temp 被系统清理后丢失（2026-11-27 实证，详见
+/// tool_gtp12_scan_test 同款说明）——名单固化进源码。按文件名匹配
+///（已确认曲库内唯一）。
+const _knownBad = {'绿袖子.gp4'};
+
 String? _flavor(List<int> bytes) {
   if (bytes.length < 31) return null;
   final head4 = latin1.decode(bytes.sublist(0, 4));
@@ -85,7 +92,7 @@ void main() {
       final isGp3 = f.path.toLowerCase().endsWith('.gp3');
       isGp3 ? gp3++ : gp4++;
       // PyGuitarPro 也失败的坏文件：跳过（参考实现同样炸 = 文件问题）。
-      if (pyBad.contains(f.path)) {
+      if (pyBad.contains(f.path) || _knownBad.any(f.path.endsWith)) {
         pyBadSkipped++;
         continue;
       }

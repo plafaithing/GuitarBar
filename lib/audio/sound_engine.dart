@@ -65,7 +65,7 @@ class SoundEngine {
   void setPause(SoundHandle h, bool paused) =>
       SoLoud.instance.setPause(h, paused);
 
-  /// ogg 等压缩音频字节 → 可播放音源（第 10 个成员，GP8 采样库用）。
+  /// ogg 等压缩音频字节 → 可播放音源（第 10 个成员，制谱基准 采样库用）。
   /// loadMem 原生解码 ogg 容器（非 RAW PCM）；mode=memory 全量驻留防寻址卡顿。
   Future<AudioSource> loadOgg(String key, Uint8List bytes) async {
     await init();
@@ -92,7 +92,7 @@ class SoundEngine {
           volume: volume, scale: scale, duration: duration ?? Duration.zero);
 
   /// 已调度声部的实时变速（2026-11-10 实时变速：soloud setRelativePlaySpeed
-  /// ——播放中改速率不停顿、音高随速率变（采样变速自然变调，gp8 采样
+  /// ——播放中改速率不停顿、音高随速率变（采样变速自然变调，制谱基准 采样
   /// 变速同此行为）。失败静默（句柄失效非致命）。
   void setVoiceSpeed(SoundHandle h, double speed) {
     try {

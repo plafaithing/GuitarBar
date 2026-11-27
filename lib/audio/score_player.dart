@@ -41,7 +41,7 @@ abstract interface class ScorePlayback {
   /// 渐进自动提速回调（每档触发；UI 显示「提速至 x.xx」用）。KS 不触发。
   void Function(double newRate)? onAutoRate;
 
-  /// 反复展开（2026-11-02 GP8 复刻）：展开时间轴拍位 → 线性谱面拍位
+  /// 反复展开（2026-11-02 制谱基准 复刻）：展开时间轴拍位 → 线性谱面拍位
   ///（播放头定位）。无反复结构的谱返回 null（调用方走原式换算）。
   double? linearBeatAt(double playBeat);
 
@@ -49,6 +49,13 @@ abstract interface class ScorePlayback {
   /// 音符——小节首次遍次起点 + 小节内拍偏移；2026-11-03 走查修正，原
   /// 小节粒度版本在停止后点音总是回小节开头）。无展开结构返回 null。
   double? startSecondsForBeat(int measureIndex, double beat);
+
+  /// 播放轴秒 → 展开拍位（[startSecondsForBeat] 的逆映射）。**页面层的
+  /// 播放头 / 插针 / AB 标记统一走这里，不许自己 `秒 ÷ 拍长`**：音频
+  /// 时间轴并不恒等于"拍位 × 拍长"——采样路径有延长记号顺延，页面层
+  /// 自行线性换算会每过一个延长号就超前一拍左右，越往后累积越多
+  /// （2026-11-27 用户实测"指针比发音快一到两个音"根因）。
+  double playBeatAt(double seconds);
 }
 
 /// 自动演奏播放：渲染 PCM → loadPcm → play。
@@ -65,6 +72,11 @@ class ScorePlayer implements ScorePlayback {
   AudioSource? _src;
   SoundHandle? _handle;
   Timer? _timer;
+
+  /// 位置刷新 ticker（2026-11-24 播放头卡顿自检）：主 tick 50ms 承担
+  /// 曲终检测/AB/渐进——跟随针以 20fps 跳动=用户感知"卡顿错觉"。
+  /// 16ms 独立轻刷（仅 positionSeconds，无调度），播放头 60fps 平滑。
+  Timer? _posTimer;
 
   /// 未播放时的 seek 记忆：start 后立即定位到该处（点音起播用）。
   double? _pendingSeek;
@@ -170,6 +182,10 @@ class ScorePlayer implements ScorePlayback {
     return (starts[k] + beat) * 60.0 / _tempo;
   }
 
+  /// KS 路径的整曲 PCM 时间轴 = 拍位 × 拍长（无延长记号顺延）→ 线性。
+  @override
+  double playBeatAt(double seconds) => seconds * _tempo / 60.0;
+
   @override
   double durationSeconds = 0;
   @override
@@ -225,13 +241,23 @@ class ScorePlayer implements ScorePlayback {
       await seekToSecond(seek);
     }
     _timer = Timer.periodic(const Duration(milliseconds: 50), (_) => onTick());
+    _posTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      final h = _handle;
+      if (h == null || !_sound.getIsValidVoiceHandle(h)) return;
+      final pos = _sound.position(h).inMicroseconds / 1e6;
+      positionSeconds.value = pos.clamp(0.0, durationSeconds).toDouble();
+    });
   }
 
   /// 定位：播放中 soloud 句柄内跳位（暂停中也有效，冻结点随之移动）；
   /// 未播放记住起点，start 后生效。曲终态（无句柄）seek 后需 start。
   @override
   Future<void> seekToSecond(double s) async {
-    final clamped = s.clamp(0.0, durationSeconds).toDouble();
+    // 未播放（插针）：KS 未 load 时 durationSeconds=0，clamp 吞成 0
+    // ——同 sample_player 修（2026-11-25 "插针后播放从头"根因）。
+    final clamped = (playing || paused) && durationSeconds > 0
+        ? s.clamp(0.0, durationSeconds).toDouble()
+        : s.toDouble();
     final h = _handle;
     if (h == null) {
       _pendingSeek = clamped;
@@ -289,6 +315,8 @@ class ScorePlayer implements ScorePlayback {
   (SoundHandle, AudioSource)? _detachPlayback() {
     _timer?.cancel();
     _timer = null;
+    _posTimer?.cancel();
+    _posTimer = null;
     final h = _handle;
     _handle = null;
     _paused = false; // 停止/曲终即清暂停态，否则下次 start 后 UI 误显示恢复键

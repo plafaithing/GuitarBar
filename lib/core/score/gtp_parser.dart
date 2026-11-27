@@ -49,7 +49,7 @@ Uint8List gpifBytes(Uint8List bytes) {
 /// 故 IR string = 6 - gp（2026-10-31 修正，原 gp+1 造成谱面与音高双镜像）。
 /// v1 只取第一轨（多轨文件其余轨忽略），不做反复（repeat）展开。
 /// [sourceName] 源文件名（已知源数据修正的触发条件用——部分 gpx 的
-/// gpif Title 为空，gp8 界面显示的是文件名，见 parseGpif 内修正表）。
+/// gpif Title 为空，制谱基准 界面显示的是文件名，见 parseGpif 内修正表）。
 ScoreIr parseGpxBytes(Uint8List bytes, {String? sourceName}) =>
     parseGpif(utf8.decode(gpifBytes(bytes)), sourceName: sourceName);
 
@@ -171,7 +171,7 @@ ScoreIr parseGpif(String xml, {String? sourceName}) {
     }
   }
   // 2026-10-31 走查发现：部分 gpx 的 capo 存在 Beat 的
-  // <FreeText>capo:N</FreeText>（GP8 曲中标注，注意大小写）而非
+  // <FreeText>capo:N</FreeText>（制谱基准 曲中标注，注意大小写）而非
   // Track Properties。属性级优先（精确）；FreeText 级兜底（首个非零值）。
   if (capo == 0) {
     for (final ft in doc.findAllElements('FreeText')) {
@@ -216,7 +216,7 @@ ScoreIr parseGpif(String xml, {String? sourceName}) {
       throw FormatException(
           'gpif 引用了不存在的 bar（小节 $measureIndex, id $barId）');
     }
-    // 反复记号（2026-11-02 走查：GP8 显示反复双竖线，v1 缺失）——
+    // 反复记号（2026-11-02 走查：制谱基准 显示反复双竖线，v1 缺失）——
     // MasterBar 的 Repeat 子元素 start/end 属性（实测月下の恋 MB#21
     // start=true、MB#43 end=true）。
     final repeatEl = masterBar.findElements('Repeat').firstOrNull;
@@ -224,7 +224,7 @@ ScoreIr parseGpif(String xml, {String? sourceName}) {
     final repeatEnd = repeatEl?.getAttribute('end')?.toLowerCase() == 'true';
     final repeatCount =
         repeatEl == null ? 0 : (int.tryParse(repeatEl.getAttribute('count') ?? '') ?? 0);
-    // 结尾跳房子（GP8 "1."/"2." 括号）：AlternateEndings（注意是
+    // 结尾跳房子（制谱基准 "1."/"2." 括号）：AlternateEndings（注意是
     // Alternate 不是 Alternative）。GP6 schema 变体实测（月下之恋）：
     // **innerText 直接是编号**（"1" / "2"，可能逗号分隔多值），无 Ending
     // 子元素；GP7 兼容 Ending number 属性形态一并支持。
@@ -241,7 +241,7 @@ ScoreIr parseGpif(String xml, {String? sourceName}) {
         if (v != null) endings.add(v);
       }
     }
-    // 延长记号（2026-11-07 gp8 对照补完）：MasterBar → Fermatas → Fermata
+    // 延长记号（2026-11-07 制谱基准 对照补完）：MasterBar → Fermatas → Fermata
     //（月下之恋 8 处真值形态：Offset 分数拍位 "2/1"、Type Short/Medium/
     // Long、Length 延长比例 0.46）。
     final fermatas = <FermataIr>[];
@@ -274,9 +274,9 @@ ScoreIr parseGpif(String xml, {String? sourceName}) {
     }
     // 已知源数据修正（2026-11-08 用户听感实锤，见 .claude 数据修正原则）：
     // Like A Star 第 2 小节（index 1）的 6 弦 0 空弦低音 gpif 写在
-    // beat 0.125（十六分错位）——gp8 显示/听感中它与同小节 `<12>` 泛音
+    // beat 0.125（十六分错位）——制谱基准 显示/听感中它与同小节 `<12>` 泛音
     // 同拍（beat 0.0，低音与泛音同时发声，随后连线到 2 品 tap 实音）。
-    // 触发条件用**源文件名**（该 gpif 的 Title 本为空，gp8 界面显示的是
+    // 触发条件用**源文件名**（该 gpif 的 Title 本为空，制谱基准 界面显示的是
     // 文件名；ir.title 不可用）。特例修正：该位置 beat → 0.0。
     if (sourceName != null &&
         sourceName.contains('Like A Star') &&
@@ -303,30 +303,30 @@ ScoreIr parseGpif(String xml, {String? sourceName}) {
   if (measures.isEmpty) throw const FormatException('gpif 无小节');
 
   final ir = ScoreIr(
-    version: 1,
+    version: irParserVersion,
     title: title.isEmpty ? '未命名' : title,
     tempo: tempo,
     timeSignature: timeSignature,
     tuning: tuning,
     capo: capo,
-    capoApplied: false, // gpif fret = 绝对品（GP8 同款），发声时加 capo
+    capoApplied: false, // gpif fret = 绝对品（制谱基准 同款），发声时加 capo
     tracks: [
       TrackIr(name: trackName.isEmpty ? '主旋律' : trackName, measures: measures),
     ],
   );
 
   // GP6+ 隐式击勾弦（2026-11-18 LAS.gpx 实证：gpif 无 Hopo 属性
-  // （HopoOrigin/Destination = 0）而 gp8 画出大量击勾弧——GP6+ 由
+  // （HopoOrigin/Destination = 0）而 制谱基准 画出大量击勾弧——GP6+ 由
   // **同弦音高顺序隐式判定**（显式属性优先的 GP3/4/5 通道不走此推
   // 导）。规则：同弦相邻（时间序）、非 tie（tie 显式优先）、非
   // dead、品差 ≠ 0（同品 = 重复拨弦不画弧）→ hopoStart/End 对，
   // 渲染层按品向画 H/P 弧。
   // GP6+ 击勾弦（2026-11-18 LAS.gpx 实证：gpif 无 Hopo 属性、Note
-  // 级无 XProperty——**GP6+ 不存弧线信息**，gp8 对同一文件画出大量
-  // 弧 = gp8 有隐式推导。**首版"同弦相邻品差≠0 全成弧"规则用户实
-  // 测连线错误**（685 对与 gp8 分布不符）→ 已回退，暂时不画（少而
-  // 不错优于多而错）。重启用条件：gp8 的 LAS 弧线分布对照截图 →
-  // 推导 gp8 的隐式规则（哪些音对成弧、方向）→ 按规则实现。
+  // 级无 XProperty——**GP6+ 不存弧线信息**，制谱基准 对同一文件画出大量
+  // 弧 = 制谱基准 有隐式推导。**首版"同弦相邻品差≠0 全成弧"规则用户实
+  // 测连线错误**（685 对与 制谱基准 分布不符）→ 已回退，暂时不画（少而
+  // 不错优于多而错）。重启用条件：制谱基准 的 LAS 弧线分布对照截图 →
+  // 推导 制谱基准 的隐式规则（哪些音对成弧、方向）→ 按规则实现。
   // _NoteRef 结构保留（推导恢复时用）。
   for (final track in ir.tracks) {
     final byString = <int, List<_NoteRef>>{};
@@ -346,7 +346,7 @@ ScoreIr parseGpif(String xml, {String? sourceName}) {
           continue; // 闷音
         }
         // 品差 = 0（同品重复拨弦）不画弧；品差 ≠ 0 的隐式弧规则待
-        // gp8 对照推导（见上注释），暂时不自动成弧。
+        // 制谱基准 对照推导（见上注释），暂时不自动成弧。
         a.measure.notes[a.index] = a.note;
         b.measure.notes[b.index] = b.note;
       }
@@ -454,7 +454,7 @@ void _readVoice(
         }
       }
     }
-    // Beat 子元素三件（2026-11-02 GP8 标识符对照；Like A Star 实测形态）：
+    // Beat 子元素三件（2026-11-02 制谱基准 标识符对照；Like A Star 实测形态）：
     // <Dynamic>MF</Dynamic>、<Fadding>FadeIn</Fadding>、<Wah>...</Wah>、
     // <GraceNotes>BeforeBeat</GraceNotes>。挂该拍全部音（渲染取拍群首）。
     final dynamicRaw = _childText(beat, 'Dynamic')?.trim().toLowerCase();
@@ -467,7 +467,7 @@ void _readVoice(
         : (faddingRaw.contains('in') ? 'in' : 'out');
     final wah = beat.findElements('Wah').isNotEmpty;
     final grace = beat.findElements('GraceNotes').isNotEmpty;
-    // 震音拨（2026-11-02 gp8 播放复刻）：Beat 属性 Tremolo/TremoloPicking
+    // 震音拨（2026-11-02 制谱基准 播放复刻）：Beat 属性 Tremolo/TremoloPicking
     //（GP6 schema；真实样本校准待遇——曲库暂无实例）。
     final tremolo = beatProps != null &&
         beatProps
@@ -475,9 +475,9 @@ void _readVoice(
             .any((p) =>
                 p.getAttribute('name') == 'Tremolo' ||
                 p.getAttribute('name') == 'TremoloPicking');
-    // 摇把（2026-11-04 gp8 补完）：Beat 属性 WhammyBarOrigin/Middle/
+    // 摇把（2026-11-04 制谱基准 补完）：Beat 属性 WhammyBarOrigin/Middle/
     // DestinationValue（Float，半音）。三点线性 v1 只取首尾（Like A Star
-    // 的 1257 处属性全 0.0 是 gp8 导出占位——origin/dest 均为 0 时不算
+    // 的 1257 处属性全 0.0 是 制谱基准 导出占位——origin/dest 均为 0 时不算
     // 效果，不写 IR）。
     double? wOrigin;
     double? wDest;
@@ -493,7 +493,7 @@ void _readVoice(
         }
       }
     }
-    // 双 0 才是 gp8 导出占位（origin 从 0 起的合法摇把如 0→-1.5 要放行）。
+    // 双 0 才是 制谱基准 导出占位（origin 从 0 起的合法摇把如 0→-1.5 要放行）。
     final whammy = (wOrigin != null && wDest != null &&
             !(wOrigin == 0.0 && wDest == 0.0))
         ? [wOrigin, wDest]
@@ -506,7 +506,7 @@ void _readVoice(
       final (gpString, fret, velocity) = _noteProps(noteEl);
       if (gpString == null || fret == null) continue; // 无弦/品信息无法定位（v1 丢弃）
       final isTieDest = _isTieDestination(noteEl);
-      // 标注解析（2026-10-31 GP8 逆向补齐）：gpif 属性/子元素 → NoteIr 标记。
+      // 标注解析（2026-10-31 制谱基准 对照补齐）：gpif 属性/子元素 → NoteIr 标记。
       final marks = _noteMarks(noteEl);
       if (isTieDest) {
         final origin = tieOrigins[(gpString, fret)];
@@ -534,7 +534,10 @@ void _readVoice(
           accent: marks.accent,
           staccato: marks.staccato,
           trill: marks.trill,
-          grace: grace,
+          // LSA `<12>^`2 修正（2026-11-25 用户判定"不是装饰音，原曲谱
+          // 错误标记"）：泛音 + GraceNotes 组合不当装饰（jitashe 转换器
+          // 误标 grace，照标走装饰短闪路径=声音隐掉）——泛音当正常音。
+          grace: grace && marks.harmonicOffset == null,
           dynamicMark: dynamicMark,
           fadding: fadding,
           wah: wah,
@@ -560,7 +563,7 @@ void _readVoice(
         // GuitarBar IR string 1 = 最细高音弦，两体系"1"相反，故 IR = 6 - gp。
         // 原公式 gp+1 造成谱面上下镜像 + 播放弦音高 E2↔E4 反转。
         string: 6 - gpString,
-        // fret 保持 gpif 绝对品（2026-10-31 二次修正）：GP8 显示/发声都用
+        // fret 保持 gpif 绝对品（2026-10-31 二次修正）：制谱基准 显示/发声都用
         // 绝对品（不加 capo），gpx 通道不做 -capo 转换——此前减法把全曲
         // 品位错移 capo 度（Like A Star 12 品全变 10）。两条通道语义：
         // gpx = 绝对品（发声 = tuning + fret），AI = 夹后品（发声 =
@@ -584,7 +587,7 @@ void _readVoice(
         accent: marks.accent,
         staccato: marks.staccato,
         trill: marks.trill,
-        grace: grace,
+        grace: grace && marks.harmonicOffset == null,
         dynamicMark: dynamicMark,
         fadding: fadding,
         wah: wah,
@@ -622,7 +625,7 @@ bool _isTieDestination(XmlElement note) =>
         case 'Fret':
           fret = int.tryParse(_childText(prop, 'Fret')?.trim() ?? '');
           break;
-        // 音符力度（2026-11-02 gp8 播放复刻，MIDI 0-127；GP6 schema，
+        // 音符力度（2026-11-02 制谱基准 播放复刻，MIDI 0-127；GP6 schema，
         // 真实样本校准待遇）。
         case 'Velocity':
           velocity = double
@@ -666,7 +669,7 @@ double _rhythmBeats(XmlElement? rhythm) {
   return beats;
 }
 
-/// 标注集合（gpif Note → NoteIr 标记字段），2026-10-31 GP8 GPCore.dll
+/// 标注集合（gpif Note → NoteIr 标记字段），2026-10-31 制谱基准 GPCore.dll
 /// strings 侦察 + 真实文件实测定名：
 /// - Properties 属性：HopoOrigin/HopoDestination（击勾弦）、LegatoOrigin/
 ///   LegatoDestination（连滑音）、PalmMuted（闷音）、Tapped/LeftHandTapped
@@ -717,7 +720,7 @@ _NoteMarks _noteMarks(XmlElement note) {
   m.legatoEnd = _propEnabled(note, 'LegatoDestination');
   m.palmMute = _propEnabled(note, 'PalmMuted');
   m.tap = _propEnabled(note, 'Tapped') || _propEnabled(note, 'LeftHandTapped');
-  // 轻量标注第二批（2026-11-02 GP8 标识符对照）：Accent/Staccato/Trill。
+  // 轻量标注第二批（2026-11-02 制谱基准 标识符对照）：Accent/Staccato/Trill。
   m.accent = _propEnabled(note, 'Accent') ||
       _propEnabled(note, 'AccentFlag');
   m.staccato = _propEnabled(note, 'Staccato');
@@ -755,7 +758,7 @@ _NoteMarks _noteMarks(XmlElement note) {
           }
           break;
         case 'Bend':
-          // 弯音曲线（2026-11-04 gp8 补完）：Property 下 Point 列
+          // 弯音曲线（2026-11-04 制谱基准 补完）：Property 下 Point 列
           //（宽容解析，Curve 包裹与否都取到）。gpif/alphaTab 语义：
           // x ∈ 0-60（拍内 1/60 步）→ offset = x/60；y 单位 1/4 半音
           // → value = y/4。系数待真实谱校准（曲库暂无 Bend 样本）。
@@ -770,7 +773,7 @@ _NoteMarks _noteMarks(XmlElement note) {
           break;
       }
     }
-    // 泛音发声偏移（2026-11-05 gp8 实现方式逆向；曲库 22 处真值：
+    // 泛音发声偏移（2026-11-05 制谱基准 实现方式解析；曲库 22 处真值：
     // Natural/Artificial 两类）。Natural 的 HFret 即触点品；Artificial
     // 的 HFret 是相对按弦品的触点距离（月下之恋 Fret19/HFret12 →
     // 按弦音 +12）。未知品兜底 +12（最常见 12 品触点）。
@@ -785,26 +788,22 @@ _NoteMarks _noteMarks(XmlElement note) {
   return m;
 }
 
-/// 自然泛音表（触点品 → 相对空弦半音）：谐波系列标准节点。
-/// alphaTab/GP8 同款；未知品兜底 12（12 品最常见触点）。
+/// 泛音触点品 → 相对记谱音的发声偏移（2026-11-25 用户实证修正）：
+/// 标准三强节点（12/7/5）= 空弦自然泛音（+12/+19/+24）；**其余品
+/// （4/9/3/2/16...）一律按人工 12 泛处理**（offset=12——按 N 品、
+/// N+12 触泛，发声 = 空弦+N+12）。原表含 4(+28)/9(+16)/3(+31)/2(+34)
+/// 的理论谐波节点——LSA 实证 `<4>` 是"按 4 品泛 16 品音"的人工泛音
+/// 写法（4 品空弦节点极弱、编谱不用），理论值全部咬错音高。
 double _naturalHarmonicOffset(double fret) {
   switch (fret.round()) {
     case 12:
       return 12;
-    case 9:
-      return 16;
     case 7:
       return 19;
     case 5:
       return 24;
-    case 4:
-      return 28;
-    case 3:
-      return 31;
-    case 2:
-      return 34;
     default:
-      return 12;
+      return 12; // 人工 12 泛（按 N 品泛 N+12）
   }
 }
 

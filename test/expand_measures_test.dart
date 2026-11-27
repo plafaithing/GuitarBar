@@ -1,4 +1,4 @@
-// 播放反复展开（expandMeasures，2026-11-02 GP8 播放结构复刻）专项测试。
+// 播放反复展开（expandMeasures，2026-11-02 制谱基准 播放结构复刻）专项测试。
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -44,7 +44,7 @@ void main() {
 
   test('反复 + 结尾走向：第二遍跳过整个结尾 1 管辖区直达结尾 2', () {
     // |A [B(1) C :‖ [D(2) E —— 结尾 1 管辖区 = B 至反复线 C（含），
-    // 第二遍跳过 B、C 直达 D（2026-11-02 用户实测 GP8 行为修正）。
+    // 第二遍跳过 B、C 直达 D（2026-11-02 用户实测 制谱基准 行为修正）。
     final ms = [
       m(0, start: true),
       m(1, endings: [1]),
@@ -65,7 +65,7 @@ void main() {
     final ms = ir.tracks.single.measures;
     expect(ms, hasLength(62));
     final order = expandMeasures(ms);
-    // 语义（2026-11-02 用户实测 GP8 修正）：第二遍 21-26（6 段）后跳过
+    // 语义（2026-11-02 用户实测 制谱基准 修正）：第二遍 21-26（6 段）后跳过
     // 结尾 1 管辖区 27-43（17 段，含反复结束线小节），直达结尾 2（m44）。
     // 总 = 第一遍 43（0-42）+ 第二遍 6（20-25）+ 19（43-61）= 68。
     expect(order, hasLength(68));

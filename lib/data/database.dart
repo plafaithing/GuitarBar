@@ -95,8 +95,15 @@ Future<Directory> resolveDataRoot() async {
 
   // 候选链（2026-11-03 用户定案：数据放应用自身目录，对齐 iOS 沙盒
   // 惯例——exe 旁 data 第一顺位，Documents 仅兜底）。
+  // GB_DATA_ROOT 环境变量最高顺位（2026-11-24 开发期统一数据根）：
+  // debug/profile/release 三种构建的 exe 分居 build\...\{Debug,Profile,
+  // Release}\——exe 旁 data 第一顺位使各模式各建一库（用户实测"导入的
+  // 曲谱没了"根因，实际数据全在 Release\data）。设该变量后开发期所有
+  // 构建共享同一数据根；产品安装包不设变量、行为不变。
+  final envRoot = Platform.environment['GB_DATA_ROOT'];
   final docs = await getApplicationDocumentsDirectory();
   final candidates = <Directory>[
+    if (envRoot != null && envRoot.isNotEmpty) Directory(envRoot),
     Directory(p.join(File(Platform.resolvedExecutable).parent.path, 'data')),
     Directory(p.join(docs.path, 'GuitarBar')),
   ];

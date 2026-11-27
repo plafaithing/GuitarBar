@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -53,6 +54,19 @@ class _SourceViewerState extends State<SourceViewer>
   int _index = 0;
   _ViewMode _mode = _ViewMode.paged; // 横看/竖看（随时切换）
   double _loopAccum = 0; // 竖看到底后继续滚动的累积量
+  // 循环回绕轻提醒（2026-11-27 用户需求）：横看末页翻下一页回第一页、
+  // 竖看滚到底回顶——左上角小胶囊 1s 自动消失（替代竖看旧 SnackBar：
+  // 标准底栏横贯全宽观感过大、进出动画拖长显示）。
+  bool _loopHint = false;
+  Timer? _loopHintTimer;
+
+  void _showLoopHint() {
+    _loopHintTimer?.cancel();
+    setState(() => _loopHint = true);
+    _loopHintTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) setState(() => _loopHint = false);
+    });
+  }
   // 当前页变换（p' = p·s + t）；翻页复位 identity——主流看图翻页回开头。
   Matrix4 _matrix = Matrix4.identity();
 
@@ -111,6 +125,7 @@ class _SourceViewerState extends State<SourceViewer>
 
   @override
   void dispose() {
+    _loopHintTimer?.cancel();
     _controller.dispose();
     _scroll.dispose();
     _matrixAnim.dispose();
@@ -346,12 +361,7 @@ class _SourceViewerState extends State<SourceViewer>
         if (_loopAccum >= _loopOverscroll) {
           _loopAccum = 0;
           _scroll.jumpTo(0);
-          if (mounted) {
-            ScaffoldMessenger.of(context)
-              ..hideCurrentSnackBar()
-              ..showSnackBar(const SnackBar(
-                  content: Text('已重头查看'), duration: Duration(seconds: 1)));
-          }
+          _showLoopHint();
         }
       } else {
         _loopAccum = 0;
@@ -468,13 +478,7 @@ class _SourceViewerState extends State<SourceViewer>
                     if (_loopAccum >= _loopOverscroll) {
                       _loopAccum = 0;
                       _scroll.jumpTo(0);
-                      if (mounted) {
-                        ScaffoldMessenger.of(context)
-                          ..hideCurrentSnackBar()
-                          ..showSnackBar(const SnackBar(
-                              content: Text('已重头查看'),
-                              duration: Duration(seconds: 1)));
-                      }
+                      _showLoopHint();
                     }
                   } else if (n is ScrollUpdateNotification) {
                     _loopAccum = 0;
@@ -514,13 +518,24 @@ class _SourceViewerState extends State<SourceViewer>
                   // 翻页手势全手写（滚轮/横拖/按钮）：物理恒关闭——既防拖动竞争，
                   // 也让 Scrollable 不注册滚轮（滚轮归外层 Listener 翻页）。
                   physics: const NeverScrollableScrollPhysics(),
-                  onPageChanged: (raw) => setState(() {
-                    _index = ((raw - _pageBase) % _pageCount + _pageCount) %
+                  onPageChanged: (raw) {
+                    final next = ((raw - _pageBase) % _pageCount + _pageCount) %
                         _pageCount;
-                    _matrixTween = null; // 先断补间（reset 触发 listener 不得回写）
-                    _matrixAnim.reset();
-                    _matrix = Matrix4.identity(); // 翻页复位缩放
-                  }),
+                    // 循环回绕检测（2026-11-27 用户需求）：末页前翻回第一页
+                    // / 首页后翻回末页 → 左上角轻提醒（_pageCount > 1 防
+                    // 单页谱 next==old==0 假触发）。
+                    if (_pageCount > 1 &&
+                        ((next == 0 && _index == _pageCount - 1) ||
+                            (next == _pageCount - 1 && _index == 0))) {
+                      _showLoopHint();
+                    }
+                    setState(() {
+                      _index = next;
+                      _matrixTween = null; // 先断补间（reset 触发 listener 不得回写）
+                      _matrixAnim.reset();
+                      _matrix = Matrix4.identity(); // 翻页复位缩放
+                    });
+                  },
                   itemBuilder: (ctx, raw) {
                     final i = ((raw - _pageBase) % _pageCount + _pageCount) %
                         _pageCount;
@@ -602,6 +617,31 @@ class _SourceViewerState extends State<SourceViewer>
           ),
         ),
       ],
+      // 循环回绕轻提醒（横看末页翻回第一页 / 竖看滚到底回顶）：左上角
+      // 小胶囊，1s 自动消失——替代竖看旧 SnackBar（横贯底栏观感过大）。
+      Positioned(
+        left: 14,
+        top: 10,
+        child: IgnorePointer(
+          child: AnimatedOpacity(
+            opacity: _loopHint ? 1 : 0,
+            duration: const Duration(milliseconds: 180),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: p.ink.withValues(alpha: 0.78),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.replay, size: 13, color: p.ground),
+                const SizedBox(width: 5),
+                Text('已回到第一页',
+                    style: TextStyle(fontSize: 12, color: p.ground)),
+              ]),
+            ),
+          ),
+        ),
+      ),
     ]);
   }
 

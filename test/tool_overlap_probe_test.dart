@@ -117,12 +117,13 @@ void main() {
         }
         final caps = TabViewDebug.lastPaintedTexts;
         final found = findViolations(caps);
-        // 不同拍同列铁律（2026-11-18 用户定案）：同小节不同 beat 的音
-        // 中心 |dx|<4px（视觉一列）或倒置 → **计数记档不判罚**（三难
-        // [时序单调+墨净空+窄行容量]趟式框架无解——五版试错 7030/
-        // 972/896/163/799 全引入新形态；根治待排布模型整体升级，与
-        // CLAUDE.md「小节线保护」同批债。LAS 型倒置已由挂靠让位波及
-        // 修复；Promise 型跨小节链倒置 + 窄行近同列为已知债）。
+        // 不同拍同列铁律（2026-11-18 用户定案）：本探针的 findBeatColumn
+        // Violations 只**计数记档**（供诊断聚合）；铁律的**判罚闸门**在
+        // 折行求解器（2026-11-27）：候选行调渲染同一个 buildRowFlow 预测
+        // 终位，非豁免近似同列/倒置在折行时直接拒行——预测渲染干净才
+        // 合并。残余不判罚类（度量口径，tool_diag_colcount 量化）：
+        // 宽标签跨弦咬合（`<12>` 级联形态，用户验收接受）与装饰槽位
+        // 倒置（渲染层设计豁免）——app 曲库均 0 或接受值。
         final beatCols = findBeatColumnViolations(TabViewDebug.lastFlow);
         // 结构性豁免（与全量探针同口径，规则 22）：折行被迫压缩的超宽
         // 行 + 白名单谱（雷区谱集含已知排布极限谱）。

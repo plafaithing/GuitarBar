@@ -10,7 +10,7 @@ import 'score_ir.dart';
 ///
 /// 规格依据：TuxGuitar（生产验证十余年的开源实现）
 /// common/TuxGuitar-gtp 的 GP1InputStream.java / GP2InputStream.java 直译；
-/// gp8 实现定位佐证：GPIO.dll 的 gp::io::GP5ScoreLoader::readOldGtp
+/// 制谱基准 实现定位佐证：GPIO.dll 的 gp::io::GP5ScoreLoader::readOldGtp
 ///（0x180074420，10.9KB 单函数内联全部 GP1/2 解析）。
 ///
 /// 与 GP3/4（gp34_parser）的代际差异：
@@ -270,7 +270,7 @@ class _Gtp12Reader {
     ];
     final mainSig = _firstMainSig();
     return ScoreIr(
-      version: 1,
+      version: irParserVersion,
       title: title.isEmpty ? '未命名' : title,
       tempo: tempo > 0 ? tempo.toDouble() : 90,
       timeSignature: '${mainSig[0]}/${mainSig[1]}',
@@ -386,8 +386,8 @@ class _Gtp12Reader {
           final dead = fret < 0 || fret >= 100;
           final string = track.stringCount - i;
           // GP1/2 hammer 标志 = **原音语义**（2026-11-17 哆啦A梦 gp3
-          // 对照实证：gp8 老格式读取器 v1-4 同路径，弧从带标志音出发
-          // 到同弦下一音——TuxGuitar/py 的 destination 语义与 gp8 相
+          // 对照实证：制谱基准 老格式读取器 v1-4 同路径，弧从带标志音出发
+          // 到同弦下一音——TuxGuitar/py 的 destination 语义与 制谱基准 相
           // 反；详见 gp34_parser 同注释）。
           // if (hammer && ref != null) { ...hopoStart 移到标志音... }
           // GP2 力度 → velocity/dynamicMark（与 gp34 通道同换算 16d-1）。

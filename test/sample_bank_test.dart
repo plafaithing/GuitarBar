@@ -43,20 +43,29 @@ void main() {
     expect(r.speed, closeTo(speedBySemitones(2), 1e-9));
   });
 
-  test('12 品自然泛音：八度采样恰精确（速度 1.0）', () {
+  test('12 品自然泛音：坏点采样剔除后跨弦借最近泛音（音高由移调补偿）',
+      () {
+    // 6 弦 12 品泛音采样（6E40）是坏点：标注 +12 应发 52，FFT 实测内容
+    // 高八度（64）——2026-11-24 从精确命中与跨弦借采全部剔除。目标 52
+    // 的最近可用泛音采样 = 5 弦 12 品（45+12=57）→ 下移 5 半音补偿。
     final r = SteelSampleBank.resolve(
         string: 6, fret: 12, soundingMidi: 52, technique: 'H');
-    expect(r!.file, 'Mrg12-Hrm-Nat-12-none-6E40-none-none-none.ogg');
-    expect(r.speed, 1.0);
+    expect(r, isNotNull);
+    expect(r!.file, isNot(contains('Hrm-Nat-12-none-6E40')));
+    expect(r.file, 'Mrg12-Hrm-Nat-12-none-5A45-none-none-none.ogg');
+    expect(r.speed, closeTo(speedBySemitones(-5), 1e-9));
   });
 
-  test('7 品泛音重移调大（>2 半音）→ 跨弦找精确泛音采样', () {
+  test('7 品泛音重移调大（>2 半音）→ 跨弦找最近泛音采样', () {
     // 5 弦 sounding 52；本弦采样发声 45+19=64 → 移调 12 半音太重。
-    // 跨弦：6 弦 12 品泛音 = 40+12=52 → 精确命中（速度 1.0）。
+    // 跨弦：原本可精确命中 6 弦 12 品泛音（52），但该采样是坏点已剔除
+    //（见上）→ 最近可用 = 5 弦 12 品泛音（57）→ 下移 5 半音。
     final r = SteelSampleBank.resolve(
         string: 5, fret: 7, soundingMidi: 52, technique: 'H');
-    expect(r!.speed, 1.0); // 精确匹配（跨弦）
-    // 不再断言具体文件——跨弦策略的实现细节。
+    expect(r!.file, contains('Hrm'));
+    expect(r.speed, closeTo(speedBySemitones(-5), 1e-9));
+    // 移调量须远小于本弦直接重移调（12 半音）。
+    expect(r.speed, greaterThan(speedBySemitones(-12)));
   });
 
   test('5 品泛音重移调大（>2 半音）→ 跨弦找最近泛音采样', () {

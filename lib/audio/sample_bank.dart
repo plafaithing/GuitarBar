@@ -9,9 +9,14 @@ import '../core/music/note.dart';
 import '../core/score/score_ir.dart';
 import 'sound_engine.dart';
 
-/// GP8 12-Steel 采样库（assets/sounds/steel/ 的 114 个 ogg 真录钢弦采样）：
+/// 制谱基准 12-Steel 采样库（assets/sounds/steel/ 的 114 个 ogg 真录钢弦采样）：
 /// 按（弦号, 品位, 技法）→ 采样文件 + 重移调速度 → AudioSource 缓存。
 ///
+/// 采样来源（2026-11-24 真采样复活）：制谱基准 官方采样银行 12-Steel.gp7bank
+/// （AMARCHIVE 容器，条目表 [u64 offset][u32 size][name\0]）完整提取的
+/// vorbis 流，统一增益归一后重编码——原 assets 里的"ogg"是 bank 数据区
+/// 碎片（无流头不可解码，真采样从未工作过、实为 KS 兜底），本次为
+/// 首次真正可用版本。拨弦 96（6弦×4品位×Up/Down×2力层）+ 自然泛音 18。
 /// 采样在标准调弦下录制：每弦 4 个拨弦采样品（空弦 + 0/4/8/12 半音），
 /// 外加 5/7/12 品自然泛音。非采样品位取最近采样，播放时用 soloud 的
 /// 相对速度（scale）重移调：speed = 2^((目标半音 - 采样半音)/12)。
@@ -35,11 +40,18 @@ class SteelSampleBank {
   /// 泛音采样弦号 → 各品位泛音的发声半音数。
   /// 非标准调弦时按发声 MIDI 找最近泛音采样（跨弦借采），减少移调量
   /// （2026-10-31 走查：重移调 >2 半音的泛音听感"太实"不像泛音）。
+  ///
+  /// **坏点剔除**（2026-11-24 FFT 实测）：制谱基准 库 6弦12品泛音采样
+  /// （Mrg12-Hrm-Nat-12-none-6E40）名字标注 +12 半音（应发 E3/52），
+  /// 实际内容音高 E4/64（+24，疑似 24 品泛音录错槽位）——匹配它会
+  /// 高八度，从精确命中与跨弦借采两条路径全部剔除。
   static const _harmonicPitch = {5: 24, 7: 19, 12: 12};
+  static const _harmonicBlacklist = {(6, 12)};
 
   /// 按弦+品匹配泛音采样（原始逻辑，标准调弦精确命中）。
   static ({String file, double speed})? _harmonicByString(
       int string, int fret, int soundingMidi) {
+    if (_harmonicBlacklist.contains((string, fret))) return null;
     final base = _stringBaseMidi[string];
     if (base == null) return null;
     final pitch = _harmonicPitch[fret];
@@ -59,6 +71,7 @@ class SteelSampleBank {
     for (var s = 1; s <= 6; s++) {
       final base = _stringBaseMidi[s]!;
       for (final entry in _harmonicPitch.entries) {
+        if (_harmonicBlacklist.contains((s, entry.key))) continue;
         final sampleMidi = base + entry.value;
         final dist = (soundingMidi - sampleMidi).abs();
         if (dist < bestDist) {
@@ -82,7 +95,7 @@ class SteelSampleBank {
   /// 不再受 fret ∈ {5,7,12} 白名单限制——人工泛音（如 Fret19/HFret12）与
   /// 4 品触点此前全落到拨弦采样，音色与弹奏无差（用户实测反馈根因）。
   /// 泛音音高由 speed 全权覆盖，调用方不再叠加 pitchFixed（双重移调）。
-  /// [downstroke] 下拨采样（2026-11-01 技法音效：GP8 库有 Up/Down 双层，
+  /// [downstroke] 下拨采样（2026-11-01 技法音效：制谱基准 库有 Up/Down 双层，
   /// 拨弦交替轮换更贴真实演奏；null/不传 = 沿用 Up 层）。
   static ({String file, double speed})? resolve({
     required int string,
@@ -139,19 +152,19 @@ class SteelSampleBank {
     return _speed(soundingMidi, base + best);
   }
 
-  /// 文件名与重建 WAV 一一对应（2026-11-24 真采样复活：原 .ogg 为
-  /// GP8 采样库 vorbis 碎片不可解码，重组解码后改发 .wav——拨弦
-  /// 68 音位全弦覆盖；泛音 18 片在缺头流待后续重组，暂走拨弦移调
-  /// 兜底）。拨弦品的 MIDI 三位补零，拨层 Up/Down（力层固定 01）。
+  /// 文件名与 制谱基准 bank 条目名一致（2026-11-24 真采样复活：从
+  /// 12-Steel.gp7bank 完整提取重编码回填 assets/sounds/steel/——
+  /// 拨弦 96 音位全弦覆盖 + 泛音 18 片全部到手，不再有缺头兜底）。
+  /// 拨弦品的 MIDI 三位补零，拨层 Up/Down（力层固定 01）。
   static String _pluckFile(int string, int sampleMidi,
           {bool? downstroke}) =>
       'Mrg12-Pck-Sus-${downstroke == true ? 'Down' : 'Up'}-01-'
       '${_stringId[string]}${_stringBaseMidi[string]}'
-      '-${sampleMidi.toString().padLeft(3, '0')}-none-none.wav';
+      '-${sampleMidi.toString().padLeft(3, '0')}-none-none.ogg';
 
   static String _harmonicFile(int string, int fret, int base) =>
       'Mrg12-Hrm-Nat-${fret.toString().padLeft(2, '0')}-none-'
-      '${_stringId[string]}$base-none-none-none.wav';
+      '${_stringId[string]}$base-none-none-none.ogg';
 
   /// 取音源（缓存优先；未载则读 assets ogg 经 loadMem 解码）。
   /// 失败（资源缺失/引擎不可用）返回 null → 调用方整曲降级 KS 合成。
@@ -193,7 +206,7 @@ class SteelSampleBank {
     }
   }
 
-  /// 预载某曲触到的全部采样（2026-11-08 gp8 对照：gp8 打开文件即预渲染
+  /// 预载某曲触到的全部采样（2026-11-08 制谱基准 对照：制谱基准 打开文件即预渲染
   /// 音频，点播放立即出声——我们点播放才现载采样，首播延迟 1-3s）。
   /// 打开曲谱详情后后台调用，点播放时缓存全命中、零等待。
   Future<void> preloadFor(ScoreIr ir) async {

@@ -50,3 +50,9 @@ app.*.map.json
 # Distribution artifacts
 dist/
 packaging/stage/
+
+# 内部开发日志与诊断脚本（不公开；本地保留）
+tasks/
+# 调试杂物
+.playwright-mcp/
+gpu_render_test.png

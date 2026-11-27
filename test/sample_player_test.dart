@@ -57,18 +57,25 @@ void main() {
     expect(player.playing, isTrue);
     // 四枚同弦空弦 → 交替拨弦 Up/Down 两文件各载一次（2026-11-01 技法音效）。
     expect(engine.oggCount, 2);
-    // 窗口 0.5s：仅 beat 0 入队。
-    expect(engine.scheduleCount, 1);
-    expect(engine.lastAt, Duration.zero);
+    // 前瞻窗口 2.0s（2026-11-24：0.5s 窗口被 GC/内存压力拖过即断流——
+    // 事件全驻内存，提前钉到引擎时钟零成本）：beat 0/1/2（t=0/1/2s）
+    // 起播即入队，beat 3（t=3s）在窗外。
+    expect(engine.scheduleLog, [
+      (Duration.zero, Duration.zero),
+      (const Duration(seconds: 1), Duration.zero),
+      (const Duration(seconds: 2), Duration.zero),
+    ]);
     expect(engine.lastScale, 1.0); // 空弦精确命中
-    // 非闷音也带时长限制（音符时值 1.0 拍 @60bpm + 0.08s 余振 = 1.08s）。
-    expect(engine.lastDuration, const Duration(milliseconds: 1080));
+    // 普通音不按时值截停：duration=zero 完整自然衰减（2026-11-25 用户
+    // 对照 制谱基准 实证——同弦连拨叠振不断音；仅 staccato/grace 等保留短值）。
+    expect(engine.lastDuration, Duration.zero);
     expect(player.durationSeconds, 5.2); // 4 拍 + 1.2 尾音
 
-    // 时间推进到 1.2s：beat 1（time 1.0）入队；beat 2/3 仍在窗外。
+    // 时间推进到 1.2s：beat 3（time 3.0）进入前瞻窗口入队。
     engine.engineTimeValue = const Duration(milliseconds: 1200);
     player.onTick();
-    expect(engine.scheduleCount, 2);
+    expect(engine.scheduleCount, 4);
+    expect(engine.lastAt, const Duration(seconds: 3));
     expect(player.positionSeconds.value, 1.2);
     await player.stop();
   });
@@ -137,25 +144,27 @@ void main() {
   test('pause/resume：切声部 + 时间轴零点搬移 + 指针回卷重排被切音', () async {
     final (player, engine, _) = make();
     await player.play(fourNotes());
-    expect(engine.scheduleCount, 1); // beat 0
+    expect(engine.scheduleCount, 3); // beat 0/1/2（前瞻窗口 2s）
     player.pause();
     expect(player.paused, isTrue);
     expect(player.playing, isTrue); // 暂停≠停止
-    expect(engine.stopCount, 1); // 现场声部被切（句柄有效 → stop）
+    expect(engine.stopCount, 3); // 窗口内 3 个声部被切（句柄有效 → stop）
     // 暂停中 tick 是空操作。
     engine.engineTimeValue = const Duration(seconds: 3);
     player.onTick();
-    expect(engine.scheduleCount, 1);
+    expect(engine.scheduleCount, 3);
     expect(player.positionSeconds.value, 0); // 冻结在暂停点
 
     player.resume();
     expect(player.paused, isFalse);
-    player.onTick(); // t0 = 引擎现在(3s) - 暂停点(0) → beat 0 重排（被切过）
-    expect(engine.scheduleCount, 2);
-    // 从暂停点起推进 1.2s（引擎时钟 4.2s，绝对时钟不回拨）：beat 1 入队。
+    player.onTick(); // t0 = 引擎现在(3s) - 暂停点(0) → beat 0/1/2 重排（被切过）
+    expect(engine.scheduleCount, 6);
+    // 从暂停点起推进 1.2s（引擎时钟 4.2s，绝对时钟不回拨）：beat 3 入队。
     engine.engineTimeValue = const Duration(milliseconds: 4200);
     player.onTick();
-    expect(engine.scheduleCount, 3);
+    expect(engine.scheduleCount, 7);
+    // 引擎时刻 = 新零点(3s) + 事件轴时间(3s)——绝对时钟不回拨。
+    expect(engine.lastAt, const Duration(seconds: 6));
     expect(player.positionSeconds.value, 1.2);
     await player.stop();
   });
@@ -166,13 +175,13 @@ void main() {
     await player.stop();
     expect(player.playing, isFalse);
     expect(player.positionSeconds.value, 0);
-    expect(engine.stopCount, 1); // beat 0 句柄被收割
+    expect(engine.stopCount, 3); // 窗口内 3 个句柄被收割
     // 重播：预载命中缓存（oggCount 不增——首遍已载 Up/Down 两文件），
-    // 调度重新开始。
+    // 调度重新开始（beat 0/1/2 再入队）。
     final ok = await player.play(fourNotes());
     expect(ok, isTrue);
     expect(engine.oggCount, 2);
-    expect(engine.scheduleCount, 2);
+    expect(engine.scheduleCount, 6);
     await player.stop();
   });
 

@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../data/database.dart';
 import 'gp34_parser.dart';
+import 'score_ir.dart';
 import 'gp5_parser.dart';
 import 'gtp12_parser.dart';
 import 'gtp_parser.dart';
@@ -178,6 +179,40 @@ class ScoreRepository {
       await files.delete(id);
       rethrow;
     }
+  }
+
+  /// 解析器版本升级后的重解析（2026-11-25）：GTP 系谱 ir.version 落后
+  /// irParserVersion 时打开曲谱自动调用——复用导入的魔数路由，源文件
+  /// 按 id 从 scores/<id>/ 取，解析结果回写 ir_json/tuning。非 GTP
+  /// （pdf/image 无确定性 IR）或源文件缺失返回 null。
+  Future<ScoreIr?> reparseGtp(int id) async {
+    final row = await (_db.select(_db.scores)..where((s) => s.id.equals(id)))
+        .getSingleOrNull();
+    if (row == null || row.sourceType != 'gtp') return null;
+    final source = files.sourceFile(id, row.sourcePath);
+    if (!source.existsSync()) return null;
+    final bytes = await source.readAsBytes();
+    final ScoreIr? ir;
+    try {
+      ir = switch (_gpBinaryFlavor(bytes)) {
+        'gtp12' => parseGtp12Bytes(bytes),
+        'gp34' => parseGp34Bytes(bytes),
+        'gp5' => parseGp5Bytes(bytes),
+        // sourceName 用 DB 标题而非存储副本名（2026-11-26 地雷排除）：
+        // 副本统一叫 source.gpx，不含原始文件名——已知源数据特例修正
+        // （如 Like A Star m2 低音 beat 对齐）触发条件靠源文件名匹配，
+        // 传副本名会让重解析静默丢掉特例修正（回退错误 beat）。
+        'gpx' => parseGpxBytes(bytes, sourceName: row.title),
+        _ => null,
+      };
+    } catch (_) {
+      return null; // 源文件异常：保留旧缓存（重解析失败不比旧数据差）
+    }
+    if (ir == null) return null;
+    await updateIrJson(id, jsonEncode(ir.toJson()));
+    await (_db.update(_db.scores)..where((s) => s.id.equals(id))).write(
+        ScoresCompanion(tuning: Value(ir.tuning.join(','))));
+    return ir;
   }
 
   /// 批量导入（2026-11-03 走查三件套）：多文件逐个 importScore（每文件

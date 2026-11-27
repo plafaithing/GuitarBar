@@ -22,6 +22,9 @@ const double _rowHeight =
 /// 2026-11-12 铁律改判：每行最多 5 小节（CLAUDE.md 折行铁律）→
 /// **perRow=5**（9 音一位数谱宽校验放行，密度档封顶 5），
 /// 行宽 = (800-32)/5 均分。
+/// **注意（2026-11-27）**：perRow=5 已不成立——近似同列铁律后 9 音/
+/// 小节谱实际 4 小节/行；下方推算坐标仅对 col 0（行首小节，x 与行宽
+/// 无关）有效，其余用例一律取真实渲染位置（lastFlow / TabLayout）。
 const double _rowWidth = (800.0 - 2 * 16) / 5; // avail/perRow
 double _noteX(int col) =>
     TabLayout.leftPad +
@@ -99,9 +102,14 @@ void main() {
         .position
         .jumpTo(100);
     await tester.pump();
-    // 折行（5/行）：小节 7（row 1 col 2）音符：
-    // 内容 (noteX(2), rowTop(1))，滚动 100 → 视口 y-100。
-    await tester.tapAt(Offset(_noteX(2), _rowTop(1) - 100));
+    // 点在小节 7 首音（beat 0 / 1 弦）的**实际渲染位置**（lastFlow 内容
+    // 坐标，与 paint 同源——铁律「命中与渲染位置一致」）。旧版按
+    // perRow=5 均分推算坐标：2026-11-25 近似同列铁律后 9 音/小节谱
+    // 5 小节/行拍距仅 15px 被正确拒行（实际 4 小节/行），坐标失效。
+    // 本用例验证的是滚动偏移换算，不是折行规则。滚动 100 → 视口 y-100。
+    final f = TabViewDebug.lastFlow
+        .firstWhere((e) => e.mIdx == 7 && e.note.string == 1);
+    await tester.tapAt(Offset(f.x, f.y - 100));
     expect(hit?.$1, 7);
     expect(hit?.$2, 0);
   });
@@ -109,23 +117,39 @@ void main() {
   testWidgets('滚动后点击 failed 小节：命中所在行而非同列其他行', (tester) async {
     int? failedHit;
     (int, int, NoteIr)? noteHit;
-    // perRow=5：小节 4 在 row 0 col 4——与小节 0（row 0 col 0）同**行**。
-    // 小节 5 占 row 1 col 0（正常），failed 的小节 6 落 row 1 col 1
-    // （与其小节 0 同列）。
-    await pumpTab(tester, makeIr(18, failed: {0, 6}),
-        onNoteTap: (m, i, n) => noteHit = (m, i, n),
-        onFailedTap: (m) => failedHit = m);
+    // 取第 2 行首小节 m：与第 0 行首小节（failed）**同列不同行**——
+    // 无行纵向校验时会先错命中第 0 行的小节 0。m 由真实折行求出并
+    // 断言前提（折行规则演进不影响本用例的验证目标：行级消歧）。
+    // 空的 failed 小节更轻，标 failed 后可能被第 0 行吸收——反复取
+    // "当前第 2 行首"直到不动点（行首最多 5 小节，必收敛）。
+    var failed = <int>{0};
+    var m = -1;
+    for (var i = 0; i < 8; i++) {
+      m = TabLayout(makeIr(18, failed: failed)).rowsFor(800)[1][0];
+      failed.add(m);
+    }
+    final ir = makeIr(18, failed: failed);
+    final layout = TabLayout(ir);
+    final (row, col) = layout.locate(m, 800);
+    final (row0, col0) = layout.locate(0, 800);
+    expect(row, greaterThan(row0), reason: '前提：m 须在第 0 行之后');
+    expect(col, col0, reason: '前提：m 须与小节 0 同列');
+    await pumpTab(tester, ir,
+        onNoteTap: (mm, i, n) => noteHit = (mm, i, n),
+        onFailedTap: (mm) => failedHit = mm);
     tester
         .state<ScrollableState>(find.byType(Scrollable))
         .position
         .jumpTo(100);
     await tester.pump();
-    // 小节 6（row 1 col 1，failed）中心：滚动 → 视口 y-100。
-    // 小节 0 与其同列且同为 failed：无行纵向校验时会先错命中第 0 行的小节 0。
+    // 小节 m（failed）中心：滚动 → 视口 y-100。
     await tester.tapAt(Offset(
-        _noteX(1) + _rowWidth / 2,
-        _rowTop(1) + (5 * TabLayout.stringGap) / 2 - 100));
-    expect(failedHit, 6);
+        layout.measureX(m, 800) + layout.measureWidthAt(m, 800) / 2,
+        row * (_rowHeight + TabLayout.rowGap) +
+            TabLayout.topPad +
+            (5 * TabLayout.stringGap) / 2 -
+            100));
+    expect(failedHit, m);
     expect(noteHit, isNull);
   });
 }

@@ -89,7 +89,7 @@ void _probeBucket(int bucket, List<File> allFiles) {
         final caps = TabViewDebug.lastPaintedTexts;
         final found = findViolations(caps);
         // 结构性豁免（lessons 铁律冲突）：折行被迫压缩的超宽小节
-        // （连排密度 × 墨阈 > 行可用宽，数学不可满足，gp8 靠窄音乐
+        // （连排密度 × 墨阈 > 行可用宽，数学不可满足，制谱基准 靠窄音乐
         // 字体才放得下）→ 计数不判罚；白名单谱同（排布极限，见上）。
         if (found.isNotEmpty &&
             (layout.hasOverfullMeasure(w) ||

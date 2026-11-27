@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:guitarbar/core/score/gp5_parser.dart';
+import 'package:guitarbar/core/score/score_ir.dart';
 
 /// 构造一个最小 GP5 字节流的辅助（v5.10 头部结构，PyGuitarPro gp5.py 布局）。
 /// 真值驱动的补充：魔数/版本校验与截断防护用，完整结构走真值文件。
@@ -113,7 +114,7 @@ void main() {
   group('parseGp5Bytes（GP5 二进制）', () {
     test('最小构造流：魔数/头部/单音', () {
       final ir = parseGp5Bytes(_minimalGp5());
-      expect(ir.version, 1);
+      expect(ir.version, irParserVersion);
       expect(ir.title, 'T');
       expect(ir.tempo, 70);
       expect(ir.timeSignature, '4/4');
@@ -154,7 +155,7 @@ void main() {
         return;
       }
       final ir = parseGp5Bytes(f.readAsBytesSync());
-      expect(ir.version, 1);
+      expect(ir.version, irParserVersion);
       expect(ir.title, 'Distance');
       expect(ir.tempo, 70);
       expect(ir.timeSignature, '4/4');
@@ -179,7 +180,7 @@ void main() {
       expect(m0.notes[3].fret, 4);
       // 全曲：811 个音符（含 76 个 tie 续接端，均入列表）。2026-11-19
       // grace 装饰音合成修复后 809→811：py 基线 809 不含装饰音（py 把
-      // grace 挂在 Note.effect 上不算独立音），gp8 语义装饰音是可见
+      // grace 挂在 Note.effect 上不算独立音），制谱基准 语义装饰音是可见
       // 可听的独立音（Distance 含 2 个 grace 装饰）→ +2 正确偏差。
       var total = 0;
       var tieEnds = 0;

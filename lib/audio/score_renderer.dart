@@ -18,7 +18,7 @@ class RenderedScore {
   final int sampleRate;
   final double seconds;
 
-  // 反复展开元数据（2026-11-02 GP8 复刻；无结构谱为 null）——播放头
+  // 反复展开元数据（2026-11-02 制谱基准 复刻；无结构谱为 null）——播放头
   // 展开时间轴 → 线性谱面拍位反查用。
   final List<int>? order;
   final List<double>? orderStarts;
@@ -51,7 +51,7 @@ RenderedScore renderScore(ScoreIr ir,
   // 事实源）。
   final beatsPerBar = measureQuarterBeats(ir.timeSignature);
 
-  // 反复展开（2026-11-02 GP8 复刻）：播放按展开序，时间轴 = 展开位
+  // 反复展开（2026-11-02 制谱基准 复刻）：播放按展开序，时间轴 = 展开位
   // 累计拍位；failed 小节拍位照占（静音小节）。
   final t0 = ir.tracks.first;
   final order = expandMeasures(t0.measures);

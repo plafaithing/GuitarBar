@@ -17,6 +17,20 @@ import 'package:guitarbar/core/score/score_ir.dart';
 const _root = r'D:\Guitar\158吉他谱电子版大全';
 const _pyVerdict = r'C:\Users\plafa\AppData\Local\Temp\gb_gtp12_pyverdict.json';
 
+/// 曲库内已知截断/损坏文件（解析器抛 FormatException 是正确行为——
+/// 导入时同样报错不崩）。原靠 Temp 的 pyverdict.json（python 直译判决）
+/// 跳过，Temp 被系统清理后判决表丢失（2026-11-27 实证：同日 11:09 套件
+/// 全绿、11:40 起这 5 个文件报"截断"，报错偏移 = 文件长度，文件
+/// mtime 2025-02-17 未变）——名单固化进源码，不再依赖 Temp。
+/// 按文件名匹配（已确认曲库内唯一）。
+const _knownBad = {
+  '单身情歌2.gtp',
+  '朴树-那些花儿2.gtp',
+  '自动胜利.gtp',
+  '灰姑娘2.gtp',
+  '爱的呼唤2.gtp',
+};
+
 /// 头 31 字节版本串（1 长度 + 30 定长）。
 String _versionOf(List<int> bytes) {
   if (bytes.length < 31) return '';
@@ -76,7 +90,7 @@ void main() {
     var pyBadSkipped = 0;
     var totalNotes = 0;
     for (final f in files) {
-      if (pyBad.contains(f.path)) {
+      if (pyBad.contains(f.path) || _knownBad.any(f.path.endsWith)) {
         pyBadSkipped++;
         continue;
       }

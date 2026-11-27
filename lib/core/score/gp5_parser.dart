@@ -272,7 +272,7 @@ class _Gp5Reader {
     final mainSig = _headers
         .firstWhere((h) => h.numerator >= 4, orElse: () => _headers.first);
     return ScoreIr(
-      version: 1,
+      version: irParserVersion,
       title: title.isEmpty ? '未命名' : title,
       tempo: tempo > 0 ? tempo.toDouble() : 90,
       timeSignature: '${mainSig.numerator}/${mainSig.denominator}',
@@ -423,11 +423,11 @@ class _Gp5Reader {
       if (f1 & 0x20 != 0) _i8(); // slapEffect（tap/slap/pop）
       if (f2 & 0x04 != 0) _readBend(); // tremolo bar
       if (f1 & 0x40 != 0) {
-        // 方向（2026-11-18 用户 gp8 对照实证 Promise.gp5 全部反）：
+        // 方向（2026-11-18 用户 制谱基准 对照实证 Promise.gp5 全部反）：
         // GP5 字节 1 = **下扫**、字节 2 = **上扫**——py 的 base 读取
         // （byte1=down 变量、byte2=up 变量）+ swapDirection 的网络效
-        // 果与 gp8 相反（GP3 教训同族：py/TuxGuitar 的方向语义与
-        // gp8 相反，gp8 为准）。旧实现 byte1→up 反向。
+        // 果与 制谱基准 相反（GP3 教训同族：py/TuxGuitar 的方向语义与
+        // 制谱基准 相反，制谱基准 为准）。旧实现 byte1→up 反向。
         final a = _i8();
         final b = _i8();
         brush = a > 0 ? 'down' : (b > 0 ? 'up' : null);
@@ -461,7 +461,7 @@ class _Gp5Reader {
       }
     }
 
-    // 同拍 tieEnd 数字锚回写（gp34 同款——gp8 逐弧实证：tieE 拍含
+    // 同拍 tieEnd 数字锚回写（gp34 同款——制谱基准 逐弧实证：tieE 拍含
     // 装饰音 → tieE 裸数字；拍内音序 1→6 弦，装饰音可能先于同拍
     // tieE 解析，beat 收尾统一回写）。
     if (_beatHasDeco) {
@@ -618,8 +618,8 @@ class _Gp5Reader {
         string: stringNumber, // gp5 弦号 1 = 最细 = IR 1，恒等映射
         fret: g.fret < 0 ? 0 : g.fret,
         technique: g.fret < 0 ? 'x' : null,
-        // gp34 同款：deco 普通形态 + slide 连接（gp8 实图 sl 弧形态）+
-        // 同拍 tieEnd 回写数字锚（gp8 逐弧实证）。
+        // gp34 同款：deco 普通形态 + slide 连接（制谱基准 实图 sl 弧形态）+
+        // 同拍 tieEnd 回写数字锚（制谱基准 逐弧实证）。
         deco: true,
         slide: (g.transition == tHammer || g.transition == tSlide)
             ? 'shift'

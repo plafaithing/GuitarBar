@@ -2,6 +2,12 @@ import 'dart:convert';
 
 /// 统一曲谱 IR（设计文档 §4）：所有来源（AI 识谱/确定性导入/人工修正）归一于此。
 /// JSON 形态与存储、视觉模型输出同构。
+
+/// 当前解析器版本（2026-11-25 泛音表修正 bump 2）：库内 ir_json 缓存的
+/// version 低于此值时，打开曲谱自动重解析——解析器行为修正不靠用户
+/// 重新导入生效。
+const int irParserVersion = 2;
+
 class ScoreIr {
   const ScoreIr({
     required this.version,
@@ -24,7 +30,7 @@ class ScoreIr {
   final int capo;
 
   /// fret 是否已含 capo 补偿（2026-10-31 语义定案）：
-  /// - gpx 通道：fret = 绝对品（GP8 同款），capoApplied = false，
+  /// - gpx 通道：fret = 绝对品（制谱基准 同款），capoApplied = false，
   ///   发声 = tuning + capo + fret
   /// - AI 通道：fret = 夹后品（谱面印刷数字），capoApplied = true，
   ///   发声 = tuning + fret（capo 已含）
@@ -118,7 +124,7 @@ class MeasureIr {
   /// "N/D"；null = 继承全曲 ScoreIr.timeSignature。
   final String? timeSignature;
 
-  // 反复记号（2026-11-02 走查：GP8 显示反复双竖线+圆点，v1 缺失）。
+  // 反复记号（2026-11-02 走查：制谱基准 显示反复双竖线+圆点，v1 缺失）。
   // gpif MasterBar 的 Repeat start="true"/end="true"（count 为重复次数，
   // 0/缺省 = 音乐惯例 2 遍；播放展开见 score_ir.expandMeasures）。
   final bool repeatStart;
@@ -127,11 +133,11 @@ class MeasureIr {
   /// 反复遍数（repeatEnd 小节上的 gpif Repeat count；0 = 缺省 2 遍）。
   final int repeatCount;
 
-  // 结尾跳房子标记（2026-11-02 走查：GP8 "1."/"2." 括号，v1 缺失）——
+  // 结尾跳房子标记（2026-11-02 走查：制谱基准 "1."/"2." 括号，v1 缺失）——
   // gpif AlternativeEndings/Ending 的 number（该小节属于第 N 结尾）。
   final List<int> endings;
 
-  // 延长记号（2026-11-07 gp8 对照补完；月下之恋 8 处真值）：gpif
+  // 延长记号（2026-11-07 制谱基准 对照补完；月下之恋 8 处真值）：gpif
   // MasterBar → Fermatas → Fermata。beat = 小节内拍位（Offset 分数
   // "2/1"→2.0）；length = 延长比例（gpif Length 0.46 ≈ 该拍后顺延
   // 0.46 拍，播放层采样事件轴顺延实现；显示层弧线符号待画）。
@@ -205,7 +211,7 @@ double measureQuarterBeats(String? sig, {double fallback = 4}) {
   return num * 4 / den;
 }
 
-/// 播放反复展开（2026-11-02 走查：复刻 GP8 播放结构——反复跳回 + 结尾
+/// 播放反复展开（2026-11-02 走查：复刻 制谱基准 播放结构——反复跳回 + 结尾
 /// 走向）。返回**播放顺序的小节 index 序列**：
 /// - repeatEnd（count 次，缺省 2）：未满遍数跳回最近未闭合 repeatStart
 /// - 结尾跳房子：第 pass 遍只播 endings 含 pass 的小节（pass = 最近
@@ -273,7 +279,7 @@ List<int> expandMeasures(List<MeasureIr> measures) {
   return out;
 }
 
-/// 延长记号（2026-11-07 gp8 对照补完）：beat = 小节内拍位；
+/// 延长记号（2026-11-07 制谱基准 对照补完）：beat = 小节内拍位；
 /// length = 延长比例（gpif Length，0.46 = 顺延 0.46 拍）。
 class FermataIr {
   const FermataIr({required this.beat, required this.length});
@@ -281,7 +287,7 @@ class FermataIr {
   final double length;
 }
 
-/// 弯音曲线点（2026-11-04 gp8 补完）：offset = 音符时值内位置 0-1，
+/// 弯音曲线点（2026-11-04 制谱基准 补完）：offset = 音符时值内位置 0-1，
 /// value = 半音（gpif y/4）。
 class BendPointIr {
   const BendPointIr({required this.offset, required this.value});
@@ -336,7 +342,7 @@ class NoteIr {
   final String? technique; // null | h | p | s | b | x | H
   final double? confidence; // null = 非 AI 来源
 
-  // —— 曲谱标注（2026-10-31 GP8 逆向补齐，gpif 属性 → bool 标记）——
+  // —— 曲谱标注（2026-10-31 制谱基准 对照补齐，gpif 属性 → bool 标记）——
   // tie 弧线两端：start 出音（时长已含续接端累计），end 不发声仅画弧端点。
   final bool tieStart;
   final bool tieEnd;
@@ -361,7 +367,7 @@ class NoteIr {
   final String? brush;
   final String? pickStroke;
 
-  // 轻量标注第二批（2026-11-02 GP8 标识符对照补齐；Bend/Whammy 曲线类
+  // 轻量标注第二批（2026-11-02 制谱基准 标识符对照补齐；Bend/Whammy 曲线类
   // 另立项）：
   // - Trill 颤音（Note 属性 Trill）→ "tr" 上标
   // - Accent 重音（Note 属性 Accent）→ 数字上方 >
@@ -379,7 +385,7 @@ class NoteIr {
   // 形态（用户决策）：正常数字 + slide 弧连接本体。解析层同拍 tieEnd
   // 回写 tieAnchor 的识别源）。
   final bool deco;
-  // tie 延续音的数字显示锚（gp8 逐弧实证 2026-11-19：tieE 所在拍含
+  // tie 延续音的数字显示锚（制谱基准 逐弧实证 2026-11-19：tieE 所在拍含
   // 装饰音 → 该 tieE 以裸数字显示——m4 3弦0/m17 2弦3，121 例唯一例外
   // 通道；其余小节内 tieE 隐藏、跨小节（小节首拍）tieE 显示 (N)）。
   final bool tieAnchor;
@@ -387,13 +393,13 @@ class NoteIr {
   final String? fadding; // 'in' | 'out'
   final bool wah;
 
-  // 播放行为映射（2026-11-02 gp8 编辑面板播放能力复刻）：
+  // 播放行为映射（2026-11-02 制谱基准 编辑面板播放能力复刻）：
   // - Tremolo 震音拨（Beat 属性）：该拍音符在时值内按 32 分快速重复发声
-  // - Velocity 音符力度（Note 属性 0-127，gp8 MIDI 力度）→ 发声音量映射
+  // - Velocity 音符力度（Note 属性 0-127，制谱基准 MIDI 力度）→ 发声音量映射
   final bool tremolo;
   final int? velocity;
 
-  // 弯音（2026-11-04 gp8 编辑面板播放能力补完；样本缺口——曲库三 gpx +
+  // 弯音（2026-11-04 制谱基准 编辑面板播放能力补完；样本缺口——曲库三 gpx +
   // 三 gp5 探针均无 Bend 数据，Like A Star 的 1257 处 Whammy 属性全为
   // 0.0 占位。解析按 gpif/alphaTab 语义实现，合成 fixture 验证，换算
   // 系数待真实谱校准）：
@@ -404,8 +410,8 @@ class NoteIr {
   final List<BendPointIr>? bend;
   final List<double>? whammy;
 
-  // 泛音（2026-11-05 gp8 实现方式逆向）：**发声 = 音高重映射**——原品
-  // 采样固定移调到泛音分节点（GP8/alphaTab 同款，无独立采样）。
+  // 泛音（2026-11-05 制谱基准 实现方式解析）：**发声 = 音高重映射**——原品
+  // 采样固定移调到泛音分节点（制谱基准/alphaTab 同款，无独立采样）。
   // harmonicOffset = 相对空弦的半音偏移（解析层算好）：
   // - Natural：自然泛音表[fret]（12→+12、9→+16、7→+19、5→+24、4→+28、
   //   3→+31、2→+34，未知品兜底 +12）
@@ -414,7 +420,7 @@ class NoteIr {
   // Natural(HFret12)/Artificial、Bluebird Natural——22 处真值。
   final double? harmonicOffset;
 
-  /// 泛音类型（'natural' | 'artificial'，gp8 六线谱 AH 文字标注区分用；
+  /// 泛音类型（'natural' | 'artificial'，制谱基准 六线谱 AH 文字标注区分用；
   /// null = 非泛音）。2026-11-08 截图对照补。
   final String? harmonicType;
 

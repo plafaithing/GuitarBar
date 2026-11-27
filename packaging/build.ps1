@@ -46,10 +46,13 @@ New-Item -ItemType Directory -Force $dist | Out-Null
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path $stage -DestinationPath $zip -CompressionLevel Optimal
 
-# 验证：无开发数据混入、卸载器在
+# 验证：无开发数据混入、卸载器在。覆盖面（2026-11-24 用户铁律：发布包
+# 不带任何测试数据/曲谱）：数据库本体 + WAL/SHM 临时文件 + scores 曲谱
+# 目录 + close-log（-Exclude 对 -wal/-shm 不生效，scores 删除失败被
+# SilentlyContinue 吞——验证兜底发现即 fail）。
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $a = [System.IO.Compression.ZipFile]::OpenRead($zip)
-$leak = $a.Entries | Where-Object { $_.FullName -match 'guitarbar\.sqlite|close-log' }
+$leak = $a.Entries | Where-Object { $_.FullName -match 'guitarbar\.sqlite|close-log|data[/\\]scores[/\\]|\.sqlite-(wal|shm)' }
 $uninst = $a.Entries | Where-Object { $_.FullName -match 'uninstall\.ps1|卸载GuitarBar\.bat' }
 $a.Dispose()
 if ($leak) { throw "dev data leaked into zip: $($leak.FullName)" }

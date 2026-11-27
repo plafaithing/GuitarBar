@@ -40,7 +40,8 @@ Widget _host(ScoreIr ir, {double? playheadBeat, bool followPlayhead = false}) =>
           appBar: AppBar(title: const Text('T')),
           body: TabView(
               ir: ir,
-              playheadBeat: playheadBeat,
+              positionListenable:
+                  playheadBeat == null ? null : ValueNotifier(playheadBeat),
               followPlayhead: followPlayhead),
         ));
 
@@ -130,7 +131,7 @@ void main() {
   });
 
   testWidgets('标注弧线系统渲染冒烟：tie/hopo/legato/shift/L.R./P.M./'
-      'vibrato/ghost/tap 全标注绘制不抛异常（GP8 标注补齐）', (tester) async {
+      'vibrato/ghost/tap 全标注绘制不抛异常（制谱基准 标注补齐）', (tester) async {
     final ir = ScoreIr(
       version: 1,
       title: 'T',

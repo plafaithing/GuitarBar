@@ -202,7 +202,7 @@ Uint8List _buildGp7Container(String gpifXml) {
 /// 公共断言：_gpifXml 应解析出的 IR。
 /// 弦号语义：gpif string 0 = 1 弦（最高音），即 IR = gp + 1。
 void _expectCommonIr(ScoreIr ir) {
-  expect(ir.version, 1);
+  expect(ir.version, irParserVersion);
   expect(ir.title, 'Steel Test');
   expect(ir.tempo, 90);
   expect(ir.timeSignature, '4/4');
@@ -352,7 +352,7 @@ void main() {
       expect(measures[1].notes.single.fret, measures[0].notes.single.fret);
     });
 
-    test('击勾弦/延音/闷音/点弦/揉弦/幽灵音/滑音标注解析（GP8 逆向补齐）', () {
+    test('击勾弦/延音/闷音/点弦/揉弦/幽灵音/滑音标注解析（制谱基准 对照补齐）', () {
       // 七拍七音（gp 弦 3 → IR 3）：Hopo 起止、LetRing（Note 子元素）、
       // PalmMuted、Tapped、Vibrato（Note 子元素）、AntiAccent（幽灵音）、
       // Slide Flags 分型（0x01 shift / 0x02 legato）。
